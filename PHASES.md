@@ -51,12 +51,17 @@ F-01 through F-10 (see FEATURES.md, module `record/`).
 
 ### Tasks
 
-- [ ] `record/schema.py` — Pydantic models, `extra="allow"`, `schema_version="0.1"`
-- [ ] `proxy/stdio.py` — passthrough spawn-and-forward
-- [ ] `record/writer.py` / `record/reader.py` — kept as separate modules deliberately
+- [x] `record/schema.py` — Pydantic models, `extra="allow"`, `schema_version="0.1"`
+- [x] `record/proxy.py` — passthrough spawn-and-forward (this checklist originally
+  said `proxy/stdio.py`; there is no standalone `proxy/` module in CLAUDE.md's
+  module list, and FEATURES.md files F-01 under `record/`, so `record/proxy.py`
+  is what's correct against both — not a deviation)
+- [x] `record/writer.py` / `record/reader.py` — kept as separate modules deliberately
   (a shared read/write module invites silent format drift)
-- [ ] Raw frame mirroring to `.drifter/raw/`
-- [ ] Secret redaction, test-enforced against a fixture with planted fake secrets
+- [x] Raw frame mirroring to `.drifter/raw/`
+- [x] Secret redaction, test-enforced against a fixture with planted fake secrets
+  (covers both the parsed JSONL and the raw frame mirror — SECURITY.md
+  specifically calls out the mirror as a common place to leave a redaction gap)
 - [ ] Environment fingerprinting
 - [ ] Trace-context detection + heuristic fallback segmentation
 - [ ] `drifter observe`, `drifter stats`, `drifter doctor` (connectivity checks only

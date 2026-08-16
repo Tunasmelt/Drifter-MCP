@@ -1,9 +1,8 @@
-"""Minimal MCP server fixture for F-01's integration test.
+"""Minimal MCP server fixture for record/'s integration tests.
 
 Standalone script (not a Drifter module) so it can be spawned as a real
-subprocess — both directly, by the test, and indirectly, as the "real
-server" behind the Drifter proxy. Responds to `tools/list` and one
-`tools/call` (`add`), nothing else.
+subprocess — both directly, by tests, and indirectly, as the "real server"
+behind the Drifter proxy.
 """
 
 from mcp.server.mcpserver import MCPServer
@@ -15,6 +14,18 @@ server = MCPServer(name="fake-server")
 def add(a: int, b: int) -> int:
     """Add two integers."""
     return a + b
+
+
+@server.tool()
+def echo(payload: dict) -> dict:
+    """Echo the input payload back unchanged.
+
+    Used by the F-04 redaction test: a tool that reflects its arguments
+    back in its result exercises redaction on both the request side (the
+    recorded arguments) and the response side (the recorded result) of the
+    write path in one call.
+    """
+    return payload
 
 
 if __name__ == "__main__":

@@ -11,12 +11,15 @@ with its matching response (by JSON-RPC id) to build one `ToolsList` /
 `ToolCall` record per exchange.
 
 Only `result_shape` (type, keys, array lengths) is ever computed from a
-response body — never the payload itself. That guarantee is enforced by
-F-04's secret-redaction fixture test, not by this module alone.
+response body — never the payload itself. Argument values and the raw
+frame mirror's payload fields are passed through F-04's redaction layer
+(record/redact.py) before anything touches disk — see
+tests/record/test_redaction.py for the enforced guarantee.
 """
 
 from __future__ import annotations
 
+import json
 import time
 import uuid
 from pathlib import Path
@@ -25,6 +28,7 @@ from typing import Any
 from mcp_types import JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
 from record.proxy import Direction
+from record.redact import redact_rpc_payload, redact_secrets
 from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
 
 
@@ -81,16 +85,22 @@ class SessionRecorder:
         return seq
 
     def _write_raw_frame(self, message) -> int:
-        """Appends the message's wire-serialized text to the raw mirror.
+        """Appends the message's wire content to the raw mirror, redacted.
 
-        Reuses the SDK's own `model_dump_json(by_alias=True,
-        exclude_unset=True)` — the same call `stdio_client`/`stdio_server`
-        use to put bytes on the wire, and verified byte-for-byte faithful
-        to the actual wire content by record/proxy.py's F-01 fidelity test.
-        Returns the byte offset the frame was written at.
+        Starts from the SDK's own `model_dump(by_alias=True,
+        exclude_unset=True)` — the same shape `stdio_client`/`stdio_server`
+        put on the wire, verified byte-for-byte faithful to actual wire
+        content by record/proxy.py's F-01 fidelity test — then redacts
+        payload fields (params/result/error.data) before writing. The raw
+        mirror gets the SAME redaction as the JSONL, not a weaker pass
+        (SECURITY.md, F-04): this is the one place a full response payload
+        is otherwise recorded, so it's exactly where a gap would matter
+        most. Returns the byte offset the frame was written at.
         """
         offset = self._raw_file.tell()
-        text = message.model_dump_json(by_alias=True, exclude_unset=True)
+        raw = message.model_dump(mode="json", by_alias=True, exclude_unset=True)
+        redacted = redact_rpc_payload(raw)
+        text = json.dumps(redacted, separators=(",", ":"))
         self._raw_file.write(text.encode("utf-8") + b"\n")
         self._raw_file.flush()
         return offset
@@ -129,7 +139,10 @@ class SessionRecorder:
                 seq=self._next_seq(),
                 server=self.server_name,
                 tool_name=params.get("name", ""),
-                arguments=params.get("arguments") or {},
+                # F-04: secret-shaped values redacted before this ever
+                # reaches disk. result isn't redacted here — result_shape
+                # never carries payload values in the first place.
+                arguments=redact_secrets(params.get("arguments") or {}),
                 result_shape=compute_result_shape(result),
                 raw_frame_offset=raw_frame_offset,
             )

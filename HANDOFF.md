@@ -30,15 +30,12 @@ claim.
 
 ## Where we actually are right now
 
-**Zero code written.** Everything above is Gate 0 / pre-Gate-0 material. The single
-most important thing anyone picking this up needs to internalize: **this project has
-a spec:code ratio of infinity, and that ratio going down is the only progress that
-counts from here.** Do not write a fourth planning document. If something in SPEC.md
-seems wrong once code exists, fix it via CHANGELOG-tracked amendment, not a rewrite.
-
-The immediate next action is Gate 0 in PHASES.md — two days, no code, five checklist
-items (competitor survey, read AgentAssay, extract MCPEvol-Bench operators, reserve
-the PyPI name, pick the dogfood pairing).
+Check PHASES.md's checkboxes for current status — that's the live source of truth
+for what's built, not this file. This file's job is orientation and things-easy-to-
+get-wrong, not a progress snapshot, because a snapshot here will always drift out of
+date as work lands. If PHASES.md's Gate 1 checklist is partially checked, you're
+mid-Gate-1; read CHANGELOG.md's most recent entries for anything that changed
+reasoning along the way (e.g. the O4 operator correction, v1.0.3).
 
 ## Things that are easy to get wrong if you skim instead of read
 

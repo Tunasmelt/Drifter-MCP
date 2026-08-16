@@ -124,7 +124,9 @@ async def test_recorded_session_reconstructs_the_tool_call_sequence(tmp_path):
 
     tools_list_records = [r for r in records if isinstance(r, ToolsList)]
     assert len(tools_list_records) == 1
-    assert [t.name for t in tools_list_records[0].tools_served] == ["add"]
+    # fake_server.py exposes "add" and "echo" (the latter added for F-04's
+    # redaction test) — order isn't a contract, so compare as a set.
+    assert {t.name for t in tools_list_records[0].tools_served} == {"add", "echo"}
     assert tools_list_records[0].tools_raw == tools_list_records[0].tools_served  # no mutate/ yet
 
     tool_call_records = [r for r in records if isinstance(r, ToolCall)]
