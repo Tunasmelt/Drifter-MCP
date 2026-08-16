@@ -1,4 +1,5 @@
-"""Structured recording (F-02) and raw frame mirroring (F-03).
+"""Structured recording (F-02), raw frame mirroring (F-03), and
+environment fingerprinting (F-05).
 
 Deliberately kept separate from reader.py (CLAUDE.md, PHASES.md Gate 1): a
 shared read/write module invites silent format drift between what's written
@@ -6,9 +7,19 @@ and what's read.
 
 `SessionRecorder.observe` is built to be `record/proxy.py`'s `on_message`
 hook: a pure observer that never alters what crosses the wire, only what
-gets written to disk. It correlates each `tools/list`/`tools/call` request
-with its matching response (by JSON-RPC id) to build one `ToolsList` /
-`ToolCall` record per exchange.
+gets written to disk. It correlates each `initialize`/`tools/list`/
+`tools/call` request with its matching response (by JSON-RPC id) to build
+one `SessionStart` / `ToolsList` / `ToolCall` record per exchange.
+
+SessionStart's environment fingerprint needs data that only exists once
+the `initialize` handshake and the first `tools/list` have been observed
+(agent identity, server info, and the tool manifest respectively) — so
+unlike Prompt 1's placeholder, SessionStart is no longer written the
+instant the recorder is constructed. It's flushed lazily, the first time
+there's something to write after it, using whatever identity info has been
+gathered so far; `close()` flushes it regardless as a safety net for a
+session that ends before any tool call happens. It still always ends up
+first in the file (seq=0), since nothing else is written before it.
 
 Only `result_shape` (type, keys, array lengths) is ever computed from a
 response body — never the payload itself. Argument values and the raw
@@ -27,9 +38,12 @@ from typing import Any
 
 from mcp_types import JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
+from record.fingerprint import build_environment, compute_tool_manifest_hash
 from record.proxy import Direction
 from record.redact import redact_rpc_payload, redact_secrets
-from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+from record.schema import SessionStart, ToolCall, ToolDescriptor, ToolsList
+
+_TRACKED_METHODS = ("initialize", "tools/list", "tools/call")
 
 
 def compute_result_shape(result: Any) -> dict:
@@ -48,9 +62,20 @@ def compute_result_shape(result: Any) -> dict:
 class SessionRecorder:
     """Writes one session's JSONL + raw frame mirror as messages arrive."""
 
-    def __init__(self, session_dir: Path, raw_dir: Path, server_name: str, session_id: str | None = None) -> None:
+    def __init__(
+        self,
+        session_dir: Path,
+        raw_dir: Path,
+        server_name: str,
+        session_id: str | None = None,
+        model_name: str | None = None,
+    ) -> None:
         self.session_id = session_id or uuid.uuid4().hex
         self.server_name = server_name
+        # MCP traffic has no concept of "which model" — the protocol only
+        # ever exposes agent/server identity (SPEC.md §15's limitation 2).
+        # Sourced out-of-band by the caller (env var, later drifter.yaml).
+        self.model_name = model_name
 
         session_dir.mkdir(parents=True, exist_ok=True)
         raw_dir.mkdir(parents=True, exist_ok=True)
@@ -67,17 +92,12 @@ class SessionRecorder:
         # JSON-RPC request id -> what we'll need once its response arrives.
         self._pending: dict[Any, dict[str, Any]] = {}
 
-        self._write_record(
-            SessionStart(
-                session_id=self.session_id,
-                seq=self._next_seq(),
-                started_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                # F-05 (environment fingerprinting) isn't built yet; the
-                # field exists per SPEC.md §6 but stays empty until then.
-                environment=Environment(),
-                raw_frame_offset=0,
-            )
-        )
+        self._started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        self._first_raw_offset: int | None = None
+        self._session_start_written = False
+        self._agent_identity: str | None = None
+        self._server_versions: dict[str, str] = {}
+        self._tool_manifest_hash: str | None = None
 
     def _next_seq(self) -> int:
         seq = self._seq
@@ -98,6 +118,8 @@ class SessionRecorder:
         most. Returns the byte offset the frame was written at.
         """
         offset = self._raw_file.tell()
+        if self._first_raw_offset is None:
+            self._first_raw_offset = offset
         raw = message.model_dump(mode="json", by_alias=True, exclude_unset=True)
         redacted = redact_rpc_payload(raw)
         text = json.dumps(redacted, separators=(",", ":"))
@@ -109,6 +131,29 @@ class SessionRecorder:
         self._jsonl_file.write(record.model_dump_json() + "\n")
         self._jsonl_file.flush()
 
+    def _ensure_session_start_written(self) -> None:
+        """Flushes SessionStart using whatever identity info is known so
+        far. Idempotent, and always the first record written (seq=0),
+        since nothing else is written before this is called.
+        """
+        if self._session_start_written:
+            return
+        self._session_start_written = True
+        self._write_record(
+            SessionStart(
+                session_id=self.session_id,
+                seq=self._next_seq(),
+                started_at=self._started_at,
+                environment=build_environment(
+                    agent_identity=self._agent_identity,
+                    model_name=self.model_name,
+                    server_versions=self._server_versions,
+                    tool_manifest_hash=self._tool_manifest_hash,
+                ),
+                raw_frame_offset=self._first_raw_offset or 0,
+            )
+        )
+
     def observe(self, direction: Direction, message) -> None:
         """The `on_message` hook passed to `record.proxy.run_passthrough_proxy`."""
         if isinstance(message, Exception):
@@ -117,15 +162,33 @@ class SessionRecorder:
         offset = self._write_raw_frame(message.message)
         rpc = message.message
 
-        if isinstance(rpc, JSONRPCRequest) and rpc.method in ("tools/list", "tools/call"):
+        if isinstance(rpc, JSONRPCRequest) and rpc.method in _TRACKED_METHODS:
             self._pending[rpc.id] = {"method": rpc.method, "params": rpc.params or {}}
+            if rpc.method == "initialize":
+                client_info = (rpc.params or {}).get("clientInfo") or {}
+                name, version = client_info.get("name"), client_info.get("version")
+                if name:
+                    self._agent_identity = f"{name}/{version}" if version else name
         elif isinstance(rpc, JSONRPCResponse):
             pending = self._pending.pop(rpc.id, None)
             if pending is None:
-                return  # not a request this recorder tracks (e.g. initialize)
-            if pending["method"] == "tools/call":
+                return  # not a request this recorder tracks
+            if pending["method"] == "initialize":
+                server_info = (rpc.result or {}).get("serverInfo") or {}
+                name, version = server_info.get("name"), server_info.get("version")
+                if name:
+                    self._server_versions = {name: version or ""}
+            elif pending["method"] == "tools/call":
+                self._ensure_session_start_written()
                 self._write_tool_call(pending["params"], rpc.result, offset)
             elif pending["method"] == "tools/list":
+                # Must run before _ensure_session_start_written(): the
+                # manifest hash has to be known *before* SessionStart is
+                # flushed, or it's flushed with tool_manifest_hash still
+                # None and there's no going back — SessionStart is only
+                # ever written once.
+                self._note_tool_manifest(rpc.result or {})
+                self._ensure_session_start_written()
                 self._write_tools_list(rpc.result, offset)
         elif isinstance(rpc, JSONRPCError):
             # Gate 1 doesn't model call failures yet; drop the pending
@@ -147,6 +210,18 @@ class SessionRecorder:
                 raw_frame_offset=raw_frame_offset,
             )
         )
+
+    def _note_tool_manifest(self, result: dict) -> None:
+        """Records the manifest hash — must run before the first
+        SessionStart flush (see the call site in observe()).
+
+        Captured the first time any tools/list completes. Gate 1 doesn't
+        re-list mid-session, so "first" and "only" coincide for now; a
+        later gate that does needs to decide whether a manifest change
+        mid-session should re-fingerprint.
+        """
+        if self._tool_manifest_hash is None:
+            self._tool_manifest_hash = compute_tool_manifest_hash(result.get("tools", []))
 
     def _write_tools_list(self, result: dict, raw_frame_offset: int) -> None:
         tools = [
@@ -170,5 +245,9 @@ class SessionRecorder:
         )
 
     def close(self) -> None:
+        # Safety net: a session that ends before any tools/list or
+        # tools/call still gets a SessionStart record, using whatever
+        # identity info (e.g. just the initialize handshake) was seen.
+        self._ensure_session_start_written()
         self._jsonl_file.close()
         self._raw_file.close()

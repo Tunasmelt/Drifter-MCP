@@ -6,6 +6,21 @@ not just a diff.
 
 ---
 
+## v1.0.4 — SPEC.md §3 principle 9 clarified
+
+**Change:** Gate 1 Prompt 5 (F-05, environment fingerprinting) implemented every
+environment field — `agent_identity`, `model_name`, `tool_manifest_hash`,
+`server_versions` — as equally fatal on mismatch, with none treated as advisory.
+Principle 9's original wording ("must match... or the comparison is invalid") was
+ambiguous enough that resolving whether this was intended took a full options menu to
+work through. Field-level fatality is now stated explicitly in SPEC.md §3 principle 9
+as a deliberate choice, not just default behavior that happened to land this way —
+tied to SPEC.md §15 limitation 4 (a tool's behavior can change with an unchanged
+schema), which is exactly the case a server-version mismatch might be catching. No
+behavior changed; this closes a real ambiguity in what was already implemented.
+
+---
+
 ## v1.0.3 — Independent re-verification catches an interpretation error
 
 **Change:** User independently fetched and pasted the full MCPEvol-Bench paper text

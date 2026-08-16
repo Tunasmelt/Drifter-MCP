@@ -9,6 +9,11 @@ string; this module is intentionally usable standalone until then.
 Recording paths default to SPEC.md §11's `record: {dir: .drifter/runs}`
 default, overridable via DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR — enough to
 keep tests hermetic without building the full config loader early.
+
+DRIFTER_MODEL_NAME is the same kind of stopgap for F-05's environment
+fingerprint: MCP traffic never reveals which model the agent is running
+(SPEC.md §15's limitation 2), so it can only ever be supplied out-of-band
+— an env var now, `drifter.yaml` once the config loader exists.
 """
 
 from __future__ import annotations
@@ -33,7 +38,8 @@ def main() -> None:
 
     runs_dir = Path(os.environ.get("DRIFTER_RUNS_DIR", ".drifter/runs"))
     raw_dir = Path(os.environ.get("DRIFTER_RAW_DIR", ".drifter/raw"))
-    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=command)
+    model_name = os.environ.get("DRIFTER_MODEL_NAME")
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=command, model_name=model_name)
 
     try:
         anyio.run(run_passthrough_proxy, server, recorder.observe)

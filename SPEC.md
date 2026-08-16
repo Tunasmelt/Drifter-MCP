@@ -48,7 +48,14 @@ These survived a full audit and are not open for casual revision.
    its replay fidelity, and which calibration defaults a verdict depends on.
 9. **Environment fingerprinting.** Every trajectory records agent/model/server versions
    and a tool-manifest hash. Baseline and mutation arms must match except for the
-   intended mutation, or the comparison is invalid.
+   intended mutation, or the comparison is invalid. All environment fields are fatal
+   on mismatch by default, including `server_versions` and `model_name` — this is a
+   deliberate choice, not an oversight: SPEC.md §15 limitation 4 (Drifter cannot
+   detect a tool whose behavior changed while its schema stayed identical) means a
+   server version bump with an unchanged manifest is exactly the case where silently
+   proceeding would be most dangerous. If real friction from this shows up in a later
+   gate (e.g. fixture server patch bumps blocking valid comparisons), the fix is an
+   explicit `ignore_fields` override at the call site — never a silent default change.
 10. **Secure by default.** No telemetry. No live writes without explicit authorization.
     Secrets redacted by default. Mutation transformations logged and auditable.
 
@@ -311,3 +318,9 @@ when*.
    compliance.
 6. Full setup (safety policy, task approval, assertions) is not five minutes.
    `drifter observe` is the only genuinely zero-config path.
+7. MCP protocol carries no model-identity signal. The proxy can determine agent and
+   server identity from the wire (the `initialize` handshake's `clientInfo`/
+   `serverInfo`), but never which model is running — that's a different claim from
+   limitation 2's "no model reasoning." `environment.model_name` is sourced
+   out-of-band (`DRIFTER_MODEL_NAME` env var; `drifter.yaml` once the config loader
+   exists), not from observed traffic.

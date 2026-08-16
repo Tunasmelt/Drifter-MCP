@@ -122,6 +122,16 @@ async def test_recorded_session_reconstructs_the_tool_call_sequence(tmp_path):
     assert [r.seq for r in records] == list(range(len(records)))
     assert isinstance(records[0], SessionStart)
 
+    # F-05: environment fingerprinting is populated from what the recorder
+    # actually observed on the wire — the SDK's default clientInfo, the
+    # fixture server's declared identity, and a real tool-manifest hash —
+    # not left empty the way Prompt 1's placeholder record was.
+    env = records[0].environment
+    assert env.agent_identity == "mcp/0.1.0"  # mcp.client.session.DEFAULT_CLIENT_INFO
+    assert env.server_versions == {"fake-server": ""}  # fake_server.py declares no version
+    assert env.tool_manifest_hash is not None and env.tool_manifest_hash.startswith("sha256:")
+    assert env.fingerprint is not None and env.fingerprint.startswith("sha256:")
+
     tools_list_records = [r for r in records if isinstance(r, ToolsList)]
     assert len(tools_list_records) == 1
     # fake_server.py exposes "add" and "echo" (the latter added for F-04's

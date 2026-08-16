@@ -67,6 +67,10 @@ and importing or closely mirroring it would obligate this project under that lic
 Implementing the same published statistical technique independently is fine and
 expected; copying their expression of it is not.
 
+This project's recurring bug pattern (Prompts 1, 3, 5) is not missing fields but
+fields populated with plausible-but-wrong values due to ordering/timing — prefer
+tests that assert exact expected values over tests that assert presence/non-null.
+
 ## When something in the spec turns out to be wrong
 
 It will happen — SPEC.md's calibration register exists because several of its
