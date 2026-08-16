@@ -6,6 +6,22 @@ not just a diff.
 
 ---
 
+## v1.0.5 — `timestamp` added to SPEC.md §6's commit-one field list
+
+**Change:** Gate 1 Prompt 6 (F-06/F-07 trajectory segmentation) requires idle-gap
+heuristic segmentation, which needs a per-call wall-clock timestamp to measure elapsed
+time between calls — but no `timestamp` field existed anywhere in SPEC.md §6's schema
+description or in `record/schema.py` as committed through Prompt 5. FEATURES.md's F-28
+(signature grouping) already presupposed one implicitly ("normalizes away request IDs,
+timestamps, and volatile argument values"), so this was a real gap in what SPEC.md §6
+specified, not a new requirement being introduced. Added `timestamp` to the "cannot be
+added retroactively" list (transient real-time data — an already-recorded call can't
+be retroactively timestamped) and to `ToolCall`, `ToolsList`, and `TrajectoryEnd` in
+`record/schema.py`. Schema stays at version `0.1`: Gate 1's golden fixture (Prompt 9)
+hasn't been committed yet, so nothing external depends on the pre-timestamp shape.
+
+---
+
 ## v1.0.4 — SPEC.md §3 principle 9 clarified
 
 **Change:** Gate 1 Prompt 5 (F-05, environment fingerprinting) implemented every

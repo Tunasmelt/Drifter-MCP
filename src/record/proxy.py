@@ -16,6 +16,7 @@ Prompt 2's exact passthrough-only behavior.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import AsyncIterable, Callable
 from enum import Enum
 
@@ -24,6 +25,8 @@ from anyio.abc import CancelScope, ObjectSendStream
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
+
+logger = logging.getLogger(__name__)
 
 
 class Direction(Enum):
@@ -66,6 +69,33 @@ async def _pump(
     forwarded) since there is no message to pass unmodified. Either way,
     the whole proxy tears down together — one side's connection ending
     isn't a state a passthrough proxy should try to survive.
+
+    Closing `sink` in `finally` is load-bearing, not tidiness: `sink` is
+    the other pump's `source`'s *sibling* stream — e.g. `agent_write` here
+    is what `stdio_server()`'s own internal `stdout_writer()` task reads
+    from via its paired receiver. Nothing else closes it: `stdio_server()`
+    hands it to the caller and expects the caller to close it, and unlike
+    `stdio_client()` (which defensively closes its own write_stream during
+    its shutdown regardless of what the caller did), it has no fallback of
+    its own. Without this, that task blocks forever waiting for a message
+    or a close that never comes, so `stdio_server()`'s context manager
+    never exits, `run_passthrough_proxy` never returns, and the process
+    survives only until an external timeout kills it — silently losing
+    anything a caller (record/writer.py's close()) would have flushed on
+    a clean return.
+
+    `sink.aclose()` is wrapped in its own try/except: if the `try` block
+    above is already propagating an exception (a parse error, or a send
+    failure) and `sink.aclose()` then *also* raised, Python's `finally`
+    semantics would let the aclose() failure silently replace the
+    original as what actually propagates out of this function — the real
+    cause would only survive as `__context__`, invisible to a plain
+    `except SomeType:` upstream. For the concrete stream types this pump
+    is actually called with (`MemoryObjectSendStream` via `stdio_client`,
+    `ContextSendStream` via `stdio_server`), `aclose()` is a pure,
+    idempotent state update with no I/O and cannot currently raise — this
+    is a safety net against that ceasing to be true (e.g. a future
+    transport swap), not a fix for an observed failure.
     """
     try:
         async with source:
@@ -77,3 +107,7 @@ async def _pump(
                 await sink.send(message)
     finally:
         cancel_scope.cancel()
+        try:
+            await sink.aclose()
+        except Exception:
+            logger.exception("sink.aclose() failed while tearing down a proxy pump (%s)", direction)

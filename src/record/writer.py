@@ -26,6 +26,13 @@ response body — never the payload itself. Argument values and the raw
 frame mirror's payload fields are passed through F-04's redaction layer
 (record/redact.py) before anything touches disk — see
 tests/record/test_redaction.py for the enforced guarantee.
+
+Trajectory segmentation (F-06/F-07/F-08, record/segment.py) runs on every
+`tools/call`: trace-context grouping when `_meta.traceparent` is present,
+idle-gap-plus-data-flow heuristic fallback otherwise. A heuristic
+trajectory closing mid-session emits its TrajectoryEnd before the call
+that closed it is written; any trajectories still open at `close()` are
+flushed then.
 """
 
 from __future__ import annotations
@@ -38,12 +45,18 @@ from typing import Any
 
 from mcp_types import JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
+from record.calibration import Calibration, load_calibration
 from record.fingerprint import build_environment, compute_tool_manifest_hash
 from record.proxy import Direction
 from record.redact import redact_rpc_payload, redact_secrets
-from record.schema import SessionStart, ToolCall, ToolDescriptor, ToolsList
+from record.schema import SessionStart, ToolCall, ToolDescriptor, ToolsList, TrajectoryEnd
+from record.segment import Trajectory, TrajectoryTracker, extract_trace_id
 
 _TRACKED_METHODS = ("initialize", "tools/list", "tools/call")
+
+
+def _now() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def compute_result_shape(result: Any) -> dict:
@@ -69,6 +82,7 @@ class SessionRecorder:
         server_name: str,
         session_id: str | None = None,
         model_name: str | None = None,
+        calibration: Calibration | None = None,
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex
         self.server_name = server_name
@@ -94,10 +108,17 @@ class SessionRecorder:
 
         self._started_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         self._first_raw_offset: int | None = None
+        self._last_raw_offset = 0
         self._session_start_written = False
         self._agent_identity: str | None = None
         self._server_versions: dict[str, str] = {}
         self._tool_manifest_hash: str | None = None
+
+        calibration = calibration or load_calibration()
+        self._tracker = TrajectoryTracker(
+            idle_gap_seconds=calibration.segmentation.idle_gap_seconds,
+            heuristic_confidence=calibration.segmentation.heuristic_confidence,
+        )
 
     def _next_seq(self) -> int:
         seq = self._seq
@@ -120,6 +141,7 @@ class SessionRecorder:
         offset = self._raw_file.tell()
         if self._first_raw_offset is None:
             self._first_raw_offset = offset
+        self._last_raw_offset = offset
         raw = message.model_dump(mode="json", by_alias=True, exclude_unset=True)
         redacted = redact_rpc_payload(raw)
         text = json.dumps(redacted, separators=(",", ":"))
@@ -196,18 +218,47 @@ class SessionRecorder:
             self._pending.pop(rpc.id, None)
 
     def _write_tool_call(self, params: dict, result: dict, raw_frame_offset: int) -> None:
+        seq = self._next_seq()
+        arguments = params.get("arguments") or {}
+
+        # F-06/F-07/F-08: segment before writing, so a closing heuristic
+        # trajectory's TrajectoryEnd lands before the call that closed it.
+        trace_id = extract_trace_id(params.get("_meta"))
+        outcome = self._tracker.record_call(seq, trace_id, arguments, result)
+        if outcome.closed is not None:
+            self._write_trajectory_end(outcome.closed)
+
         self._write_record(
             ToolCall(
                 session_id=self.session_id,
-                seq=self._next_seq(),
+                seq=seq,
+                timestamp=_now(),
                 server=self.server_name,
                 tool_name=params.get("name", ""),
                 # F-04: secret-shaped values redacted before this ever
                 # reaches disk. result isn't redacted here — result_shape
                 # never carries payload values in the first place.
-                arguments=redact_secrets(params.get("arguments") or {}),
+                arguments=redact_secrets(arguments),
                 result_shape=compute_result_shape(result),
+                references=outcome.references,
                 raw_frame_offset=raw_frame_offset,
+            )
+        )
+
+    def _write_trajectory_end(self, trajectory: Trajectory) -> None:
+        self._write_record(
+            TrajectoryEnd(
+                session_id=self.session_id,
+                seq=self._next_seq(),
+                timestamp=_now(),
+                trajectory_id=trajectory.trajectory_id,
+                call_seqs=trajectory.call_seqs,
+                segmentation_method=trajectory.method,
+                segmentation_confidence=trajectory.confidence,
+                # No single wire frame corresponds to a trajectory
+                # boundary (it's derived from several calls); the most
+                # recent frame observed is the closest meaningful anchor.
+                raw_frame_offset=self._last_raw_offset,
             )
         )
 
@@ -236,6 +287,7 @@ class SessionRecorder:
             ToolsList(
                 session_id=self.session_id,
                 seq=self._next_seq(),
+                timestamp=_now(),
                 server=self.server_name,
                 # No mutate/ yet (Gate 3+) — raw and served are identical.
                 tools_raw=tools,
@@ -249,5 +301,7 @@ class SessionRecorder:
         # tools/call still gets a SessionStart record, using whatever
         # identity info (e.g. just the initialize handshake) was seen.
         self._ensure_session_start_written()
+        for trajectory in self._tracker.close_all():
+            self._write_trajectory_end(trajectory)
         self._jsonl_file.close()
         self._raw_file.close()

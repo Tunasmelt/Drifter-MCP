@@ -104,6 +104,66 @@ async def test_proxy_is_byte_for_byte_transparent(tmp_path):
 
 
 @pytest.mark.anyio
+async def test_run_passthrough_proxy_terminates_within_a_bounded_timeout(tmp_path):
+    """The actual regression guard for the sink.aclose() shutdown bug in
+    record/proxy.py's _pump (see CHANGELOG/commit history).
+
+    Every other test in this module only checks correctness of what got
+    recorded — AFTER the proxy already returned. None of them would have
+    failed if run_passthrough_proxy hung: every proxied test in this file,
+    from Prompt 2 through Prompt 5, was silently completing via
+    stdio_client's own internal ~2-4s kill-escalation rescuing a hung
+    subprocess, not via run_passthrough_proxy returning on its own —
+    confirmed by reverting the fix and observing the same tests still
+    pass, just slower, with no clean-return signal ever firing.
+
+    An earlier version of this test wrapped the whole spawn-handshake-
+    call-disconnect sequence in one `anyio.fail_after(5)`. That measured
+    the wrong thing: `python -m record`'s own interpreter startup (`mcp`
+    pulls in starlette/uvicorn/jsonschema/etc., paid twice — once for
+    Drifter's own process, once for the fixture server it spawns) alone
+    took ~2.8-3.5s, leaving a dangerously narrow, machine-dependent gap
+    before a genuinely hung shutdown's ~4.4-5.0s (confirmed empirically
+    against both this fix and a reverted copy of the bug) — a 5s bound
+    passed on the broken code in one of four runs. Timing only the
+    teardown itself — after the handshake and call are already done —
+    removes that noise entirely: a healthy teardown is near-instant,
+    while a hung one is bounded below by stdio_client's own internal
+    ~2s-before-even-attempting-SIGTERM grace period, giving a wide,
+    reliable margin instead of a coin flip.
+    """
+    proxied_params = _proxied_params(tmp_path / "runs", tmp_path / "raw")
+    teardown_start = None
+
+    async def _exchange_then_disconnect():
+        nonlocal teardown_start
+        async with stdio_client(proxied_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                await session.call_tool("add", {"a": 1, "b": 1})
+            # ClientSession's own (fast, unrelated) cleanup has already run;
+            # everything from here to the end of this function is
+            # stdio_client's __aexit__ — the actual proxy-subprocess
+            # teardown this test targets.
+            teardown_start = anyio.current_time()
+
+    # Generous outer bound as an absolute circuit-breaker only — the real
+    # assertion is the tight one below. A manually-split __aenter__/
+    # __aexit__ with a second cancel scope wrapped around just the exit
+    # was tried and rejected: it violates anyio's cancel-scope nesting
+    # ("Attempted to exit a cancel scope that isn't the current task's
+    # current cancel scope") since a new scope can't be introduced between
+    # an already-open context manager's enter and exit. Wrapping the
+    # whole coroutine call from the outside, and measuring the interior
+    # timestamp above instead, avoids that entirely.
+    with anyio.fail_after(10):
+        await _exchange_then_disconnect()
+
+    teardown_elapsed = anyio.current_time() - teardown_start
+    assert teardown_elapsed < 1.0, f"shutdown took {teardown_elapsed:.2f}s — may be hanging"
+
+
+@pytest.mark.anyio
 async def test_recorded_session_reconstructs_the_tool_call_sequence(tmp_path):
     runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
     proxied_params = _proxied_params(runs_dir, raw_dir)

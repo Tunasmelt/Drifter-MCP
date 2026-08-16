@@ -1,0 +1,35 @@
+# Drifter calibration register (SPEC.md §9).
+#
+# Every constant below is an engineering default, not a research finding —
+# each ships as a documented guess until re-derived from real corpus data
+# after Gate 2 (PHASES.md). Don't defend these values as-is before then.
+# User-overridable: edit this file directly.
+
+semantic_weight: 0.8
+fidelity_floor: 0.70
+fidelity_flag_threshold: 0.90
+
+effect_size:
+  inconclusive: 1.0
+  regression: 2.0
+
+segmentation:
+  # F-07: idle gap (seconds) above which heuristic segmentation starts a
+  # new trajectory, unless a data-flow reference connects the calls.
+  idle_gap_seconds: 30
+  # Not in SPEC.md §9's original table — added here per CLAUDE.md's
+  # invariant that new invented constants belong in this file, not
+  # hardcoded. F-06's trace-context confidence (0.99) is a fixed
+  # algorithmic value stated directly in FEATURES.md, not a guess, so it
+  # stays in code; this one — how confident heuristic (non-trace-context)
+  # grouping is — has no such basis and is a guess like the rest.
+  heuristic_confidence: 0.6
+
+baseline:
+  repeats: 10
+
+mutation:
+  repeats:
+    screen: 1
+    confirm: 5
+    resolve: 20

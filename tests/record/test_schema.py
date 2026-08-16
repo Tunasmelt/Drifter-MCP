@@ -33,6 +33,7 @@ MODELS = [
     ToolsList(
         session_id="sess_abc123",
         seq=1,
+        timestamp="2026-08-16T19:40:01Z",
         server="crm",
         tools_raw=[
             ToolDescriptor(
@@ -57,6 +58,7 @@ MODELS = [
     ToolCall(
         session_id="sess_abc123",
         seq=2,
+        timestamp="2026-08-16T19:40:02Z",
         server="crm",
         tool_name="get_customer",
         arguments={"customer_id": "cust_42"},
@@ -71,6 +73,7 @@ MODELS = [
     TrajectoryEnd(
         session_id="sess_abc123",
         seq=3,
+        timestamp="2026-08-16T19:40:03Z",
         trajectory_id="traj_001",
         call_seqs=[2],
         segmentation_method="heuristic",
@@ -91,6 +94,7 @@ FULLY_POPULATED_MODELS = [
     ToolCall(
         session_id="sess_abc123",
         seq=4,
+        timestamp="2026-08-16T19:40:04Z",
         server="crm",
         tool_name="get_customer",
         arguments={"customerId": "cust_42"},
@@ -109,6 +113,7 @@ FULLY_POPULATED_MODELS = [
     TrajectoryEnd(
         session_id="sess_abc123",
         seq=5,
+        timestamp="2026-08-16T19:40:05Z",
         trajectory_id="traj_002",
         call_seqs=[4],
         segmentation_method="trace_context",
@@ -147,9 +152,10 @@ def test_retroactive_fields_survive_with_real_values_not_just_defaults():
     assert restored_call.references[0].source_path == "$.result.id"
     assert restored_call.mutation_inverse == {"customerId": "customer_id"}
     assert restored_call.result_provenance == "real"
+    assert restored_call.timestamp == "2026-08-16T19:40:04Z"  # exact value, not just non-None
 
     assert restored_trajectory.baseline_fidelity == 0.94
-    assert restored_trajectory.baseline_fidelity is not None
+    assert restored_trajectory.timestamp == "2026-08-16T19:40:05Z"
 
     # And on the ToolsList/ToolDescriptor instance already in MODELS:
     tools_list = next(m for m in MODELS if type(m).__name__ == "ToolsList")

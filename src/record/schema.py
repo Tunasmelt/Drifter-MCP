@@ -109,6 +109,9 @@ class ToolsList(BaseModel):
     record_type: Literal["tools_list"] = "tools_list"
     session_id: str
     seq: int
+    # ISO 8601 UTC, captured when the response was observed. Cannot be
+    # added retroactively — see the note on ToolCall.timestamp below.
+    timestamp: str
     server: str
     tools_raw: list[ToolDescriptor]
     tools_served: list[ToolDescriptor]
@@ -124,6 +127,13 @@ class ToolCall(BaseModel):
     record_type: Literal["tool_call"] = "tool_call"
     session_id: str
     seq: int
+    # ISO 8601 UTC, captured when the response was observed. Added in
+    # Prompt 6 (CHANGELOG.md) — F-07's idle-gap segmentation and F-28's
+    # signature normalization both presuppose a per-call timestamp exists,
+    # but SPEC.md §6's original field list never named one. Genuinely
+    # transient data: cannot be added retroactively to an already-recorded
+    # call, so it belongs on this same list going forward.
+    timestamp: str
     server: str
     tool_name: str
     arguments: dict = {}
@@ -148,6 +158,8 @@ class TrajectoryEnd(BaseModel):
     record_type: Literal["trajectory_end"] = "trajectory_end"
     session_id: str
     seq: int
+    # ISO 8601 UTC, when this trajectory was closed (see ToolCall.timestamp).
+    timestamp: str
     trajectory_id: str
     call_seqs: list[int] = []
     segmentation_method: SegmentationMethod | None = None

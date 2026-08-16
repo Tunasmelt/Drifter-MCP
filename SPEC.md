@@ -125,7 +125,7 @@ One JSONL file per session, `schema_version` on every line, raw JSON-RPC frames 
 to `raw/` as a re-parse safety net. Fields that cannot be added retroactively (must be
 recorded from commit one): `references` (data-flow between calls), `result_provenance`
 (real vs synthetic), `tools_raw` and `tools_served` (both, always), `environment.fingerprint`,
-`seq`, `risk`, `raw_frame_offset`, `mutation_inverse`, `classification_source`,
+`seq`, `timestamp`, `risk`, `raw_frame_offset`, `mutation_inverse`, `classification_source`,
 `baseline_fidelity`.
 
 Rule for every other field: record it only if it cannot be derived later from what *is*
@@ -324,3 +324,11 @@ when*.
    limitation 2's "no model reasoning." `environment.model_name` is sourced
    out-of-band (`DRIFTER_MODEL_NAME` env var; `drifter.yaml` once the config loader
    exists), not from observed traffic.
+8. Heuristic segmentation (F-07) has no signal to separate two calls that are
+   unrelated by content when they arrive with no idle gap between them and neither
+   carries trace context — it groups them into one trajectory regardless. Idle gap
+   and data-flow connectivity are the only two signals the heuristic has; content
+   similarity isn't one of them, by design (SPEC.md §3 principle 7's "structural, not
+   free-text" applies to segmentation too, not just mutation). Trace context (F-06)
+   doesn't have this blind spot — it's the reason F-06 is checked first and is
+   authoritative when present.
