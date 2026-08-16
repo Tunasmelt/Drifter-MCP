@@ -1,0 +1,22 @@
+[project]
+name = "mcp-drifter"
+version = "0.1.0"
+description = "Proxy-based regression-testing harness for MCP tool interfaces."
+requires-python = ">=3.11"
+dependencies = []
+
+[project.scripts]
+drifter = "cli.app:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["record", "replay", "mutate", "evaluate", "mine", "policy", "cli"]
