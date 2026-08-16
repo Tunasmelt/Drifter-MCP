@@ -7,13 +7,17 @@ the real server (the child process's stdin/stdout).
 
 Framing on both sides comes from the official MCP SDK's stdio transport
 (`mcp.client.stdio.stdio_client`, `mcp.server.stdio.stdio_server`) rather
-than hand-rolled JSON-RPC parsing, per FEATURES.md F-01. No recording, no
-transformation of frames — that starts at F-02.
+than hand-rolled JSON-RPC parsing, per FEATURES.md F-01.
+
+`on_message` (optional) is a pure observer hook for record/writer.py to tap
+into: it never alters what's forwarded, and its default (None) reproduces
+Prompt 2's exact passthrough-only behavior.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterable
+from collections.abc import AsyncIterable, Callable
+from enum import Enum
 
 import anyio
 from anyio.abc import CancelScope, ObjectSendStream
@@ -22,7 +26,20 @@ from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
 
 
-async def run_passthrough_proxy(server: StdioServerParameters) -> None:
+class Direction(Enum):
+    """Which side of the proxy a message is travelling toward."""
+
+    AGENT_TO_SERVER = "agent_to_server"
+    SERVER_TO_AGENT = "server_to_agent"
+
+
+MessageObserver = Callable[[Direction, "SessionMessage | Exception"], None]
+
+
+async def run_passthrough_proxy(
+    server: StdioServerParameters,
+    on_message: MessageObserver | None = None,
+) -> None:
     """Spawns `server` and pipes frames to/from our own stdio, unmodified.
 
     Runs until either side closes its connection, then tears the other
@@ -32,14 +49,16 @@ async def run_passthrough_proxy(server: StdioServerParameters) -> None:
     async with stdio_client(server) as (server_read, server_write):
         async with stdio_server() as (agent_read, agent_write):
             async with anyio.create_task_group() as tg:
-                tg.start_soon(_pump, agent_read, server_write, tg.cancel_scope)
-                tg.start_soon(_pump, server_read, agent_write, tg.cancel_scope)
+                tg.start_soon(_pump, agent_read, server_write, tg.cancel_scope, Direction.AGENT_TO_SERVER, on_message)
+                tg.start_soon(_pump, server_read, agent_write, tg.cancel_scope, Direction.SERVER_TO_AGENT, on_message)
 
 
 async def _pump(
     source: AsyncIterable[SessionMessage | Exception],
     sink: ObjectSendStream[SessionMessage],
     cancel_scope: CancelScope,
+    direction: Direction,
+    on_message: MessageObserver | None,
 ) -> None:
     """Forwards every message from source to sink until source closes.
 
@@ -51,6 +70,8 @@ async def _pump(
     try:
         async with source:
             async for message in source:
+                if on_message is not None:
+                    on_message(direction, message)
                 if isinstance(message, Exception):
                     raise message
                 await sink.send(message)

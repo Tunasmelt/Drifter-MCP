@@ -1,10 +1,10 @@
-"""Integration test for record/proxy.py (F-01).
+"""Integration tests for record/proxy.py (F-01) and record/writer.py +
+record/reader.py (F-02, F-03).
 
 "Done when" per FEATURES.md: an agent using the proxied server behaves
 identically to using the server directly, with zero added latency the user
-would notice. This test drives the same requests against the fake fixture
-server twice — once directly, once through Drifter's proxy — and asserts
-the responses are identical.
+would notice (F-01); and a recorded session, read back, exactly reconstructs
+the sequence of tool calls that occurred (F-02).
 
 Comparing `ClientSession`'s parsed result objects (`Tool`, `CallToolResult`)
 after `.model_dump()` would only prove that two independent parses of two
@@ -19,6 +19,7 @@ drives the handshake normally. The raw logs from the two runs are then
 compared directly.
 """
 
+import json
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -27,6 +28,9 @@ import anyio
 import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
+
+from record.reader import read_session
+from record.schema import SessionStart, ToolCall, ToolsList
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
 
@@ -70,12 +74,25 @@ async def _list_and_call(params: StdioServerParameters) -> list[str]:
         return raw_log
 
 
+def _proxied_params(runs_dir: Path | None = None, raw_dir: Path | None = None) -> StdioServerParameters:
+    """Params to spawn Drifter itself as the proxied server (see record/__main__.py).
+
+    Recording paths default to `.drifter/runs` / `.drifter/raw` relative to
+    the subprocess's cwd; tests override both via env so they never touch
+    the real repo's `.drifter/` directory.
+    """
+    env = {}
+    if runs_dir is not None:
+        env["DRIFTER_RUNS_DIR"] = str(runs_dir)
+    if raw_dir is not None:
+        env["DRIFTER_RAW_DIR"] = str(raw_dir)
+    return StdioServerParameters(command=DRIFTER_PROXY_COMMAND[0], args=DRIFTER_PROXY_COMMAND[1:], env=env)
+
+
 @pytest.mark.anyio
-async def test_proxy_is_byte_for_byte_transparent():
+async def test_proxy_is_byte_for_byte_transparent(tmp_path):
     direct_params = StdioServerParameters(command=sys.executable, args=[FIXTURE_SERVER])
-    proxied_params = StdioServerParameters(
-        command=DRIFTER_PROXY_COMMAND[0], args=DRIFTER_PROXY_COMMAND[1:]
-    )
+    proxied_params = _proxied_params(tmp_path / "runs", tmp_path / "raw")
 
     direct_log = await _list_and_call(direct_params)
     proxied_log = await _list_and_call(proxied_params)
@@ -84,6 +101,48 @@ async def test_proxy_is_byte_for_byte_transparent():
     # not SDK-reconstructed Python objects independently parsed twice.
     assert proxied_log == direct_log
     assert len(direct_log) >= 3  # initialize result, tools/list result, tools/call result
+
+
+@pytest.mark.anyio
+async def test_recorded_session_reconstructs_the_tool_call_sequence(tmp_path):
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    proxied_params = _proxied_params(runs_dir, raw_dir)
+
+    async with stdio_client(proxied_params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            await session.list_tools()
+            await session.call_tool("add", {"a": 3, "b": 4})
+
+    jsonl_files = list(runs_dir.glob("*.jsonl"))
+    assert len(jsonl_files) == 1
+    records = list(read_session(jsonl_files[0]))
+
+    # seq is assigned in write order and never reused
+    assert [r.seq for r in records] == list(range(len(records)))
+    assert isinstance(records[0], SessionStart)
+
+    tools_list_records = [r for r in records if isinstance(r, ToolsList)]
+    assert len(tools_list_records) == 1
+    assert [t.name for t in tools_list_records[0].tools_served] == ["add"]
+    assert tools_list_records[0].tools_raw == tools_list_records[0].tools_served  # no mutate/ yet
+
+    tool_call_records = [r for r in records if isinstance(r, ToolCall)]
+    assert len(tool_call_records) == 1
+    call = tool_call_records[0]
+    assert call.tool_name == "add"
+    assert call.arguments == {"a": 3, "b": 4}
+    assert call.result_shape["type"] == "object"
+    assert "content" in call.result_shape["keys"]  # CallToolResult always has `content`
+
+    # raw_frame_offset must point at the exact response frame the record
+    # was built from, not just some byte position that happens to be valid.
+    raw_files = list(raw_dir.glob("*.frames"))
+    assert len(raw_files) == 1
+    raw_bytes = raw_files[0].read_bytes()
+    frame_line = raw_bytes[call.raw_frame_offset :].split(b"\n", 1)[0]
+    frame_at_offset = json.loads(frame_line.decode("utf-8"))
+    assert sorted(frame_at_offset["result"].keys()) == call.result_shape["keys"]
 
 
 @pytest.fixture
