@@ -6,6 +6,21 @@ not just a diff.
 
 ---
 
+## v1.0.9 — 2026-08-17 — SPEC.md §15: thinner diagnostics on pre-v1.0.7 corpora documented
+
+**Change:** v1.0.8 made `drifter stats` handle pre-v1.0.7 data (missing `is_error`/
+`duration_ms`) without crashing or misreporting it as zero. That fix is visible in a
+single report's output (the `N/A`/`*` marker), but the underlying fact — that any
+corpus spanning the v1.0.7 boundary has genuinely thinner diagnostic coverage for its
+older calls — is a standing property of the schema's history, not something a reader
+unfamiliar with that history would know to expect from the report alone. Added as
+SPEC.md §15 item 10, following the same "document, don't just patch" precedent as
+item 9 (v1.0.6). No behavior change; no corpus exists yet for this to apply to (Gate
+1's real trial hasn't started), so this is documentation ahead of the fact, not a
+correction of an observed problem.
+
+---
+
 ## v1.0.8 — 2026-08-17 — `is_error`/`duration_ms` made backward-compatible (`| None`), not required
 
 **Change:** Correction to v1.0.7, same day. v1.0.7 added `is_error: bool` and

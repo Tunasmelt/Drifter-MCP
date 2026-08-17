@@ -341,3 +341,11 @@ when*.
    SDK-built fixture server used in testing. A third-party server that doesn't honor
    this SHOULD may be left running after a Drifter Ctrl+C. The 2025-11-25 predecessor
    revision has no equivalent language at all.
+10. A recorded corpus is not schema-uniform across the project's own history:
+    `ToolCall.is_error`/`duration_ms` (CHANGELOG.md v1.0.7) didn't exist before that
+    schema version, so any `.jsonl` file recorded earlier has both fields as `null`.
+    `drifter stats` treats this as unknown, not zero — error rate and latency
+    percentiles are computed over the known subset only, marked `N/A`/`*` in the
+    report — but a corpus (or a report generated from one) spanning that boundary
+    will have systematically thinner diagnostic coverage for its older calls, which a
+    reader unfamiliar with this history wouldn't otherwise know to expect.
