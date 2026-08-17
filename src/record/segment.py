@@ -160,6 +160,10 @@ class TrajectoryTracker:
         self._heuristic_confidence = heuristic_confidence
         self._trace_trajectories: dict[str, Trajectory] = {}
         self._current_heuristic: Trajectory | None = None
+        # F-09: live count of distinct trajectories seen so far (started,
+        # not necessarily closed yet) — for drifter observe's terminal
+        # feedback. Never decremented.
+        self.trajectories_started = 0
 
     def record_call(self, seq: int, trace_id: str | None, arguments: dict, result: Any) -> CallResult:
         closed: Trajectory | None = None
@@ -169,6 +173,7 @@ class TrajectoryTracker:
             if trajectory is None:
                 trajectory = Trajectory(trajectory_id=f"traj_{uuid.uuid4().hex[:12]}", method="trace_context", confidence=TRACE_CONTEXT_CONFIDENCE)
                 self._trace_trajectories[trace_id] = trajectory
+                self.trajectories_started += 1
         else:
             current = self._current_heuristic
             continues = current is not None and (
@@ -183,6 +188,7 @@ class TrajectoryTracker:
                     trajectory_id=f"traj_{uuid.uuid4().hex[:12]}", method="heuristic", confidence=self._heuristic_confidence
                 )
                 self._current_heuristic = trajectory
+                self.trajectories_started += 1
 
         references = trajectory.find_references(arguments)
         trajectory.touch(seq)

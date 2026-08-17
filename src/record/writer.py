@@ -110,6 +110,7 @@ class SessionRecorder:
         self._first_raw_offset: int | None = None
         self._last_raw_offset = 0
         self._session_start_written = False
+        self._closed = False
         self._agent_identity: str | None = None
         self._server_versions: dict[str, str] = {}
         self._tool_manifest_hash: str | None = None
@@ -119,6 +120,26 @@ class SessionRecorder:
             idle_gap_seconds=calibration.segmentation.idle_gap_seconds,
             heuristic_confidence=calibration.segmentation.heuristic_confidence,
         )
+
+        # F-09: live counters for drifter observe's terminal feedback.
+        # Public — cli/observe.py reads these directly, no separate
+        # counting logic duplicated there.
+        self.call_count = 0
+        self.error_count = 0
+
+    @property
+    def trajectory_count(self) -> int:
+        return self._tracker.trajectories_started
+
+    @property
+    def closed(self) -> bool:
+        """True once close() has been invoked (started or finished) —
+        cli/observe.py's handle_sigint uses this as its own idempotency
+        guard against a rapid double Ctrl+C. Set at the very start of
+        close(), not the end, so it also covers a caller re-entering
+        close() while an earlier call is still running (Python signal
+        handlers are not automatically re-entrancy-safe)."""
+        return self._closed
 
     def _next_seq(self) -> int:
         seq = self._seq
@@ -179,6 +200,7 @@ class SessionRecorder:
     def observe(self, direction: Direction, message) -> None:
         """The `on_message` hook passed to `record.proxy.run_passthrough_proxy`."""
         if isinstance(message, Exception):
+            self.error_count += 1  # F-09: a frame that failed to parse
             return
 
         offset = self._write_raw_frame(message.message)
@@ -214,11 +236,16 @@ class SessionRecorder:
                 self._write_tools_list(rpc.result, offset)
         elif isinstance(rpc, JSONRPCError):
             # Gate 1 doesn't model call failures yet; drop the pending
-            # entry so it can't leak, but write nothing for it.
+            # entry so it can't leak, but write nothing for it. Still
+            # counted for F-09's live feedback — an agent watching a
+            # week-long trial needs to see failures happening, even ones
+            # not yet turned into a stored record.
             self._pending.pop(rpc.id, None)
+            self.error_count += 1
 
     def _write_tool_call(self, params: dict, result: dict, raw_frame_offset: int) -> None:
         seq = self._next_seq()
+        self.call_count += 1
         arguments = params.get("arguments") or {}
 
         # F-06/F-07/F-08: segment before writing, so a closing heuristic
@@ -297,6 +324,13 @@ class SessionRecorder:
         )
 
     def close(self) -> None:
+        # Guard set first, before any work — protects against a second,
+        # re-entrant call landing mid-execution (e.g. a signal handler
+        # firing twice in quick succession), not just a call after this
+        # one has already finished. See the `closed` property's docstring.
+        if self._closed:
+            return
+        self._closed = True
         # Safety net: a session that ends before any tools/list or
         # tools/call still gets a SessionStart record, using whatever
         # identity info (e.g. just the initialize handshake) was seen.

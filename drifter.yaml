@@ -1,0 +1,25 @@
+# Drifter project config (SPEC.md §11).
+#
+# Only `servers:` and `record:` are read by `drifter observe` (Gate 1,
+# F-09) — the rest of the config surface (baseline, mutations, tasks,
+# policy) lands in later gates. See SPEC.md §11 for the full eventual
+# shape.
+
+version: 1
+
+servers:
+  # REPLACE THIS with your real dogfood server (PHASES.md Gate 0, item 5
+  # — "one real agent, one real MCP server, from the author's own daily
+  # work"). `command` is the exact argv you'd otherwise put directly in
+  # your MCP client's config for this server, split into a list — e.g. a
+  # server you'd normally invoke as `npx -y @some/mcp-server` becomes
+  # `["npx", "-y", "@some/mcp-server"]`.
+  - name: REPLACE_ME
+    command: ["REPLACE_ME"]
+
+# Optional — defaults shown. `dir` is where session JSONL files land;
+# raw frame mirrors go to the sibling `raw/` directory under the same
+# parent (e.g. .drifter/runs -> .drifter/raw).
+record:
+  dir: .drifter/runs
+  redact: shape

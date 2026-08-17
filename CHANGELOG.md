@@ -6,6 +6,27 @@ not just a diff.
 
 ---
 
+## v1.0.6 — 2026-08-17 — SPEC.md §15: Ctrl+C subprocess-teardown limitation documented
+
+**Change:** Gate 1 Prompt 7 (`drifter observe`, F-09) found that `run_passthrough_proxy`'s
+cooperative-cancellation shutdown path (relied on by the default Ctrl+C handling
+`anyio.run()`/`asyncio.Runner` install) hangs indefinitely: `stdio_server()`'s internal
+stdin read is delegated to a worker thread, and a blocking OS-level read already in
+flight in a thread cannot be cancelled. `cli/observe.py`'s `handle_sigint` fixes this by
+bypassing cooperative cancellation — flushing recorded data via a synchronous
+`recorder.close()` and exiting directly — but as a consequence, the spawned MCP server
+subprocess is never explicitly waited on or terminated by Drifter. Whether that leaves it
+orphaned depends on the subprocess itself: empirically verified (real subprocess, PID
+tracked via `psutil` before and after) that the SDK-built fixture server self-terminates
+promptly, because the MCP spec's 2026-07-28 revision states servers "SHOULD exit promptly
+when their standard input is closed or reads return end-of-file." This is a new,
+genuinely-discovered limitation being documented, not a correction of a prior wrong
+claim — see SPEC.md §15 item 9 for the full statement, including the SHOULD-level (not
+guaranteed) caveat for third-party servers and the note that the 2025-11-25 predecessor
+revision has no equivalent language.
+
+---
+
 ## v1.0.5 — `timestamp` added to SPEC.md §6's commit-one field list
 
 **Change:** Gate 1 Prompt 6 (F-06/F-07 trajectory segmentation) requires idle-gap

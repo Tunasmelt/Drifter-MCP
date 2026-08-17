@@ -332,3 +332,12 @@ when*.
    free-text" applies to segmentation too, not just mutation). Trace context (F-06)
    doesn't have this blind spot — it's the reason F-06 is checked first and is
    authoritative when present.
+9. Interrupting `drifter observe` (Ctrl+C) prioritizes data-flush safety over graceful
+   subprocess shutdown: recorded data is guaranteed flushed via a synchronous close
+   before process exit, but the spawned MCP server subprocess is not explicitly
+   waited on or terminated. The 2026-07-28 spec states servers "SHOULD exit promptly
+   when their standard input is closed or reads return end-of-file" — SHOULD-level,
+   not a hard guarantee — and this behavior was empirically confirmed for the
+   SDK-built fixture server used in testing. A third-party server that doesn't honor
+   this SHOULD may be left running after a Drifter Ctrl+C. The 2025-11-25 predecessor
+   revision has no equivalent language at all.
