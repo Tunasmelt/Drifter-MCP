@@ -71,6 +71,16 @@ This project's recurring bug pattern (Prompts 1, 3, 5) is not missing fields but
 fields populated with plausible-but-wrong values due to ordering/timing — prefer
 tests that assert exact expected values over tests that assert presence/non-null.
 
+A second, related recurring bug pattern lives specifically in schema evolution — how a
+newly-added field behaves against records written before it existed. When adding any
+new ToolCall/record field: (1) it must be nullable with no non-null default unless
+every historical record format is guaranteed to have it, (2) track its "unknown" count
+separately from its "false"/"zero" count in any aggregate stat, (3) write a test
+against a hand-built pre-change corpus BEFORE implementing the field, confirm it
+fails, then implement. This exact sequence has now correctly caught a real bug three
+times (is_error/duration_ms in v1.0.7→v1.0.8, fault in this change) — treat it as
+required procedure for new fields, not optional extra caution.
+
 ## When something in the spec turns out to be wrong
 
 It will happen — SPEC.md's calibration register exists because several of its
