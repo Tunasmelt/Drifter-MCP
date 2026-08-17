@@ -6,6 +6,48 @@ not just a diff.
 
 ---
 
+## v1.0.10 — 2026-08-17 — `fault` added to ToolCall (SPEC.md §6 commit-one list)
+
+**Change:** Closes the exact gap the is_error precision-pass investigation (v1.0.7–
+v1.0.9) surfaced, not a new unrelated feature. That investigation established: a
+`tools/call` that fails at the protocol level (a JSON-RPC error response, not a
+`CallToolResult`) was, and until this change still is, dropped by `record/writer.py`'s
+`observe()` with no ToolCall record written at all — no per-tool attribution possible,
+invisible to `drifter stats` entirely, distinct from (and until now, structurally
+unfixable in the same way as) the `is_error` gap those prior entries closed.
+
+Added `ToolCall.fault: bool | None`. Deliberately a separate field from `is_error`, not
+a shared boolean, per explicit design intent: `is_error` is `CallToolResult.isError` —
+semantic, tool-reported, and often legitimate business behavior (a filesystem `search`
+reporting no matches). `fault` is transport/protocol-level — the call never reached a
+`CallToolResult` at all. Conflating them would make a routine "not found" read the same
+as a dropped connection in a diagnostic ("where are you slow or flaky") tool whose
+whole purpose is telling those apart. `record/writer.py`'s `JSONRPCError` branch now
+writes a `ToolCall` for a `tools/call` fault specifically (`fault=True`,
+`is_error=None` — not applicable, no result ever existed to check — `result_shape=None`,
+`duration_ms` still measured); the normal success path now sets `fault=False`
+explicitly, not left at the field's own default, so a corpus with zero faults can read
+"definitely zero" rather than "unknown." `cli/stats.py` reports `FAULT%` as a column
+separate from `ERR%`.
+
+**Process, per explicit instruction:** the last two schema touches (v1.0.7's
+required-field crash, v1.0.8's fix) both got the "how do old records without this
+field behave" question wrong on the first attempt. This time: a test
+(`tests/cli/test_stats.py::test_pre_fault_field_data_does_not_crash_and_does_not_misreport_as_no_fault`)
+constructing a corpus that predates `fault` (but has `is_error`/`duration_ms` — a
+distinct, later "age" than the v1.0.7 boundary) was written and run *before* any
+`fault` implementation existed (failed: `AttributeError`, the field didn't exist),
+then run again against a deliberately naive `fault: bool = False` (non-Optional,
+defaulted) implementation. That naive version parsed without crashing but silently
+reported `fault_rate == 0.0` for data with no fault information at all — confirmed
+directly, not assumed (`collect_stats` against a hand-built pre-fault-field session:
+`fault_rate: 0.0`, printed and inspected). Only then was the real implementation
+(`bool | None`, `fault_unknown` tracked separately, `fault_rate` excluding unknowns
+from its denominator, mirroring `error_rate` exactly) written, and the same test
+re-run to confirm it now passes for the right reason.
+
+---
+
 ## v1.0.9 — 2026-08-17 — SPEC.md §15: thinner diagnostics on pre-v1.0.7 corpora documented
 
 **Change:** v1.0.8 made `drifter stats` handle pre-v1.0.7 data (missing `is_error`/

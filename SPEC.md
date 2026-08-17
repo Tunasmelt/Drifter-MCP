@@ -126,7 +126,7 @@ to `raw/` as a re-parse safety net. Fields that cannot be added retroactively (m
 recorded from commit one): `references` (data-flow between calls), `result_provenance`
 (real vs synthetic), `tools_raw` and `tools_served` (both, always), `environment.fingerprint`,
 `seq`, `timestamp`, `risk`, `raw_frame_offset`, `mutation_inverse`, `classification_source`,
-`baseline_fidelity`, `is_error`, `duration_ms`.
+`baseline_fidelity`, `is_error`, `duration_ms`, `fault`.
 
 Rule for every other field: record it only if it cannot be derived later from what *is*
 recorded (e.g. `signature` is computed at read time, not stored).
@@ -341,11 +341,15 @@ when*.
    SDK-built fixture server used in testing. A third-party server that doesn't honor
    this SHOULD may be left running after a Drifter Ctrl+C. The 2025-11-25 predecessor
    revision has no equivalent language at all.
-10. A recorded corpus is not schema-uniform across the project's own history:
-    `ToolCall.is_error`/`duration_ms` (CHANGELOG.md v1.0.7) didn't exist before that
-    schema version, so any `.jsonl` file recorded earlier has both fields as `null`.
-    `drifter stats` treats this as unknown, not zero — error rate and latency
-    percentiles are computed over the known subset only, marked `N/A`/`*` in the
-    report — but a corpus (or a report generated from one) spanning that boundary
-    will have systematically thinner diagnostic coverage for its older calls, which a
-    reader unfamiliar with this history wouldn't otherwise know to expect.
+10. A recorded corpus is not schema-uniform across the project's own history, and this
+    has already happened twice: `ToolCall.is_error`/`duration_ms` (CHANGELOG.md v1.0.7)
+    and `fault` (v1.0.10) each didn't exist before their respective schema version, so
+    a `.jsonl` file recorded earlier has the not-yet-existing field(s) as `null` — the
+    two boundaries are independent (a corpus can have `is_error` but not `fault`).
+    `drifter stats` treats every such gap as unknown, not zero — error rate, fault
+    rate, and latency percentiles are each computed over their own known subset only,
+    marked `N/A`/`*`/`^` in the report — but a corpus (or a report generated from one)
+    spanning either boundary will have systematically thinner diagnostic coverage for
+    its older calls, which a reader unfamiliar with this history wouldn't otherwise
+    know to expect. Expect this list to grow, not shrink, as more per-call diagnostic
+    fields are added over time.

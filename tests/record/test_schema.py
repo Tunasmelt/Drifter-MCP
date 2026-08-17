@@ -103,6 +103,10 @@ FULLY_POPULATED_MODELS = [
         result_shape={"type": "object", "keys": ["id", "name", "email"], "length": 3},
         is_error=True,
         duration_ms=843.219,
+        # This call reached a real CallToolResult (is_error=True is a
+        # tool-reported failure) — known-not-a-fault, not the schema's
+        # `None` default.
+        fault=False,
         result_provenance="real",
         references=[
             DataFlowReference(source_seq=1, source_path="$.result.id", target_path="$.customerId")
@@ -159,6 +163,7 @@ def test_retroactive_fields_survive_with_real_values_not_just_defaults():
     assert restored_call.timestamp == "2026-08-16T19:40:04Z"  # exact value, not just non-None
     assert restored_call.is_error is True
     assert restored_call.duration_ms == 843.219
+    assert restored_call.fault is False  # explicit False, not the schema's None default
 
     assert restored_trajectory.baseline_fidelity == 0.94
     assert restored_trajectory.timestamp == "2026-08-16T19:40:05Z"

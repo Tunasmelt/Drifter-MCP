@@ -158,9 +158,13 @@ class ToolCall(BaseModel):
     # field silently coercing to a default, are exactly the two failure
     # modes CLAUDE.md's testing-discipline note warns about (a field
     # populated, or in this case *unpopulated*, with a value that reads as
-    # legitimate). `None` here means "unknown — recorded before this field
-    # existed," which `cli/stats.py` must report as such (excluded from
-    # error_rate's denominator), never coerced to `False`/0.
+    # legitimate). `None` here means either "unknown — recorded before this
+    # field existed" OR "not applicable — this call is a `fault` (below):
+    # it never produced a CallToolResult to read isError from at all." Both
+    # render identically in `cli/stats.py` (excluded from error_rate's
+    # denominator, never coerced to `False`/0) because both are genuinely
+    # "can't say whether the tool itself succeeded" — not the same claim as
+    # "the tool succeeded."
     is_error: bool | None = None
     # Milliseconds between this call's request being observed and its
     # response being observed, measured with a monotonic clock in
@@ -173,6 +177,33 @@ class ToolCall(BaseModel):
     # arrives, mid-request. `| None` for the same backward-compatibility
     # reason as `is_error` above.
     duration_ms: float | None = None
+    # Added in this prompt (CHANGELOG.md), closing the exact gap the
+    # is_error investigation surfaced: through v1.0.9, a `tools/call` that
+    # failed at the protocol level (a JSON-RPC error response, not a
+    # CallToolResult — record/writer.py's `observe()` JSONRPCError branch)
+    # wrote no ToolCall record at all. No per-tool attribution was
+    # possible for it, and it was invisible to `drifter stats` entirely —
+    # the same "silently missing, not just wrong" shape as the is_error
+    # gap, just for a different cause. `fault` marks this case.
+    #
+    # Deliberately a separate field from `is_error`, not a shared
+    # "did-this-call-succeed" boolean: `is_error` is specifically
+    # CallToolResult.isError — semantic, tool-reported, and often
+    # legitimate business behavior (a filesystem `search` reporting no
+    # matches). `fault` is transport/protocol-level — the call never got
+    # far enough to produce a result at all. Conflating them into one
+    # column would read a "no matches found" the same as a broken
+    # connection; `cli/stats.py` reports them as separate columns for
+    # exactly this reason.
+    #
+    # `| None`, default `None`, for the same backward-compatibility reason
+    # as `is_error`/`duration_ms` (CHANGELOG v1.0.8) — verified directly,
+    # not assumed, per the same investigation: a naive `fault: bool = False`
+    # silently reports `fault_rate == 0.0` for a record that predates this
+    # field, rather than the genuinely-unknown `None` it should be. See
+    # tests/cli/test_stats.py's pre-fault-field test, written and shown to
+    # fail against that naive version before this one replaced it.
+    fault: bool | None = None
     result_provenance: ResultProvenance = "real"
     references: list[DataFlowReference] = []
     # Inverse mapping consumed by replay's F-12 key resolution when this

@@ -240,13 +240,23 @@ class SessionRecorder:
                 self._ensure_session_start_written()
                 self._write_tools_list(rpc.result, offset)
         elif isinstance(rpc, JSONRPCError):
-            # Gate 1 doesn't model call failures yet; drop the pending
-            # entry so it can't leak, but write nothing for it. Still
-            # counted for F-09's live feedback — an agent watching a
-            # week-long trial needs to see failures happening, even ones
-            # not yet turned into a stored record.
-            self._pending.pop(rpc.id, None)
+            pending = self._pending.pop(rpc.id, None)
             self.error_count += 1
+            # `initialize`/`tools/list` protocol faults have no ToolCall-
+            # shaped home (they're not per-call attempts) and stay
+            # unmodeled, same as before. A `tools/call` protocol fault
+            # (this response is a JSON-RPC error, not a CallToolResult —
+            # the SDK's own docstring: this SHOULD only happen for "errors
+            # in finding the tool," not a tool-reported failure, which
+            # goes through isError instead) now gets a real record — see
+            # `fault` on ToolCall (CHANGELOG.md, this prompt). Previously
+            # dropped silently, with no per-tool attribution possible at
+            # all — closing the exact gap the is_error investigation
+            # surfaced, not a new unrelated feature.
+            if pending is not None and pending["method"] == "tools/call":
+                self._ensure_session_start_written()
+                duration_ms = (time.monotonic() - pending["requested_at"]) * 1000
+                self._write_tool_call_fault(pending["params"], offset, duration_ms)
 
     def _write_tool_call(self, params: dict, result: dict, raw_frame_offset: int, duration_ms: float) -> None:
         seq = self._next_seq()
@@ -281,6 +291,50 @@ class SessionRecorder:
                 result_shape=compute_result_shape(result),
                 is_error=is_error,
                 duration_ms=duration_ms,
+                # This call reached a real CallToolResult — known, not a
+                # protocol fault. Explicit False (not left at the schema's
+                # `None` default), so fault_rate can read "definitely zero
+                # faults" rather than "unknown" for a corpus with none.
+                fault=False,
+                references=outcome.references,
+                raw_frame_offset=raw_frame_offset,
+            )
+        )
+
+    def _write_tool_call_fault(self, params: dict, raw_frame_offset: int, duration_ms: float) -> None:
+        """Writes a ToolCall record for a `tools/call` that failed at the
+        protocol level (JSONRPCError) instead of producing a
+        CallToolResult. Distinct from `_write_tool_call`'s `is_error`
+        path: there is no result here at all, so `result_shape` is None
+        and `is_error` is left at its own `None` default — not
+        `False` — since "did the tool report a semantic error" genuinely
+        doesn't apply when the tool was never actually invoked in a way
+        that could answer that. Trajectory segmentation still runs: the
+        attempt genuinely happened and belongs in whatever trajectory it
+        arrived in, even though it produced no result to index for future
+        data-flow matches (record.segment.TrajectoryTracker tolerates a
+        None result — see its docstring/tests).
+        """
+        seq = self._next_seq()
+        self.call_count += 1
+        arguments = params.get("arguments") or {}
+
+        trace_id = extract_trace_id(params.get("_meta"))
+        outcome = self._tracker.record_call(seq, trace_id, arguments, None)
+        if outcome.closed is not None:
+            self._write_trajectory_end(outcome.closed)
+
+        self._write_record(
+            ToolCall(
+                session_id=self.session_id,
+                seq=seq,
+                timestamp=_now(),
+                server=self.server_name,
+                tool_name=params.get("name", ""),
+                arguments=redact_secrets(arguments),
+                result_shape=None,
+                duration_ms=duration_ms,
+                fault=True,
                 references=outcome.references,
                 raw_frame_offset=raw_frame_offset,
             )
