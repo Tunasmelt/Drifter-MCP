@@ -126,7 +126,7 @@ to `raw/` as a re-parse safety net. Fields that cannot be added retroactively (m
 recorded from commit one): `references` (data-flow between calls), `result_provenance`
 (real vs synthetic), `tools_raw` and `tools_served` (both, always), `environment.fingerprint`,
 `seq`, `timestamp`, `risk`, `raw_frame_offset`, `mutation_inverse`, `classification_source`,
-`baseline_fidelity`.
+`baseline_fidelity`, `is_error`, `duration_ms`.
 
 Rule for every other field: record it only if it cannot be derived later from what *is*
 recorded (e.g. `signature` is computed at read time, not stored).

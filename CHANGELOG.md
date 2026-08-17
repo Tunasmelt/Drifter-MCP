@@ -6,6 +6,78 @@ not just a diff.
 
 ---
 
+## v1.0.8 — 2026-08-17 — `is_error`/`duration_ms` made backward-compatible (`| None`), not required
+
+**Change:** Correction to v1.0.7, same day. v1.0.7 added `is_error: bool` and
+`duration_ms: float` to `ToolCall` as required fields, matching the precedent set by
+`timestamp` (v1.0.5). That precedent doesn't actually transfer: when `timestamp` was
+added, no real recorded data existed anywhere, so nothing broke. `is_error`/
+`duration_ms` are landing with Gate 1's real weekly trial imminent (PHASES.md's actual
+exit test), so a required field risks exactly the failure a user request surfaced by
+testing it directly: reconstructed an authentic pre-v1.0.7 corpus (via `git stash`
+against the real prior commit, not a hand-guessed fixture) and ran the current
+`drifter stats` against it. Result: an unhandled `pydantic.ValidationError` on the
+first old-format `ToolCall`, crashing the entire read — not the silent "reads as 0%
+errors" failure mode that was the original worry, but a different real failure
+(`record/reader.py` has no old/new schema negotiation; a required field with no
+default simply can't parse data recorded before it existed).
+
+**Fix:** `is_error`/`duration_ms` changed to `bool | None` / `float | None`, default
+`None`. `record/writer.py` is unaffected — it always knows both values at write time.
+`cli/stats.py`'s `ToolStats` now tracks `error_unknown` (calls whose `is_error` is
+`None`) separately from `errors`, and `error_rate`/`percentiles()` compute over the
+*known* subset only, returning `None` (rendered "N/A", never coerced to `0.0%`) when
+nothing is known. Verified against three cases: an all-old-data corpus (previously
+crashed; now parses, reports "N/A"), an all-new-data corpus (unaffected), and a mixed
+corpus spanning the migration point (error_rate computed over the known calls only,
+not diluted by unknown ones landing in the denominator as if they were confirmed
+non-errors).
+
+**Why this is a correction, not a new feature:** required-with-no-default was a
+plausible-looking choice that happened to be wrong for these two fields specifically,
+caught by testing against real reconstructed data rather than by reasoning about the
+schema in the abstract — exactly the gap CLAUDE.md's testing-discipline note names
+("prefer tests that assert exact expected values... this project's recurring bug
+pattern is fields populated with plausible-but-wrong values"). SPEC.md §6's
+"cannot be added retroactively" list is unchanged by this correction — both fields
+still can't be backfilled onto an existing record; what changed is only that a
+record predating them must still be *readable*, with their absence represented
+honestly as unknown.
+
+---
+
+## v1.0.7 — 2026-08-17 — `is_error` and `duration_ms` added to SPEC.md §6's commit-one field list
+
+**Change:** Gate 1 Prompt 8 (`drifter stats`, F-10) requires error rate and latency
+percentiles per tool — but neither was recoverable from what Prompt 1–7's schema
+actually recorded. `result_shape` (SPEC.md §6's redaction default: type/keys/length
+only) never carried the `isError` boolean itself, only whether the key `isError` was
+present — indistinguishable between a successful and a failed call once written. And
+`timestamp` (added in v1.0.5) is an ISO 8601 string with one-second resolution, far too
+coarse for a typical tool-call round trip, and only one is recorded per call rather than
+a request/response pair — latency simply wasn't derivable from it. Both are genuine
+schema gaps, not new requirements being introduced: F-10 was already scoped in
+FEATURES.md before Prompt 8 started.
+
+Added `is_error: bool` (from MCP's `CallToolResult.isError` — per the SDK's own
+docstring, this SHOULD be how tool-execution failures are reported, versus a
+protocol-level JSON-RPC error for the rarer "couldn't find the tool" case, which Gate 1
+still doesn't attribute per-tool; see `record/writer.py`'s `observe()`) and
+`duration_ms: float` (measured with `time.monotonic()` between the request and response
+being observed in `record/writer.py`, immune to both wall-clock adjustments and
+`timestamp`'s coarse resolution) to `ToolCall`, and to the "cannot be added
+retroactively" list in SPEC.md §6. Schema stays at version `0.1`: Gate 1's golden
+fixture (Prompt 9) hasn't been committed yet, so nothing external depends on the
+pre-this-change shape.
+
+As a direct consequence, `cli/observe.py`'s live `errors:` counter (F-09) — previously
+only counting parse errors and protocol-level JSON-RPC errors — now also counts
+`isError: true` tool results, which is the common case for an actual tool failure. This
+was always what F-09's "see failures happening during a week-long trial" was meant to
+show; it just wasn't wired up before `is_error` existed to check.
+
+---
+
 ## v1.0.6 — 2026-08-17 — SPEC.md §15: Ctrl+C subprocess-teardown limitation documented
 
 **Change:** Gate 1 Prompt 7 (`drifter observe`, F-09) found that `run_passthrough_proxy`'s

@@ -139,6 +139,40 @@ class ToolCall(BaseModel):
     arguments: dict = {}
     # Type/keys/length only — never the payload itself (F-02, F-04).
     result_shape: dict | None = None
+    # Added in Prompt 8 (CHANGELOG.md), for the same reason as `timestamp`:
+    # F-10's error rate needs to know whether this specific call failed,
+    # and `result_shape` deliberately never stores values — only type/keys/
+    # length — so a result's `isError: true` (MCP's CallToolResult field;
+    # SHOULD be how tool-execution failures are reported, per the SDK's own
+    # docstring, rather than a protocol-level JSON-RPC error) would
+    # otherwise be indistinguishable from `isError: false` once written.
+    # Cannot be added retroactively — the boolean is gone the moment
+    # result_shape is computed and the raw result is discarded.
+    #
+    # `| None`, deliberately, unlike `timestamp`'s plain `str`: `timestamp`
+    # was added (Prompt 6) when no real recorded data existed anywhere to
+    # protect. `is_error`/`duration_ms` are being added with a real weekly
+    # trial imminent (PHASES.md Gate 1's exit test), so a record written
+    # before this field existed must still parse — `record/reader.py`
+    # raising a raw pydantic ValidationError on old data, or a required
+    # field silently coercing to a default, are exactly the two failure
+    # modes CLAUDE.md's testing-discipline note warns about (a field
+    # populated, or in this case *unpopulated*, with a value that reads as
+    # legitimate). `None` here means "unknown — recorded before this field
+    # existed," which `cli/stats.py` must report as such (excluded from
+    # error_rate's denominator), never coerced to `False`/0.
+    is_error: bool | None = None
+    # Milliseconds between this call's request being observed and its
+    # response being observed, measured with a monotonic clock in
+    # record/writer.py. Added in Prompt 8 alongside `is_error`, for F-10's
+    # latency percentiles — `timestamp` alone can't serve this: it's an
+    # ISO 8601 string with one-second resolution, far too coarse for a
+    # typical tool-call round trip, and only one is recorded per call
+    # rather than a request/response pair. Cannot be added retroactively:
+    # the monotonic-clock delta only exists at the instant the response
+    # arrives, mid-request. `| None` for the same backward-compatibility
+    # reason as `is_error` above.
+    duration_ms: float | None = None
     result_provenance: ResultProvenance = "real"
     references: list[DataFlowReference] = []
     # Inverse mapping consumed by replay's F-12 key resolution when this

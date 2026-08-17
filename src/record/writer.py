@@ -207,7 +207,11 @@ class SessionRecorder:
         rpc = message.message
 
         if isinstance(rpc, JSONRPCRequest) and rpc.method in _TRACKED_METHODS:
-            self._pending[rpc.id] = {"method": rpc.method, "params": rpc.params or {}}
+            # F-10: duration_ms needs a start point. Monotonic, not wall-clock
+            # (time.monotonic() can't be affected by clock adjustments
+            # mid-call, and has far finer resolution than _now()'s
+            # one-second-granularity ISO string).
+            self._pending[rpc.id] = {"method": rpc.method, "params": rpc.params or {}, "requested_at": time.monotonic()}
             if rpc.method == "initialize":
                 client_info = (rpc.params or {}).get("clientInfo") or {}
                 name, version = client_info.get("name"), client_info.get("version")
@@ -224,7 +228,8 @@ class SessionRecorder:
                     self._server_versions = {name: version or ""}
             elif pending["method"] == "tools/call":
                 self._ensure_session_start_written()
-                self._write_tool_call(pending["params"], rpc.result, offset)
+                duration_ms = (time.monotonic() - pending["requested_at"]) * 1000
+                self._write_tool_call(pending["params"], rpc.result, offset, duration_ms)
             elif pending["method"] == "tools/list":
                 # Must run before _ensure_session_start_written(): the
                 # manifest hash has to be known *before* SessionStart is
@@ -243,10 +248,17 @@ class SessionRecorder:
             self._pending.pop(rpc.id, None)
             self.error_count += 1
 
-    def _write_tool_call(self, params: dict, result: dict, raw_frame_offset: int) -> None:
+    def _write_tool_call(self, params: dict, result: dict, raw_frame_offset: int, duration_ms: float) -> None:
         seq = self._next_seq()
         self.call_count += 1
         arguments = params.get("arguments") or {}
+        # MCP's CallToolResult.isError (SHOULD be how tool-execution
+        # failures are reported, per the SDK's own docstring, rather than a
+        # protocol-level JSON-RPC error) — the wire key, since `result` is
+        # the raw dict as received, not a re-serialized model.
+        is_error = bool((result or {}).get("isError", False))
+        if is_error:
+            self.error_count += 1
 
         # F-06/F-07/F-08: segment before writing, so a closing heuristic
         # trajectory's TrajectoryEnd lands before the call that closed it.
@@ -267,6 +279,8 @@ class SessionRecorder:
                 # never carries payload values in the first place.
                 arguments=redact_secrets(arguments),
                 result_shape=compute_result_shape(result),
+                is_error=is_error,
+                duration_ms=duration_ms,
                 references=outcome.references,
                 raw_frame_offset=raw_frame_offset,
             )
