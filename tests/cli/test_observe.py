@@ -10,6 +10,7 @@ rather than relying on that being merely implied by other assertions
 passing.
 """
 
+import io
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -18,8 +19,6 @@ import anyio
 import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
-
-import io
 
 from cli.config import ConfigError
 from cli.observe import LiveStatus, handle_sigint, select_server
@@ -200,6 +199,67 @@ async def test_observe_records_a_session_and_keeps_status_off_stdout(tmp_path):
     assert "trajectories:" in stderr_text
     assert "calls: 2" in stderr_text  # final state: both calls counted
     assert "errors: 0" in stderr_text
+
+
+@pytest.mark.anyio
+async def test_observe_env_override_keeps_the_real_dot_drifter_untouched(tmp_path):
+    """DRIFTER_RUNS_DIR/DRIFTER_RAW_DIR must take precedence over
+    drifter.yaml's record.dir, exactly like record/__main__.py already
+    does — found missing during Gate 0 item 5's dogfood-pairing
+    verification, where a smoke test's session data landed in the repo's
+    real .drifter/ instead of a scratch directory because run_observe()
+    had no override at all.
+
+    drifter.yaml here deliberately does NOT set record.dir, so it falls
+    back to the real ".drifter/runs" default relative to cwd (repo root,
+    since the subprocess isn't given an explicit cwd) — the exact
+    scenario that leaked before. The real .drifter/runs and .drifter/raw
+    are snapshotted before and compared after, rather than assumed empty
+    or nonexistent: by the time this test runs, real trial data may
+    already be sitting there, and this test must neither be confused by
+    it nor, especially, ever delete or overwrite it.
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    real_runs_dir = repo_root / ".drifter" / "runs"
+    real_raw_dir = repo_root / ".drifter" / "raw"
+
+    def _snapshot(path: Path) -> set[str]:
+        return {p.name for p in path.iterdir()} if path.exists() else set()
+
+    before_runs, before_raw = _snapshot(real_runs_dir), _snapshot(real_raw_dir)
+
+    config_lines = [
+        "version: 1",
+        "servers:",
+        "  - name: fake",
+        f"    command: ['{sys.executable}', '{FIXTURE_SERVER}']",
+        # No `record:` block at all — must fall back to the real
+        # ".drifter/runs" default, which the env vars below must override.
+    ]
+    config_path = tmp_path / "drifter.yaml"
+    config_path.write_text("\n".join(config_lines) + "\n", encoding="utf-8")
+
+    scratch_runs, scratch_raw = tmp_path / "scratch_runs", tmp_path / "scratch_raw"
+    params = StdioServerParameters(
+        command=sys.executable,
+        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        env={"DRIFTER_RUNS_DIR": str(scratch_runs), "DRIFTER_RAW_DIR": str(scratch_raw)},
+    )
+
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            await session.call_tool("add", {"a": 1, "b": 2})
+
+    # Positive check: the override actually worked.
+    assert len(list(scratch_runs.glob("*.jsonl"))) == 1
+    assert len(list(scratch_raw.glob("*.frames"))) == 1
+
+    # Negative check: the real path is exactly as it was before — no
+    # new files, and nothing pre-existing (e.g. real trial data)
+    # disturbed.
+    assert _snapshot(real_runs_dir) == before_runs
+    assert _snapshot(real_raw_dir) == before_raw
 
 
 @pytest.fixture

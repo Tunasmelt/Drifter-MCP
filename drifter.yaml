@@ -8,14 +8,19 @@
 version: 1
 
 servers:
-  # REPLACE THIS with your real dogfood server (PHASES.md Gate 0, item 5
-  # — "one real agent, one real MCP server, from the author's own daily
-  # work"). `command` is the exact argv you'd otherwise put directly in
-  # your MCP client's config for this server, split into a list — e.g. a
-  # server you'd normally invoke as `npx -y @some/mcp-server` becomes
-  # `["npx", "-y", "@some/mcp-server"]`.
-  - name: REPLACE_ME
-    command: ["REPLACE_ME"]
+  # PHASES.md Gate 0 item 5 (dogfood pairing): agent = Claude Code,
+  # server = @modelcontextprotocol/server-filesystem. `command` is the
+  # exact registered invocation confirmed via `claude mcp get filesystem`
+  # — not the bare `npx -y @modelcontextprotocol/server-filesystem <path>`
+  # a `claude mcp add` command's syntax might suggest. Claude Code wraps
+  # it through `cmd /c` on Windows, since `npx` resolves to a `.cmd`
+  # script here and can't be spawned directly without going through
+  # cmd.exe. Single-quoted YAML strings, deliberately: the path contains
+  # backslashes, which double-quoted YAML scalars would try to interpret
+  # as escape sequences (see tests/cli/test_observe.py's _drifter_yaml
+  # for the same bug already hit and fixed once in this project).
+  - name: filesystem
+    command: ['cmd', '/c', 'npx', '-y', '@modelcontextprotocol/server-filesystem', 'C:\Users\user\Desktop']
 
 # Optional — defaults shown. `dir` is where session JSONL files land;
 # raw frame mirrors go to the sibling `raw/` directory under the same

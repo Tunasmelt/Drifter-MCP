@@ -13,6 +13,15 @@ EOF and their stray output misses the wire"), but this module writes to
 stderr explicitly rather than relying on that as the only safeguard —
 see tests/cli/test_observe.py for the test that verifies stdout stays
 clean end-to-end, not just that this file happens to write() correctly.
+
+Recording paths default to drifter.yaml's `record.dir` (SPEC.md §11),
+overridable via DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR — the same env vars
+record/__main__.py already supports, same precedence (env wins over
+config when set). Gap closed here rather than left for Prompt 8/9: both
+want to run drifter observe against controlled directories, not
+whatever's in drifter.yaml, and this was found missing (a smoke test's
+session data landed in the real .drifter/ instead of a scratch dir)
+during Gate 0 item 5's dogfood-pairing verification.
 """
 
 from __future__ import annotations
@@ -180,8 +189,13 @@ def run_observe(
     config = load_config(config_path)
     server = select_server(config, server_name)
 
-    runs_dir = Path(config.record.dir)
-    raw_dir = runs_dir.parent / "raw"  # sibling directories under .drifter/ (SPEC.md architecture diagram)
+    # DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR take precedence over drifter.yaml
+    # when set — same env vars, same precedence, as record/__main__.py.
+    runs_dir = Path(os.environ.get("DRIFTER_RUNS_DIR", config.record.dir))
+    # Sibling directories under .drifter/ (SPEC.md architecture diagram) by
+    # default, computed from the (possibly overridden) runs_dir; itself
+    # still overridable independently via DRIFTER_RAW_DIR.
+    raw_dir = Path(os.environ.get("DRIFTER_RAW_DIR", str(runs_dir.parent / "raw")))
 
     recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=server.name)
     status = LiveStatus(status_stream)
