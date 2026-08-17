@@ -46,6 +46,17 @@ class Mutation(BaseModel):
     repeats: MutationRepeats = MutationRepeats()
 
 
+class Doctor(BaseModel):
+    model_config = ConfigDict(extra="allow")
+    # Not in SPEC.md §9's original table — added here per CLAUDE.md's
+    # invariant that new invented constants belong in this file, not
+    # hardcoded (same reasoning as segmentation.heuristic_confidence
+    # above). How long `drifter doctor` waits for a configured server to
+    # complete the MCP initialize handshake before reporting it
+    # unreachable; a guess, not derived from anything.
+    connectivity_timeout_seconds: float = 10
+
+
 class Calibration(BaseModel):
     model_config = ConfigDict(extra="allow")
     semantic_weight: float = 0.8
@@ -55,6 +66,7 @@ class Calibration(BaseModel):
     segmentation: Segmentation = Segmentation()
     baseline: Baseline = Baseline()
     mutation: Mutation = Mutation()
+    doctor: Doctor = Doctor()
 
 
 def load_calibration(path: Path | None = None) -> Calibration:

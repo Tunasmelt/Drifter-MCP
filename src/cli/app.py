@@ -1,8 +1,9 @@
 """`drifter` CLI dispatch (SPEC.md §12).
 
-Only `observe` is wired up so far — the rest of SPEC.md §12's command
-list (`init`, `stats`, `tasks mine`, `tasks approve`, `run`, `score`,
-`report`, `doctor`) lands in later gates per PHASES.md. Unregistered
+`observe`, `stats`, and `doctor` (connectivity checks only, per PHASES.md
+Gate 1) are wired up — the rest of SPEC.md §12's command list (`init`,
+`tasks mine`, `tasks approve`, `run`, `score`, `report`, doctor's
+classification-sanity checks) lands in later gates. Unregistered
 subcommands fail with argparse's own "invalid choice" error rather than
 a stub pretending to be implemented.
 """
@@ -16,17 +17,24 @@ from pathlib import Path
 from cli.config import ConfigError
 
 
-def _ensure_utf8_stderr() -> None:
+def _ensure_utf8_console_streams() -> None:
     """Windows' default console codepage isn't UTF-8. cli/observe.py's
-    live status line uses an em dash; without this, that byte encodes as
-    whatever the ambient codepage is (observed: cp1252's 0x97) rather
-    than UTF-8 — silently wrong when the caller (a real MCP client
-    spawning `drifter observe`, or a test) reads stderr expecting UTF-8.
+    live status line (stderr) and cli/stats.py's report (stdout) both use
+    an em dash; without this, that byte encodes as whatever the ambient
+    codepage is (observed: cp1252's 0x97) rather than UTF-8 — silently
+    wrong when the caller (a real MCP client spawning `drifter observe`, a
+    terminal, or a test) reads the stream expecting UTF-8. Originally
+    fixed for stderr only (Prompt 7); extended to stdout in Prompt 8 once
+    `stats`/`doctor` started writing user-facing text there too — observe
+    itself never touches stdout directly (stdio_server() diverts the real
+    OS-level stdout away from it, see cli/observe.py's docstring), so this
+    is a no-op for that command, not a risk to the wire protocol.
     `errors="replace"` means a future genuinely unencodable character
-    degrades to a placeholder instead of crashing observe mid-session.
+    degrades to a placeholder instead of crashing mid-session.
     """
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -37,11 +45,19 @@ def _build_parser() -> argparse.ArgumentParser:
     observe_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
     observe_parser.add_argument("--server", default=None, help="Server name from drifter.yaml (required if more than one is defined)")
 
+    stats_parser = subparsers.add_parser("stats", help="Summarize the recorded JSONL corpus")
+    stats_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+    stats_parser.add_argument("--runs-dir", type=Path, default=None, help="Corpus directory to read directly, bypassing drifter.yaml")
+    stats_parser.add_argument("--server", default=None, help="Restrict the summary to one server's tools")
+
+    doctor_parser = subparsers.add_parser("doctor", help="Config + connectivity pre-flight checks")
+    doctor_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+
     return parser
 
 
 def main() -> None:
-    _ensure_utf8_stderr()
+    _ensure_utf8_console_streams()
     parser = _build_parser()
     args = parser.parse_args()
 
@@ -53,6 +69,19 @@ def main() -> None:
         except ConfigError as e:
             print(f"drifter observe: {e}", file=sys.stderr)
             raise SystemExit(4) from None  # SPEC.md §12: exit code 4 = config/connectivity error
+    elif args.command == "stats":
+        from cli.stats import run_stats
+
+        try:
+            run_stats(config_path=args.config, runs_dir=args.runs_dir, server_name=args.server)
+        except ConfigError as e:
+            print(f"drifter stats: {e}", file=sys.stderr)
+            raise SystemExit(4) from None
+    elif args.command == "doctor":
+        from cli.doctor import run_doctor
+
+        ok = run_doctor(config_path=args.config)
+        raise SystemExit(0 if ok else 4)  # SPEC.md §12: exit code 4 = config/connectivity error
     else:
         parser.print_help(sys.stderr)
         raise SystemExit(1 if args.command else 0)

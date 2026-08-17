@@ -28,5 +28,14 @@ def echo(payload: dict) -> dict:
     return payload
 
 
+@server.tool()
+def fail(message: str = "boom") -> str:
+    """Always raises. MCPServer turns this into CallToolResult(is_error=True)
+    rather than a protocol-level JSON-RPC error (see mcp.server.mcpserver's
+    _handle_call_tool) — used to exercise F-10's error-rate/is_error path.
+    """
+    raise RuntimeError(message)
+
+
 if __name__ == "__main__":
     server.run(transport="stdio")

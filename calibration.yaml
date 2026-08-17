@@ -33,3 +33,10 @@ mutation:
     screen: 1
     confirm: 5
     resolve: 20
+
+doctor:
+  # Not in SPEC.md §9's original table — same reasoning as
+  # segmentation.heuristic_confidence above: a guessed operational
+  # constant, not a research finding, so it lives here rather than
+  # hardcoded in cli/doctor.py.
+  connectivity_timeout_seconds: 10
