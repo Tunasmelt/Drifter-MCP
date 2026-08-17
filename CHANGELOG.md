@@ -6,6 +6,33 @@ not just a diff.
 
 ---
 
+## v1.0.11 — 2026-08-17 — CI dependency audit fixed: `--strict` failed on every run, not just vulnerable ones
+
+**Change:** Found during Gate 1 exit-test verification, not previously exercised — this
+repo has no git remote and had never been pushed, so `.github/workflows/ci.yml`'s
+dependency-audit step had never actually run. Verified locally, exactly as CI would
+run it: `uv run --with pip-audit pip-audit --strict` fails unconditionally —
+`ERROR: mcp-drifter: Dependency not found on PyPI and could not be audited:
+mcp-drifter (0.1.0)`, exit 1 — because `pip-audit` audits every installed package
+including the project's own editable-installed local package, `--strict` treats "can't
+be looked up on PyPI" as a hard failure, and this project's own unpublished-at-0.1.0
+package can never be looked up on PyPI. This isn't a transient or environment-specific
+failure: it reproduces identically on every run, so as written this step would never
+once turn green, on any commit, regardless of whether a real dependency vulnerability
+exists — the opposite of PHASES.md's stated goal ("failing the build on high/critical
+CVEs"), since a permanently-red check gets ignored rather than trusted.
+
+**Fix:** `--skip-editable` (excludes the local project package from the audit,
+verified it still exits 0 with "No known vulnerabilities found" for the real third-
+party dependency tree) in place of `--strict` (which specifically fails on audit
+*collection* failures, not just found vulnerabilities — verified the two flags
+together still fail on the same editable-package error, so this isn't just "add
+skip-editable," `--strict` had to go). `pip-audit`'s core behavior — non-zero exit on
+an actual found vulnerability — needs no special flag and is unaffected by this
+change.
+
+---
+
 ## v1.0.10 — 2026-08-17 — `fault` added to ToolCall (SPEC.md §6 commit-one list)
 
 **Change:** Closes the exact gap the is_error precision-pass investigation (v1.0.7–

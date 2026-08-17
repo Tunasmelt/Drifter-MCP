@@ -26,4 +26,4 @@ jobs:
         run: uv run pytest
 
       - name: Dependency audit (fails build on known vulnerabilities)
-        run: uv run --with pip-audit pip-audit --strict
+        run: uv run --with pip-audit pip-audit --skip-editable
