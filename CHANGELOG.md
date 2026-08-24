@@ -6,6 +6,17 @@ not just a diff.
 
 ---
 
+## 2026-08-25 — Gate 1 closed by override, not by passing its exit test
+
+Gate 1 closed by explicit user override rather than passing its empirical exit test.
+Recorded here so this isn't indistinguishable from a gate that actually passed, six
+commits and one investigation down the line. See `.drifter/GATE_STATUS` for the
+itemized breakdown of which exit-test items were genuinely verified (golden fixture in
+CI, `.gitignore` clean, dependency audit) versus overridden without evidence (the
+week-long real trial and the `drifter stats`-vs-known-usage check).
+
+---
+
 ## v1.0.11 — 2026-08-17 — CI dependency audit fixed: `--strict` failed on every run, not just vulnerable ones
 
 **Change:** Found during Gate 1 exit-test verification, not previously exercised — this
