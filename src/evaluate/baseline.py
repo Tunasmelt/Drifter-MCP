@@ -29,6 +29,18 @@ fingerprint matched everything (which would be exactly the "field
 populated with a plausible-but-wrong value" bug pattern CLAUDE.md's
 testing-discipline note warns about, just with "unpopulated" standing in
 for "populated").
+
+Second exclusion reason, added once `run_once` had a real implementation
+to fail (cli/subprocess_adapter.py's `make_run_once`, wired for the
+first time in the integration test this exclusion path was built
+for): a repeat whose `run_once()` call itself raises — subprocess spawn
+failure, an unresolved timeout, anything — is excluded the same way,
+with its own distinct reason, rather than letting the exception
+propagate out of `run_baseline` and abort the whole run, discarding
+every already-successful repeat. Same principle as the null-hash case:
+a single flaky repeat degrades `valid_runs`, it doesn't nuke the run.
+`ExcludedRun.session_id`/`.path` are `None` for this reason specifically
+— there is no session to point at when `run_once` never produced one.
 """
 
 from __future__ import annotations
@@ -45,12 +57,23 @@ from record.schema import SessionStart, ToolCall
 _NULL_HASH_REASON = "tool_manifest_hash is null"
 
 
+def _run_once_failed_reason(exc: Exception) -> str:
+    return f"run_once raised: {exc}"
+
+
 @dataclass(frozen=True)
 class ExcludedRun:
-    """One baseline run that could not be validated against a fingerprint."""
+    """One baseline repeat excluded from the computation, and why.
 
-    session_id: str
-    path: Path
+    Two distinct reasons currently reach here, and `session_id`/`path`
+    are only meaningful for the first: a session WAS recorded, so there
+    is something to point at. For the second, `run_once()` itself
+    raised before producing anything — `session_id`/`path` are `None`,
+    not a placeholder value, since there is no session to identify.
+    """
+
+    session_id: str | None
+    path: Path | None
     reason: str
 
 
@@ -95,17 +118,19 @@ class BaselineResult:
 
     @property
     def fingerprint_warning(self) -> str | None:
-        """A ready-to-surface warning string, or None if every run had a
-        usable fingerprint. Whoever reads a BaselineResult should not
-        have to re-derive this from excluded_runs by hand to notice
-        fingerprint-based comparison wasn't fully available."""
+        """A ready-to-surface warning string, or None if every repeat
+        contributed. Whoever reads a BaselineResult should not have to
+        re-derive this from excluded_runs by hand to notice some repeats
+        weren't counted. Name kept from when null-hash exclusion was the
+        only reason; now covers any exclusion reason (see ExcludedRun),
+        each repeat identified by session_id where one exists, or its
+        reason alone when it doesn't (run_once itself failed)."""
         if not self.excluded_runs:
             return None
-        return (
-            f"{len(self.excluded_runs)} of {self.total_runs} run(s) excluded from "
-            f"fingerprint-based validation ({_NULL_HASH_REASON}): "
-            f"{', '.join(r.session_id for r in self.excluded_runs)}"
+        details = ", ".join(
+            f"{r.session_id} ({r.reason})" if r.session_id is not None else r.reason for r in self.excluded_runs
         )
+        return f"{len(self.excluded_runs)} of {self.total_runs} run(s) excluded: {details}"
 
 
 def _tool_path(records: list) -> tuple[str, ...]:
@@ -137,7 +162,12 @@ def run_baseline(
     excluded_runs: list[ExcludedRun] = []
 
     for _ in range(repeats):
-        session_path = run_once()
+        try:
+            session_path = run_once()
+        except Exception as exc:
+            excluded_runs.append(ExcludedRun(session_id=None, path=None, reason=_run_once_failed_reason(exc)))
+            continue
+
         records = list(read_session(session_path))
         session_start = next(r for r in records if isinstance(r, SessionStart))
 

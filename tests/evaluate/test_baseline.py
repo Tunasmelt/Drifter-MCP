@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from evaluate.baseline import ExcludedRun, run_baseline
+from evaluate.baseline import _NULL_HASH_REASON, ExcludedRun, run_baseline
 from record.calibration import Calibration
 from record.schema import Environment, SessionStart, ToolCall
 
@@ -174,6 +174,77 @@ def test_no_data_is_not_confusable_with_a_real_but_empty_or_zero_answer(tmp_path
     assert no_data.dominant_path is None
     assert real_but_empty.dominant_path == ()
     assert real_but_empty.dominant_path is not None
+
+
+# --- run_once itself failing (not a null-hash session) -------------------
+
+
+def test_run_once_failure_is_excluded_not_fatal(tmp_path):
+    """A repeat whose run_once() call raises (subprocess spawn error,
+    unresolved timeout, anything) must be excluded like a null-hash run
+    -- degrading valid_runs and getting flagged -- not propagate out of
+    run_baseline and abort the whole run, discarding the repeats that
+    already succeeded.
+    """
+    calls = {"n": 0}
+
+    def run_once() -> Path:
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise RuntimeError("subprocess spawn failed")
+        return _write_session(tmp_path, f"s{calls['n']}", ["a"], "h")
+
+    result = run_baseline("task_flaky", run_once=run_once, repeats=3)
+
+    assert result.has_data is True
+    assert result.total_runs == 3
+    assert result.valid_runs == 2
+    assert calls["n"] == 3  # the failure on repeat 2 didn't stop repeat 3 from running
+
+    assert len(result.excluded_runs) == 1
+    excluded = result.excluded_runs[0]
+    assert excluded.session_id is None  # no session was ever produced -- not a placeholder
+    assert excluded.path is None
+    assert "run_once raised" in excluded.reason
+    assert "subprocess spawn failed" in excluded.reason
+
+    assert result.fingerprint_warning is not None
+    assert "1 of 3" in result.fingerprint_warning
+    assert "run_once raised" in result.fingerprint_warning
+
+    # The two successful repeats still aggregate normally.
+    assert result.dominant_path == ("a",)
+    assert result.variant_frequencies == {("a",): 2}
+
+
+def test_run_once_failure_and_null_hash_exclusions_coexist_with_distinct_reasons(tmp_path):
+    """Both exclusion reasons can appear in the same excluded_runs list,
+    each keeping its own reason string -- never collapsed into one
+    generic "excluded" bucket that would make sess_null and the raised
+    repeat indistinguishable from each other.
+    """
+    plan = iter([("sess_null", ["a"], None)])
+
+    def run_once() -> Path:
+        try:
+            session_id, tool_names, hash_ = next(plan)
+        except StopIteration:
+            raise RuntimeError("agent never started")
+        return _write_session(tmp_path, session_id, tool_names, hash_)
+
+    result = run_baseline("task_mixed", run_once=run_once, repeats=2)
+
+    assert result.valid_runs == 0
+    assert result.has_data is False
+    assert len(result.excluded_runs) == 2
+
+    by_reason = {r.reason: r for r in result.excluded_runs}
+    assert _NULL_HASH_REASON in by_reason
+    assert by_reason[_NULL_HASH_REASON].session_id == "sess_null"
+
+    raised = next(r for r in result.excluded_runs if r.session_id is None)
+    assert "agent never started" in raised.reason
+    assert raised.reason != _NULL_HASH_REASON
 
 
 # --- dominant path / variant frequency / natural_variation / spread ------

@@ -288,7 +288,7 @@ dominant path, variant frequencies, mean, spread (natural_variation).
 **Simple:** Runs your agent normally, several times, to learn how much it naturally
 wobbles before Drifter changes anything — the "what's normal for you" measurement.
 
-**Depends on:** F-11 (replay), agent adapter (F-27).
+**Depends on:** F-11 (replay), agent adapter (F-34).
 **Done when:** repeated baseline runs on the same fixture produce a stable, reproducible
 spread estimate.
 

@@ -102,6 +102,85 @@ from replay.replay_store import ReplayStore
 DEFAULT_TERMINATE_GRACE_S = 5.0
 
 
+def make_run_once(
+    command: Sequence[str],
+    replay_store: ReplayStore,
+    server_name: str,
+    tools_served: list[ToolDescriptor],
+    session_dir: Path,
+    raw_dir: Path,
+    env: dict[str, str] | None = None,
+    cwd: Path | None = None,
+    timeout_s: float | None = None,
+):
+    """Binds `run_agent_subprocess`'s fixed parameters once and returns a
+    zero-arg, synchronous callable matching
+    `evaluate.baseline.run_baseline`'s `run_once: Callable[[], Path]`
+    contract exactly — each call spawns a fresh agent subprocess and
+    returns its session JSONL path.
+
+    Module placement: FEATURES.md names neither this function nor a
+    dedicated composition step. F-34 (this module) is the adapter in
+    isolation; F-21 (`evaluate/baseline.py`) is deliberately
+    aggregation-only with `run_once` injected (see that module's own
+    docstring — building a real `run_once` was explicitly deferred
+    there). Nothing in FEATURES.md's F-21–F-37 range names "wire the two
+    together" as its own feature. Given no named home, this lives here
+    rather than in `evaluate/baseline.py`, for a structural reason, not
+    just convenience: this project's module dependency chain (CLAUDE.md)
+    is `record/` → `replay/` → `mutate/` → `evaluate/` → `mine/` →
+    `policy/` → `cli/` — `cli/` is downstream of `evaluate/`, so this
+    module may import `evaluate.baseline`'s contract shape without
+    creating an import; `evaluate/baseline.py` importing `cli/` to build
+    a real `run_once` would run the dependency arrow backwards. Config-
+    loading is still out of scope here, same as `run_agent_subprocess`
+    itself (see this module's top docstring, point 1): every parameter
+    below is already-resolved, not read from `drifter.yaml`.
+
+    Distinct sessions per call: each invocation constructs a fresh
+    `SessionRecorder` inside `run_agent_subprocess` with no `session_id`
+    given, so `record/writer.py` assigns a fresh `uuid.uuid4().hex` per
+    call — genuinely distinct files, not derived from anything that
+    could repeat across calls in the same `session_dir` (confirmed by
+    reading `SessionRecorder.__init__`, not assumed). Combined with the
+    `recorder.jsonl_path`-based return fix above (no directory-scan/
+    mtime-sort race), repeated calls against the same `session_dir`
+    cannot collide or silently return an already-seen file.
+
+    Failure handling: NOT implemented here, and not implemented in
+    `run_baseline` either. If a call to the returned `run_once` raises
+    (e.g. `run_agent_subprocess`'s "produced no session JSONL" error, or
+    an `anyio`/OS-level failure spawning the process), that exception
+    propagates straight out of `run_baseline`'s `for` loop uncaught —
+    the whole baseline run aborts, discarding every valid repeat already
+    collected, not just excluding the one failed repeat the way a null
+    `tool_manifest_hash` is excluded. `run_baseline`'s existing
+    exclusion path only covers "a session was recorded but its
+    fingerprint was unusable" — it has no equivalent for "no session was
+    produced at all." This is a real, current gap, deliberately not
+    patched here per this prompt's own scope (composition only, no new
+    exclusion logic in `baseline.py`) — surfaced so it's a known,
+    tracked gap rather than an implicit assumption the next Gate 2 piece
+    trips over.
+    """
+
+    def run_once() -> Path:
+        return anyio.run(
+            run_agent_subprocess,
+            command,
+            replay_store,
+            server_name,
+            tools_served,
+            session_dir,
+            raw_dir,
+            env,
+            cwd,
+            timeout_s,
+        )
+
+    return run_once
+
+
 async def _pump_stdout_to_proxy(process: Process, read_stream_writer) -> None:
     """Parses newline-delimited JSON-RPC from the agent's stdout and
     feeds it to `run_replay_proxy`'s read_stream — the same line-framing
@@ -188,10 +267,20 @@ async def run_agent_subprocess(
 
     recorder.close()
 
-    new_session_files = sorted(session_dir.glob("*.jsonl"), key=lambda p: p.stat().st_mtime)
-    if not new_session_files:
-        raise RuntimeError(f"agent subprocess produced no session JSONL under {session_dir}")
-    return new_session_files[-1]
+    # recorder.jsonl_path is deterministic -- computed from session_id at
+    # SessionRecorder construction (record/writer.py), not re-derived by
+    # scanning session_dir. An earlier version of this function picked
+    # "most recently modified *.jsonl in session_dir" instead, which is
+    # NOT race-free when the same session_dir is reused across repeated
+    # calls (evaluate.baseline.run_baseline's repeats loop does exactly
+    # this): it depends on filesystem mtime resolution actually
+    # distinguishing back-to-back writes, rather than being correct by
+    # construction. Fixed before that composition existed, not after a
+    # collision was observed -- see cli/subprocess_adapter.py's
+    # make_run_once for the caller this matters for.
+    if not recorder.jsonl_path.exists():
+        raise RuntimeError(f"agent subprocess produced no session JSONL at {recorder.jsonl_path}")
+    return recorder.jsonl_path
 
 
 async def _ensure_process_stopped(process: Process) -> None:
