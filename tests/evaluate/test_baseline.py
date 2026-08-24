@@ -1,0 +1,254 @@
+"""Tests for the baseline runner (F-21), SPEC.md §7/§8.
+
+Focus: the explicit design change from PHASES.md's original sketch — a
+null `tool_manifest_hash` must be surfaced, never silently treated as a
+match. This directly tests the thing the skipped Gate 1 trial would have
+told us the real-world rate of (see .drifter/GATE_STATUS's gate_1_note).
+"""
+
+import statistics
+from pathlib import Path
+
+import pytest
+
+from evaluate.baseline import ExcludedRun, run_baseline
+from record.calibration import Calibration
+from record.schema import Environment, SessionStart, ToolCall
+
+
+def _write_session(
+    dir_path: Path,
+    session_id: str,
+    tool_names: list[str],
+    tool_manifest_hash: str | None,
+) -> Path:
+    """A minimal, current-schema session: SessionStart + one ToolCall per
+    entry in tool_names, in order. Built from the real Pydantic models
+    (not hand-written dicts) since this fixture targets the current
+    schema, unlike the pre-migration fixtures elsewhere in this project
+    that deliberately simulate an old, incomplete shape.
+    """
+    lines = [
+        SessionStart(
+            session_id=session_id,
+            seq=0,
+            started_at="2026-08-25T00:00:00Z",
+            environment=Environment(tool_manifest_hash=tool_manifest_hash),
+            raw_frame_offset=0,
+        ).model_dump_json()
+    ]
+    for i, tool_name in enumerate(tool_names, start=1):
+        lines.append(
+            ToolCall(
+                session_id=session_id,
+                seq=i,
+                timestamp="2026-08-25T00:00:01Z",
+                server="fake",
+                tool_name=tool_name,
+                arguments={},
+                result_shape={"type": "object", "keys": []},
+                is_error=False,
+                duration_ms=1.0,
+                fault=False,
+                raw_frame_offset=i * 100,
+            ).model_dump_json()
+        )
+    path = dir_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _runner(dir_path: Path, plan: list[tuple[str, list[str], str | None]]):
+    """Returns a zero-arg run_once callable that yields each (session_id,
+    tool_names, tool_manifest_hash) entry in plan, in order, one per call."""
+    it = iter(plan)
+
+    def run_once() -> Path:
+        session_id, tool_names, hash_ = next(it)
+        return _write_session(dir_path, session_id, tool_names, hash_)
+
+    return run_once
+
+
+# --- the explicit design change: null tool_manifest_hash is flagged ------
+
+
+def test_one_null_hash_run_is_flagged_not_ignored(tmp_path):
+    """3 runs share the same real path; a 4th has a null hash. The
+    null-hash run must not crash the aggregation and must not be
+    silently folded in as if its fingerprint matched — it must appear in
+    excluded_runs and the fingerprint_warning, and must not affect
+    dominant_path/variant_frequencies/natural_variation/baseline_spread.
+    """
+    plan = [
+        ("sess1", ["list_directory", "read_file"], "sha256:aaa"),
+        ("sess2", ["list_directory", "read_file"], "sha256:aaa"),
+        ("sess3", ["list_directory", "read_file"], "sha256:aaa"),
+        ("sess4_null", ["list_directory", "read_file"], None),  # same path, but unverifiable
+    ]
+    result = run_baseline("task_a", run_once=_runner(tmp_path, plan), repeats=4)
+
+    assert result.total_runs == 4
+    assert result.valid_runs == 3
+
+    assert len(result.excluded_runs) == 1
+    excluded = result.excluded_runs[0]
+    assert isinstance(excluded, ExcludedRun)
+    assert excluded.session_id == "sess4_null"
+    assert excluded.reason == "tool_manifest_hash is null"
+
+    assert result.fingerprint_warning is not None
+    assert "1 of 4" in result.fingerprint_warning
+    assert "sess4_null" in result.fingerprint_warning
+
+    # The 3 valid runs all match; the null-hash run contributes nothing
+    # to the stats below even though its own path also matched.
+    assert result.dominant_path == ("list_directory", "read_file")
+    assert result.variant_frequencies == {("list_directory", "read_file"): 3}
+    assert result.natural_variation == 0.0
+    assert result.baseline_spread == 0.0
+
+
+def test_zero_null_hash_runs_has_no_warning(tmp_path):
+    plan = [
+        ("sess1", ["a"], "sha256:aaa"),
+        ("sess2", ["a"], "sha256:aaa"),
+    ]
+    result = run_baseline("task_a", run_once=_runner(tmp_path, plan), repeats=2)
+    assert result.excluded_runs == []
+    assert result.fingerprint_warning is None
+    assert result.valid_runs == 2
+
+
+def test_all_runs_null_hash_does_not_crash_and_computes_nothing(tmp_path):
+    """Zero valid runs is an edge case, not a crash: dominant_path etc.
+    must come back None/empty, with every run accounted for in
+    excluded_runs, rather than raising on an empty-sequence statistic.
+    """
+    plan = [
+        ("sess1", ["a"], None),
+        ("sess2", ["b"], None),
+    ]
+    result = run_baseline("task_a", run_once=_runner(tmp_path, plan), repeats=2)
+
+    assert result.valid_runs == 0
+    assert result.dominant_path is None
+    assert result.variant_frequencies == {}
+    assert result.natural_variation is None
+    assert result.baseline_spread is None
+    assert result.has_data is False
+    assert len(result.excluded_runs) == 2
+    assert result.fingerprint_warning is not None
+    assert "2 of 2" in result.fingerprint_warning
+
+
+def test_no_data_is_not_confusable_with_a_real_but_empty_or_zero_answer(tmp_path):
+    """dominant_path can genuinely be () and natural_variation/
+    baseline_spread can genuinely be 0.0 for a real, valid baseline (see
+    test_empty_path_is_a_valid_variant and
+    test_all_identical_paths_have_zero_natural_variation_and_spread) --
+    every one of those is Python-falsy, identically to None. A caller
+    checking truthiness instead of `is None`/valid_runs/has_data would
+    silently conflate "no data at all" with "real answer, perfectly
+    stable." This test puts both scenarios side by side and asserts
+    they're distinguishable via has_data/valid_runs specifically, not
+    merely by inspecting which value happens to come back.
+    """
+    no_data = run_baseline(
+        "task_no_data", run_once=_runner(tmp_path, [("s1", ["a"], None)]), repeats=1
+    )
+    real_but_empty = run_baseline(
+        "task_real_empty", run_once=_runner(tmp_path, [("s2", [], "h")]), repeats=1
+    )
+
+    # Both dominant_path values are falsy (None vs. ()) -- has_data is
+    # the signal that actually distinguishes them, not truthiness.
+    assert not no_data.dominant_path
+    assert not real_but_empty.dominant_path
+    assert no_data.has_data is False
+    assert real_but_empty.has_data is True
+    assert no_data.valid_runs == 0
+    assert real_but_empty.valid_runs == 1
+
+    # The identity checks that ARE reliable:
+    assert no_data.dominant_path is None
+    assert real_but_empty.dominant_path == ()
+    assert real_but_empty.dominant_path is not None
+
+
+# --- dominant path / variant frequency / natural_variation / spread ------
+
+
+def test_dominant_path_and_variant_frequencies_with_a_real_split(tmp_path):
+    plan = [
+        ("s1", ["search", "get_customer"], "h"),
+        ("s2", ["search", "get_customer"], "h"),
+        ("s3", ["search", "get_customer"], "h"),
+        ("s4", ["search", "get_customer", "retry"], "h"),  # the one variant
+    ]
+    result = run_baseline("task_b", run_once=_runner(tmp_path, plan), repeats=4)
+
+    assert result.valid_runs == 4
+    assert result.dominant_path == ("search", "get_customer")
+    assert result.variant_frequencies == {
+        ("search", "get_customer"): 3,
+        ("search", "get_customer", "retry"): 1,
+    }
+    # 1 of 4 valid runs deviates from the dominant path.
+    assert result.natural_variation == pytest.approx(0.25)
+    assert result.baseline_spread == pytest.approx(statistics.pstdev([0, 0, 0, 1]))
+
+
+def test_all_identical_paths_have_zero_natural_variation_and_spread(tmp_path):
+    plan = [("s1", ["x"], "h"), ("s2", ["x"], "h"), ("s3", ["x"], "h")]
+    result = run_baseline("task_c", run_once=_runner(tmp_path, plan), repeats=3)
+    assert result.natural_variation == 0.0
+    assert result.baseline_spread == 0.0
+    # 0.0 is falsy, same as None -- has_data is what actually confirms
+    # this is a real, valid answer and not the no-data case.
+    assert result.has_data is True
+    assert result.valid_runs == 3
+
+
+def test_empty_path_is_a_valid_variant(tmp_path):
+    """A run that called no tools at all is still a legitimate path (the
+    empty tuple), not a special case that needs separate handling."""
+    plan = [("s1", [], "h"), ("s2", [], "h")]
+    result = run_baseline("task_d", run_once=_runner(tmp_path, plan), repeats=2)
+    assert result.dominant_path == ()
+    assert result.variant_frequencies == {(): 2}
+    # () is falsy, same as None -- has_data is what actually confirms
+    # this is a real, valid answer and not the no-data case.
+    assert result.has_data is True
+    assert result.valid_runs == 2
+
+
+# --- repeats / calibration wiring -----------------------------------------
+
+
+def test_repeats_defaults_from_calibration(tmp_path):
+    calls = {"n": 0}
+
+    def run_once() -> Path:
+        calls["n"] += 1
+        return _write_session(tmp_path, f"s{calls['n']}", ["a"], "h")
+
+    calibration = Calibration()
+    calibration.baseline.repeats = 3
+    result = run_baseline("task_e", run_once=run_once, calibration=calibration)
+    assert calls["n"] == 3
+    assert result.total_runs == 3
+
+
+def test_explicit_repeats_overrides_calibration(tmp_path):
+    calls = {"n": 0}
+
+    def run_once() -> Path:
+        calls["n"] += 1
+        return _write_session(tmp_path, f"s{calls['n']}", ["a"], "h")
+
+    calibration = Calibration()
+    calibration.baseline.repeats = 10
+    result = run_baseline("task_f", run_once=run_once, repeats=2, calibration=calibration)
+    assert calls["n"] == 2
+    assert result.total_runs == 2
