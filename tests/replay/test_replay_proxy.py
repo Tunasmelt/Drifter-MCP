@@ -157,6 +157,64 @@ async def test_recorded_fault_replays_as_a_protocol_error_distinct_from_miss(tmp
             tg.cancel_scope.cancel()
 
 
+# --- recording: SessionRecorder plugged into on_message, unchanged ------
+
+
+@pytest.mark.anyio
+async def test_on_message_lets_sessionrecorder_produce_a_valid_new_session(tmp_path):
+    """The actual gap the STOP-AND-CHECK step closed: run_replay_proxy
+    with a real SessionRecorder wired to on_message (exactly like
+    cli/observe.py wires it for passthrough) must produce a real,
+    parseable session JSONL describing what the CLIENT did this run --
+    tool_manifest_hash populated (the eager bootstrap's whole point),
+    ToolCall records matching the calls actually made, is_error/fault
+    carried through correctly, and a closed trajectory.
+    """
+    from record.writer import SessionRecorder
+
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=GOLDEN_SERVER)
+
+    calls = _golden_calls()
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                run_replay_proxy, *server_streams, store, GOLDEN_SERVER, tools_served, recorder.observe
+            )
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                for call in calls[:3]:
+                    await session.call_tool(call.tool_name, call.arguments)
+                with pytest.raises(MCPError):
+                    await session.call_tool("list_directory", {"path": "C:\\never\\recorded"})
+            tg.cancel_scope.cancel()
+    recorder.close()
+
+    new_session_files = list(runs_dir.glob("*.jsonl"))
+    assert len(new_session_files) == 1
+    new_records = list(read_session(new_session_files[0]))
+
+    session_start = next(r for r in new_records if r.record_type == "session_start")
+    assert session_start.environment.tool_manifest_hash is not None  # the eager-bootstrap guarantee
+
+    new_calls = [r for r in new_records if isinstance(r, ToolCall)]
+    assert len(new_calls) == 4  # 3 real hits + 1 miss
+    for original, recorded in zip(calls[:3], new_calls[:3]):
+        assert recorded.tool_name == original.tool_name
+        assert recorded.is_error == bool(original.is_error)
+        assert recorded.fault is False  # a genuine HIT, not a fault
+    assert new_calls[3].tool_name == "list_directory"
+    assert new_calls[3].fault is True  # the MISS, recorded as a protocol-level fault (see module docstring)
+
+    trajectory_ends = [r for r in new_records if r.record_type == "trajectory_end"]
+    assert len(trajectory_ends) == 1
+    assert trajectory_ends[0].call_seqs == [c.seq for c in new_calls]
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"

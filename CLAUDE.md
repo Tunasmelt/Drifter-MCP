@@ -81,6 +81,17 @@ fails, then implement. This exact sequence has now correctly caught a real bug t
 times (is_error/duration_ms in v1.0.7→v1.0.8, fault in this change) — treat it as
 required procedure for new fields, not optional extra caution.
 
+This project has hit the same async-shutdown-hang shape three times now
+(`record/proxy.py` Prompt 6, `cli/observe.py` Prompt 7's Ctrl+C handling,
+`subprocess_adapter.py`'s test fixture this gate): a blocking call (stdin read,
+subprocess wait, thread join) that doesn't honor anyio/asyncio cancellation, causing
+shutdown to hang until something external force-kills it. When writing any code that
+spawns a process, reads a stream, or waits on a thread: confirm explicitly (with a
+timing test, not just a passing test) that cancellation/interruption during that
+operation completes promptly, not just that the happy path works. "It passed" is not
+sufficient evidence for shutdown-path code in this codebase specifically — it has to
+be timed, per this pattern's three confirmed occurrences.
+
 ## When something in the spec turns out to be wrong
 
 It will happen — SPEC.md's calibration register exists because several of its

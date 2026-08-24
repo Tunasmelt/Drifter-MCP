@@ -6,6 +6,20 @@ not just a diff.
 
 ---
 
+## 2026-08-25 — F-34's actual scope is narrower than FEATURES.md's original wording
+
+F-34 as written in FEATURES.md described a URL-based proxy address and separate
+stdout final-answer capture. Gate 2's actual implementation is stdio-wired directly to
+the in-process replay proxy (matching every other Gate 2 component — no HTTP/URL
+transport exists in v0 per SPEC.md), and does not capture a final answer —
+`run_baseline` consumes tool-call sequences, not task conclusions; final-answer
+evaluation is F-24's job, not built yet. FEATURES.md's F-34 wording should be read as
+describing a later, HTTP-transport-era version of this adapter, not Gate 2's. See
+`src/cli/subprocess_adapter.py`'s module docstring for the full reasoning, and
+FEATURES.md's F-34 entry itself, updated alongside this note.
+
+---
+
 ## 2026-08-25 — Gate 1 closed by override, not by passing its exit test
 
 Gate 1 closed by explicit user override rather than passing its empirical exit test.

@@ -40,16 +40,64 @@ outbound connection. There is no code path here that can fall through to
 a live server, because the code to do so does not exist in this file —
 confirmed by inspection, not by a flag defaulting the "right" way (the
 same standard SPEC.md §10/DEC-005 already holds mutation testing to).
+
+Recording (F-34 prerequisite, closed here rather than left implicit):
+`run_replay_proxy` had no recording hook at all until this addition —
+confirmed by reading the whole file before writing any adapter code, not
+assumed. `run_baseline`'s `run_once` needs a *new* session JSONL per run
+(what the agent actually did this run, not the source corpus being
+replayed from), so something has to produce one. Fixed by adding an
+optional `on_message` parameter using the *same* `Direction`/
+`MessageObserver` types `record/proxy.py` already defines (imported, not
+redefined), so the existing `record/writer.py`'s `SessionRecorder` —
+already built, tested, handling redaction/segmentation/fingerprinting —
+plugs in completely unchanged, exactly like `cli/observe.py` already
+wires it to passthrough mode. `mcp.server.lowlevel.Server` negotiates
+`initialize` internally and dispatches by pre-parsed params, not raw
+frames, so there's nothing to literally tap the way `record/proxy.py`
+does; instead, the hook synthesizes the equivalent `JSONRPCRequest`/
+`JSONRPCResponse`/`JSONRPCError` objects `SessionRecorder.observe()`
+already expects, from data already available in the handlers
+(`ctx.session.client_params` for agent identity, `tools_served` for the
+manifest, the computed result per call).
+
+One deliberate, documented consequence: the `initialize`+`tools/list`
+exchange is synthesized once, eagerly, on the first request handled —
+regardless of whether the agent's own first move is `tools/list` or
+`tools/call` — so `tool_manifest_hash` is *always* populated for a
+replay-served session. This sidesteps, by construction, the exact
+ordering bug (`ToolCall` observed before `ToolsList`, leaving the hash
+null) found and documented while verifying the real permanent-config
+round trip. A real agent calling `tools/list` more than once mid-session
+still only produces one recorded `ToolsList` — matching the same
+"Gate 1 doesn't re-list mid-session" assumption `record/writer.py`
+already documents for live recording.
+
+A replay MISS and a replayed `fault=True` are recorded identically, as
+`fault=True` — deliberately, not a shortcut: both look the same on the
+wire to whatever's connected (a JSON-RPC protocol error, not a
+`CallToolResult`), and the recorded schema describes what the agent
+observed, not Drifter's internal reason for it. The two stay
+distinguishable to Drifter itself via their different `MCPError` codes
+(`REPLAY_MISS_CODE` vs `REPLAY_FAULT_CODE`) at the point they're raised;
+collapsing that distinction in the *recorded* schema is a scope
+decision for this prompt, not an oversight — a real MISS/fault-rate
+breakdown for replay-served runs is fidelity-computation territory
+(F-15/F-22), explicitly separate, later work.
 """
 
 from __future__ import annotations
 
+from itertools import count
 from pathlib import Path
 
 import mcp_types as types
 from mcp.server.lowlevel import Server
 from mcp.shared.exceptions import MCPError
+from mcp.shared.message import SessionMessage
+from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
+from record.proxy import Direction, MessageObserver
 from record.reader import read_session
 from record.schema import ToolDescriptor, ToolsList
 from replay.replay_store import RecordedResponse, ReplayStore
@@ -123,6 +171,7 @@ async def run_replay_proxy(
     replay_store: ReplayStore,
     server_name: str,
     tools_served: list[ToolDescriptor],
+    on_message: MessageObserver | None = None,
 ) -> None:
     """Serves one MCP session over `read_stream`/`write_stream` entirely
     from `replay_store` and `tools_served`. Stream-parameterized (matching
@@ -151,25 +200,96 @@ async def run_replay_proxy(
     convenience wrapper does — that swallowing lives in `MCPServer`'s own
     `_handle_call_tool`, not in the lower-level dispatch this module
     uses).
+
+    `on_message`, if given, receives synthesized `JSONRPCRequest`/
+    `JSONRPCResponse`/`JSONRPCError` objects matching exactly what
+    `record/writer.py`'s `SessionRecorder.observe()` already expects —
+    see this module's docstring for why synthesis is necessary here
+    (the framework negotiates `initialize` and pre-parses dispatch, so
+    there are no raw frames to tap) and for the two documented,
+    deliberate departures from live recording (eager one-time
+    `initialize`+`tools/list` synthesis; MISS and replayed-fault both
+    recorded as `fault=True`).
     """
     tools = [_to_wire_tool(t) for t in tools_served]
+    request_ids = count(1)
+    bootstrapped = False
+
+    def _emit(direction: Direction, message) -> None:
+        if on_message is not None:
+            on_message(direction, SessionMessage(message))
+
+    def _ensure_bootstrapped(ctx) -> None:
+        nonlocal bootstrapped
+        if bootstrapped:
+            return
+        bootstrapped = True
+
+        client_params = ctx.session.client_params
+        client_info = client_params.client_info if client_params is not None else None
+        init_id = next(request_ids)
+        _emit(
+            Direction.AGENT_TO_SERVER,
+            JSONRPCRequest(
+                jsonrpc="2.0",
+                id=init_id,
+                method="initialize",
+                params={"clientInfo": client_info.model_dump(mode="json", by_alias=True) if client_info else {}},
+            ),
+        )
+        _emit(
+            Direction.SERVER_TO_AGENT,
+            JSONRPCResponse(
+                jsonrpc="2.0",
+                id=init_id,
+                result={"serverInfo": {"name": f"drifter-replay-{server_name}", "version": ""}},
+            ),
+        )
+
+        # Eager, unconditional — see module docstring: this is what
+        # guarantees tool_manifest_hash is never null for a replay-served
+        # session, regardless of whether the agent itself calls
+        # tools/list before its first tools/call.
+        list_id = next(request_ids)
+        _emit(Direction.AGENT_TO_SERVER, JSONRPCRequest(jsonrpc="2.0", id=list_id, method="tools/list", params={}))
+        _emit(
+            Direction.SERVER_TO_AGENT,
+            JSONRPCResponse(
+                jsonrpc="2.0",
+                id=list_id,
+                result={"tools": [t.model_dump(mode="json", by_alias=True, exclude_unset=True) for t in tools]},
+            ),
+        )
 
     async def on_list_tools(ctx, params):
+        _ensure_bootstrapped(ctx)
         return types.ListToolsResult(tools=tools)
 
     async def on_call_tool(ctx, params: types.CallToolRequestParams):
-        hit = replay_store.lookup(server_name, params.name, params.arguments or {})
+        _ensure_bootstrapped(ctx)
+        arguments = params.arguments or {}
+        req_id = next(request_ids)
+        _emit(
+            Direction.AGENT_TO_SERVER,
+            JSONRPCRequest(jsonrpc="2.0", id=req_id, method="tools/call", params={"name": params.name, "arguments": arguments}),
+        )
+
+        hit = replay_store.lookup(server_name, params.name, arguments)
         if hit is None:
-            raise MCPError(
-                code=REPLAY_MISS_CODE,
-                message=f"replay MISS: no recorded response for {server_name}.{params.name} with these arguments",
-            )
+            message = f"replay MISS: no recorded response for {server_name}.{params.name} with these arguments"
+            _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_MISS_CODE, message=message)))
+            raise MCPError(code=REPLAY_MISS_CODE, message=message)
         if hit.fault:
-            raise MCPError(
-                code=REPLAY_FAULT_CODE,
-                message=f"replay: recorded call to {server_name}.{params.name} was a protocol-level fault",
-            )
-        return _synthesize_call_tool_result(hit)
+            message = f"replay: recorded call to {server_name}.{params.name} was a protocol-level fault"
+            _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_FAULT_CODE, message=message)))
+            raise MCPError(code=REPLAY_FAULT_CODE, message=message)
+
+        result = _synthesize_call_tool_result(hit)
+        _emit(
+            Direction.SERVER_TO_AGENT,
+            JSONRPCResponse(jsonrpc="2.0", id=req_id, result=result.model_dump(mode="json", by_alias=True, exclude_unset=True)),
+        )
+        return result
 
     server = Server(name=f"drifter-replay-{server_name}", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
     await server.run(read_stream, write_stream, server.create_initialization_options())

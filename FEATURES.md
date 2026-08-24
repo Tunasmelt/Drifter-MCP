@@ -466,16 +466,23 @@ manual edits required to run `drifter observe`.
 
 ### F-34 Subprocess agent adapter
 
-**Technical:** Executes `agent.command` as a subprocess per task, with the proxy URL
-injected via environment variable, task prompt templated in, capturing stdout as the
-final answer.
+**Technical:** Executes `agent.command` as a subprocess per task, task prompt
+templated in. **Gate 2 scope, narrower than the eventual full scope** (see
+CHANGELOG.md's 2026-08-25 F-34 entry): the spawned agent's own stdin/stdout is wired
+directly to an in-process replay-serving proxy (`replay/replay_proxy.py`) — matching
+SPEC.md's v0 stdio-only architecture — not a URL-addressed proxy over an injected
+environment variable. No separate final-answer string is captured; `run_baseline`
+consumes the recorded tool-call sequence (via `SessionRecorder`), not a task
+conclusion. A URL-based proxy address and separate stdout final-answer capture belong
+to a later, HTTP-transport-era version of this adapter (SPEC.md's "+HTTP in v1"),
+once that transport actually exists — not Gate 2's.
 
 **Simple:** The way Drifter actually runs *your* agent — not a stand-in, not a demo
 model, the real thing, however you'd normally run it from a terminal.
 
 **Depends on:** none (only touches process boundaries).
 **Done when:** a real CLI agent script runs correctly under the adapter with its
-output correctly captured and correlated to a trajectory.
+tool calls correctly captured and correlated to a trajectory.
 
 ### F-35 `drifter run`
 
