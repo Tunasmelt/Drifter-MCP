@@ -391,3 +391,23 @@ when*.
     doesn't retire limitation 1: "structurally, not semantically, correct" content can
     still diverge from what a real server would return in ways that affect agent
     behavior downstream, independent of whether the placeholder text itself is safe.
+12. `evaluate.baseline.aggregate_baseline_runs` cannot distinguish a genuine "the agent
+    called zero tools for this real task" run from a connectivity-check artifact that
+    never attempted the task at all — both produce the identical on-disk shape
+    (`tool_manifest_hash` populated, since a real `tools/list` happened, but zero
+    `ToolCall` records). Found while inspecting a real baseline corpus before trusting
+    its aggregate numbers (Gate 3 dogfood run): `claude mcp get`'s own connectivity
+    check reaches far enough into `replay_proxy.py`'s eager bootstrap to populate the
+    hash without ever calling a tool. Neither case is excluded — both are silently
+    counted as a valid empty-path variant, which is correct for the genuine case
+    (SPEC.md's own "empty path is a valid variant" design) and wrong for the artifact
+    case, inflating `natural_variation`/`baseline_spread` as if a real run had deviated
+    from the dominant path when it never attempted the task. Not a crash — a silent
+    miscount, confirmed against real data and locked in by a regression test
+    (`tests/evaluate/test_baseline.py`), not fixed: distinguishing the two needs a real
+    signal (a minimum-duration heuristic, an explicit task-attempt marker, or
+    something else) that doesn't exist in the recorded schema today, and inventing one
+    is a real design decision, not a reflexive patch. Until then, a caller aggregating
+    a corpus that might contain connectivity-check noise (any real `.drifter/runs/`
+    directory, not just this Gate 3 fixture) needs to filter zero-`ToolCall` sessions
+    by hand before trusting `natural_variation`/`baseline_spread`/`dominant_path`.

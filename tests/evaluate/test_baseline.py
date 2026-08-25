@@ -495,6 +495,44 @@ def test_zero_call_run_has_fidelity_one_and_is_never_fidelity_excluded(tmp_path)
     assert result.dominant_path == ()
 
 
+def test_a_connectivity_check_artifact_is_indistinguishable_from_a_real_zero_call_run_and_silently_contaminates_the_aggregate(tmp_path):
+    """A confirmed, real gap (not a hypothetical) -- found while checking
+    a real dogfood baseline corpus before trusting its aggregate numbers.
+    `claude mcp get`'s own connectivity check reaches far enough into
+    replay_proxy.py's eager bootstrap to populate tool_manifest_hash (a
+    real tools/list happens) but never calls a tool -- the identical
+    on-disk shape as test_zero_call_run_has_fidelity_one_and_is_never_
+    fidelity_excluded's GENUINE "agent legitimately called nothing"
+    case. aggregate_baseline_runs has no signal in the recorded data to
+    tell these apart, so a plumbing artifact gets counted as a real,
+    valid empty-path variant -- no crash, no exclusion, a silent
+    contamination of natural_variation/baseline_spread as if a real run
+    had genuinely deviated. This test locks in and documents that this
+    is real and does not crash; it does NOT assert this is correct
+    behavior -- distinguishing the two cases is a real, undecided design
+    question (what signal would even tell them apart?), not something
+    to fix reflexively as a side effect of this test.
+    """
+    real_path = ["list_directory"]
+    plan = [
+        ("sess_real_1", real_path, "h"),
+        ("sess_real_2", real_path, "h"),
+        ("sess_real_3", real_path, "h"),
+        ("sess_connectivity_check_artifact", [], "h"),  # zero calls, hash populated -- the exact shape found
+    ]
+    result = run_baseline("task_mixed_corpus", run_once=_runner(tmp_path, plan), repeats=4)
+
+    assert result.has_data is True
+    assert result.excluded_runs == []  # confirmed: NOT excluded -- no exclusion reason fires for this shape
+    assert result.valid_runs == 4  # confirmed: silently counted as a 4th valid run
+    assert result.variant_frequencies == {("list_directory",): 3, (): 1}
+    assert result.dominant_path == ("list_directory",)  # the 3 real runs still win, but only because 3 > 1
+    # The contaminating artifact inflates natural_variation as if a real
+    # run had deviated from the dominant path -- it did not; it never
+    # attempted the task at all.
+    assert result.natural_variation == pytest.approx(0.25)
+
+
 def test_synthetic_calls_excluded_from_fidelity_denominator_not_counted_as_hits_or_misses(tmp_path):
     """F-17's own done-when (FEATURES.md): tool_addition calls are
     correctly excluded from fidelity accounting -- SPEC.md §7's text is
