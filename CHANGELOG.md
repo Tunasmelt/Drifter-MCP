@@ -6,19 +6,36 @@ not just a diff.
 
 ---
 
-## 2026-08-25 — PHASES.md records Gate 3's exit test as satisfied, kill criterion as unattempted
+## Gate 3 exit test: satisfied by an injection-defense finding, not a
+mutation-behavior finding — kill criterion still open
 
-Added a "Status" subsection to PHASES.md's Gate 3 section, distinct from the exit
-test's and kill criterion's own requirement text: the exit test is satisfied (the
-injection-defense finding and the connectivity-artifact-contamination finding, both
-`257f9ce`/`e06b122`, both found via the real Gate 0 dogfood pairing), but the kill
-criterion is explicitly unattempted, not passed — the baseline-vs-mutation comparison
-it depends on was never run, blocked by this session's own inability to spawn a
-nested `claude` process, not by anything in Drifter. Written now, separately from
-running that comparison, specifically so the two facts (exit test satisfied; kill
-criterion still open) don't collapse into an implied "Gate 3 is done" the evidence
-doesn't yet support — the comparison remains a real, separate next action for
-whoever runs the handoff runbook from a plain terminal.
+Formal record that Gate 3's PHASES.md exit test is satisfied (`257f9ce`, `e06b122`),
+and explicit that this is distinct from, and does not resolve, the kill criterion.
+
+**What's closed:** a real, previously-unknown fragility was found using the actual
+Gate 0 dogfood pairing — Drifter's own synthetic placeholder content triggered a real
+agent's prompt-injection defenses, blocking every multi-step replay-mode task. Fixed
+(`_synthesize_call_tool_result`/`_synthesize_added_tool_result` now return genuinely
+empty content, verified against the literal failing call, regression-tested against
+re-introduction of any self-referential language, not just the original triggering
+string). `cli/replay_serve.py` — the missing entrypoint that let a real,
+standards-compliant MCP client agent connect to the replay proxy at all — was also
+built and verified as part of this investigation; it did not exist before this gate
+and was a genuine prerequisite gap, not anticipated in the original Gate 3 scope.
+
+A second, real methodological gap was found in the same investigation and is
+documented but deliberately not fixed yet: `aggregate_baseline_runs` cannot currently
+distinguish a `claude mcp get` connectivity artifact from a genuine zero-tool-call
+task run — both produce identical recorded shapes. SPEC.md §15 limitation 12.
+
+**What's open:** the actual baseline-vs-`description_update`-vs-`tool_addition`
+behavioral comparison against the real dogfood pairing has never been run. A full
+handoff runbook exists for running it from a plain, non-nested terminal — nested
+`claude` process spawning is blocked in the session where this gate's development
+work happened, which is an environment constraint, not a Drifter finding. Until that
+comparison runs, PHASES.md's kill criterion remains genuinely unevaluated — not
+cleared, not triggered, unattempted. Gate 4 (handoff to a second user) should not
+proceed on the assumption that the kill criterion has been checked.
 
 ## 2026-08-25 — Gate 3 exit-test evidence: a real fragility, found in Drifter's own code
 
