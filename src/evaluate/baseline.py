@@ -84,12 +84,41 @@ fidelity"). `has_data`/`valid_runs == 0` is what actually distinguishes
 "never computed" (`None`) from "computed, and it's bad" (`0.0`) — same
 rule as the other three aggregate fields, checked explicitly here rather
 than assumed safe because it "returns a float."
+
+Execution/analysis split (F-36, `drifter score`, Gate 2's actual exit
+test): SPEC.md §5's architecture diagram already draws this as a hard
+line ("above: costs money, has side effects / below: free, instant,
+repeatable") — `drifter score` re-analyzes already-recorded session
+JSONL with zero new agent execution. STOP-AND-CHECK before building
+that command found this line was NOT yet a real function boundary in
+code: `run_baseline` only ever computed dominant_path/
+natural_variation/baseline_fidelity/exclusions as a side effect of
+calling `run_once` itself — there was no way to hand it a list of
+session paths that already exist on disk and get the same analysis
+back, decoupled from execution. `aggregate_baseline_runs` below is that
+extraction: the pure analysis core, taking only paths, never touching
+`run_once`. `run_baseline` is now a thin wrapper — call `run_once`
+`repeats` times, collect the paths (or a `run_once raised` exclusion
+per failure, unchanged from before), delegate to
+`aggregate_baseline_runs`. Same reads for the same reasons — this
+function had no behavior change from the extraction, confirmed by the
+full existing test suite passing unmodified against the new structure.
+
+`aggregate_baseline_runs` also gained a fourth exclusion reason that
+`run_baseline`'s original inline loop never needed: a session PATH that
+exists but fails to read (`read_session` raises, or the file has no
+`SessionStart` record at all) — plausible for `drifter score`, which
+reads whatever `*.jsonl` files happen to sit in a directory, in a way
+it never was for `run_baseline`, which only ever saw paths its own
+`run_once` had just produced. Same exclude-not-crash treatment as the
+other three; distinct reason string, `session_id`/`path=None`/the given
+path respectively where each is knowable.
 """
 
 from __future__ import annotations
 
 import statistics
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -108,15 +137,30 @@ def _fidelity_excluded_reason(fidelity: float, floor: float) -> str:
     return f"fidelity {fidelity:.2f} below floor {floor:.2f}"
 
 
+def _unreadable_session_reason(exc: Exception) -> str:
+    # str(exc) is empty for a bare StopIteration -- exactly what
+    # `next(...)` raises reading an empty/truncated file with no
+    # SessionStart record at all (confirmed live: cli/score.py run
+    # against .drifter/runs/ hit real zero-byte session files there,
+    # from claude mcp get/health-check connections polluting the corpus
+    # -- see this project's own memory of that finding). A blank reason
+    # string is a useless diagnostic for exactly the case that actually
+    # occurs in practice, so fall back to the exception type plus a
+    # concrete hint rather than an empty message.
+    detail = str(exc) or f"{type(exc).__name__} (e.g. an empty or truncated file with no SessionStart record)"
+    return f"session unreadable: {detail}"
+
+
 @dataclass(frozen=True)
 class ExcludedRun:
     """One baseline repeat excluded from the computation, and why.
 
-    Three distinct reasons currently reach here, and `session_id`/`path`
-    are only meaningful for the first two: a session WAS recorded, so
-    there is something to point at. For `run_once raised`, `session_id`/
-    `path` are `None`, not a placeholder value — there is no session to
-    identify when `run_once()` never produced one.
+    Four distinct reasons currently reach here. `session_id`/`path` are
+    only meaningful when a session was actually identified: `None` for
+    `run_once raised` (no session was ever produced) and for
+    `session unreadable` when even the path's own SessionStart couldn't
+    be read (`path` is still set there — the path is known, just not
+    what's in it).
     """
 
     session_id: str | None
@@ -220,35 +264,44 @@ def _run_fidelity(records: list) -> float:
     return hits / len(calls)
 
 
-def run_baseline(
+def aggregate_baseline_runs(
     task_id: str,
-    run_once: Callable[[], Path],
-    repeats: int | None = None,
+    session_paths: Sequence[Path],
     calibration: Calibration | None = None,
+    pre_excluded: Sequence[ExcludedRun] = (),
 ) -> BaselineResult:
-    """Runs `task_id` `repeats` times via `run_once` (each call must
-    return the path to that run's session JSONL) and aggregates the
-    result. `repeats` defaults to `calibration.yaml`'s `baseline.repeats`
-    when not given explicitly, matching `record/writer.py`'s existing
-    `calibration or load_calibration()` pattern.
+    """The pure analysis core (SPEC.md §5's "below the line": free,
+    instant, repeatable, zero execution). Computes a `BaselineResult`
+    entirely from already-existing session JSONL paths on disk — no
+    `run_once`, no subprocess, no proxy, no execution of any kind. This
+    is what `cli/score.py`'s `drifter score` calls directly, re-
+    analyzing already-recorded data with zero new agent execution, per
+    F-36's "Done when" (PHASES.md's Gate 2 exit test).
+
+    `pre_excluded` carries exclusions that happened *before* a session
+    even existed — today, only `run_baseline`'s "run_once raised" case.
+    Passed through untouched so `run_baseline` can still report those
+    without this function knowing anything about `run_once`.
+    `total_runs` is `len(session_paths) + len(pre_excluded)` — every
+    attempted run is either a path handed in here, or already accounted
+    for in `pre_excluded`.
     """
     calibration = calibration or load_calibration()
-    if repeats is None:
-        repeats = calibration.baseline.repeats
+    total_runs = len(session_paths) + len(pre_excluded)
 
     valid_paths: list[tuple[str, ...]] = []
     valid_fidelities: list[float] = []
-    excluded_runs: list[ExcludedRun] = []
+    excluded_runs: list[ExcludedRun] = list(pre_excluded)
 
-    for _ in range(repeats):
+    for session_path in session_paths:
         try:
-            session_path = run_once()
+            records = list(read_session(session_path))
+            session_start = next(r for r in records if isinstance(r, SessionStart))
         except Exception as exc:
-            excluded_runs.append(ExcludedRun(session_id=None, path=None, reason=_run_once_failed_reason(exc)))
+            excluded_runs.append(
+                ExcludedRun(session_id=None, path=session_path, reason=_unreadable_session_reason(exc))
+            )
             continue
-
-        records = list(read_session(session_path))
-        session_start = next(r for r in records if isinstance(r, SessionStart))
 
         if session_start.environment.tool_manifest_hash is None:
             excluded_runs.append(
@@ -273,7 +326,7 @@ def run_baseline(
     if not valid_paths:
         return BaselineResult(
             task_id=task_id,
-            total_runs=repeats,
+            total_runs=total_runs,
             valid_runs=0,
             dominant_path=None,
             variant_frequencies={},
@@ -306,7 +359,7 @@ def run_baseline(
 
     return BaselineResult(
         task_id=task_id,
-        total_runs=repeats,
+        total_runs=total_runs,
         valid_runs=len(valid_paths),
         dominant_path=dominant_path,
         variant_frequencies=variant_frequencies,
@@ -315,3 +368,35 @@ def run_baseline(
         baseline_fidelity=baseline_fidelity,
         excluded_runs=excluded_runs,
     )
+
+
+def run_baseline(
+    task_id: str,
+    run_once: Callable[[], Path],
+    repeats: int | None = None,
+    calibration: Calibration | None = None,
+) -> BaselineResult:
+    """Runs `task_id` `repeats` times via `run_once` (each call must
+    return the path to that run's session JSONL), then delegates to
+    `aggregate_baseline_runs` for the analysis. `repeats` defaults to
+    `calibration.yaml`'s `baseline.repeats` when not given explicitly,
+    matching `record/writer.py`'s existing `calibration or
+    load_calibration()` pattern.
+
+    Thin execution wrapper only — see `aggregate_baseline_runs` for the
+    actual aggregation logic and the execution/analysis split this
+    function's extraction was built to support.
+    """
+    calibration = calibration or load_calibration()
+    if repeats is None:
+        repeats = calibration.baseline.repeats
+
+    session_paths: list[Path] = []
+    pre_excluded: list[ExcludedRun] = []
+    for _ in range(repeats):
+        try:
+            session_paths.append(run_once())
+        except Exception as exc:
+            pre_excluded.append(ExcludedRun(session_id=None, path=None, reason=_run_once_failed_reason(exc)))
+
+    return aggregate_baseline_runs(task_id, session_paths, calibration=calibration, pre_excluded=pre_excluded)

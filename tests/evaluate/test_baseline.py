@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from evaluate.baseline import _NULL_HASH_REASON, ExcludedRun, run_baseline
+from evaluate.baseline import _NULL_HASH_REASON, ExcludedRun, aggregate_baseline_runs, run_baseline
 from record.calibration import Calibration
 from record.schema import Environment, SessionStart, ToolCall
 
@@ -289,6 +289,87 @@ def test_run_once_failure_and_null_hash_exclusions_coexist_with_distinct_reasons
     raised = next(r for r in result.excluded_runs if r.session_id is None)
     assert "agent never started" in raised.reason
     assert raised.reason != _NULL_HASH_REASON
+
+
+# --- aggregate_baseline_runs: the pure, execution-free analysis core -----
+# (F-36's prerequisite extraction -- what cli/score.py calls directly)
+
+
+def test_aggregate_baseline_runs_computes_the_same_result_from_paths_alone(tmp_path):
+    """No run_once anywhere -- session paths already exist on disk (as
+    they would from a prior drifter observe / baseline run), and the
+    exact same aggregation drifter score needs comes back."""
+    paths = [
+        _write_session(tmp_path, "s1", ["a", "b"], "h"),
+        _write_session(tmp_path, "s2", ["a", "b"], "h"),
+        _write_session(tmp_path, "s3", ["a", "b", "c"], "h"),
+    ]
+    result = aggregate_baseline_runs("task_from_disk", paths)
+
+    assert result.has_data is True
+    assert result.total_runs == 3
+    assert result.valid_runs == 3
+    assert result.dominant_path == ("a", "b")
+    assert result.baseline_fidelity == 1.0
+
+
+def test_unreadable_session_path_is_excluded_with_its_own_reason(tmp_path):
+    """A path that exists but isn't a parseable session -- plausible for
+    drifter score, reading whatever *.jsonl happens to sit in a
+    directory, in a way run_baseline's own run_once-produced paths never
+    needed to guard against. Must exclude, not crash the whole score."""
+    good_path = _write_session(tmp_path, "s_good", ["a"], "h")
+    bad_path = tmp_path / "not_a_session.jsonl"
+    bad_path.write_text("{this is not valid json\n", encoding="utf-8")
+
+    result = aggregate_baseline_runs("task_mixed", [good_path, bad_path])
+
+    assert result.has_data is True
+    assert result.valid_runs == 1
+    assert result.total_runs == 2
+    assert len(result.excluded_runs) == 1
+    excluded = result.excluded_runs[0]
+    assert excluded.session_id is None
+    assert excluded.path == bad_path
+    assert "session unreadable" in excluded.reason
+
+
+def test_empty_session_file_gets_an_informative_reason_not_a_blank_one(tmp_path):
+    """A zero-byte session file (a real, observed case -- claude mcp
+    get/health-check connections through drifter observe leave these in
+    a real corpus) makes `next(...)` raise a bare StopIteration with no
+    message. str(exc) alone would be "" -- confirmed live while
+    producing drifter score's exit-test evidence against .drifter/runs/.
+    The reason string must never be blank."""
+    empty_path = tmp_path / "empty_sess.jsonl"
+    empty_path.write_text("", encoding="utf-8")
+
+    result = aggregate_baseline_runs("task", [empty_path])
+
+    assert len(result.excluded_runs) == 1
+    reason = result.excluded_runs[0].reason
+    assert reason != "session unreadable: "
+    assert "session unreadable:" in reason
+    assert len(reason) > len("session unreadable: ")
+
+
+def test_run_baseline_and_aggregate_baseline_runs_agree_given_the_same_sessions(tmp_path):
+    """run_baseline (execution) is now a thin wrapper around
+    aggregate_baseline_runs (analysis) -- feeding aggregate_baseline_runs
+    the exact paths run_baseline's run_once would have produced must
+    give back an equivalent result, confirming the extraction didn't
+    change behavior."""
+    plan = [("s1", ["a", "b"], "h"), ("s2", ["a", "b"], "h"), ("s3", ["a"], "h")]
+    via_run_baseline = run_baseline("task_equiv", run_once=_runner(tmp_path, plan), repeats=3)
+
+    paths = [_write_session(tmp_path, f"{sid}_direct", tools, h) for sid, tools, h in plan]
+    via_aggregate = aggregate_baseline_runs("task_equiv", paths)
+
+    assert via_run_baseline.dominant_path == via_aggregate.dominant_path
+    assert via_run_baseline.valid_runs == via_aggregate.valid_runs
+    assert via_run_baseline.natural_variation == via_aggregate.natural_variation
+    assert via_run_baseline.baseline_spread == via_aggregate.baseline_spread
+    assert via_run_baseline.baseline_fidelity == via_aggregate.baseline_fidelity
 
 
 # --- fidelity gating (SPEC.md §7/§8, DEC-020) -----------------------------

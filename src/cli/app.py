@@ -1,8 +1,8 @@
 """`drifter` CLI dispatch (SPEC.md §12).
 
-`observe`, `stats`, and `doctor` (connectivity checks only, per PHASES.md
-Gate 1) are wired up — the rest of SPEC.md §12's command list (`init`,
-`tasks mine`, `tasks approve`, `run`, `score`, `report`, doctor's
+`observe`, `stats`, `score`, and `doctor` (connectivity checks only, per
+PHASES.md Gate 1) are wired up — the rest of SPEC.md §12's command list
+(`init`, `tasks mine`, `tasks approve`, `run`, `report`, doctor's
 classification-sanity checks) lands in later gates. Unregistered
 subcommands fail with argparse's own "invalid choice" error rather than
 a stub pretending to be implemented.
@@ -53,6 +53,10 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor_parser = subparsers.add_parser("doctor", help="Config + connectivity pre-flight checks")
     doctor_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
 
+    score_parser = subparsers.add_parser("score", help="Re-analyze recorded sessions, zero new execution")
+    score_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+    score_parser.add_argument("--runs-dir", type=Path, default=None, help="Corpus directory to read directly, bypassing drifter.yaml")
+
     return parser
 
 
@@ -82,6 +86,14 @@ def main() -> None:
 
         ok = run_doctor(config_path=args.config)
         raise SystemExit(0 if ok else 4)  # SPEC.md §12: exit code 4 = config/connectivity error
+    elif args.command == "score":
+        from cli.score import run_score
+
+        try:
+            run_score(config_path=args.config, runs_dir=args.runs_dir)
+        except ConfigError as e:
+            print(f"drifter score: {e}", file=sys.stderr)
+            raise SystemExit(4) from None
     else:
         parser.print_help(sys.stderr)
         raise SystemExit(1 if args.command else 0)
