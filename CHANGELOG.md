@@ -6,6 +6,48 @@ not just a diff.
 
 ---
 
+## 2026-08-25 — Gate 3 scoping: O4 stays excluded, but now for the real reason
+
+Pre-Gate-3 review found the locked docs said nothing about why O4 (Tool Integration)
+isn't in Gate 3's two-operator scope — `Gate 0/NOTES.md` already corrected the
+original schema-merge/no-clean-inverse justification as factually wrong (O4 is
+compositionally O1 + related description updates, not a schema merge), but that
+correction never propagated to PHASES.md or FEATURES.md, and SPEC.md's own citation
+of the correction (§4, C19) pointed at a nonexistent path (`mutate/operators/NOTES.md`
+— the real file is `Gate 0/NOTES.md`). Decision: keep O4 out of Gate 3, but for scope
+reasons — prove the harness on two cleanly-attributable operators before a composite
+third, so the kill criterion's exit test never has to disentangle which operator
+caused a detected regression — not the debunked technical blocker. PHASES.md's Gate 3
+section and SPEC.md's C19 note updated to say this explicitly. Revisit O4 for v1 once
+F-16/F-17 are proven.
+
+## 2026-08-25 — description_update (F-16) is a closed-set structural transformation, no generation involved
+
+Decided explicitly rather than left implicit, since it's safety-relevant per SPEC.md
+§10's injection defense: `description_update` performs bounded, deterministic (seed-
+reproducible, per `calibration.yaml`'s `mutation.seed`) text transformation over an
+existing description's own content — synonym substitution from a fixed table,
+sentence-level reordering of sentences already present — with **no LLM call and no
+free-text generation anywhere in the operator**. F-16's existing FEATURES.md wording
+("bounded structural paraphrase... within the existing content") already implied
+this; recorded here as a deliberate architectural choice, not an incidental reading.
+
+Consequence for SPEC.md §10's imperative-pattern regex rejection: it becomes
+defense-in-depth against a *source* description that already contained injection-
+shaped text before mutation, not the primary defense against a generative process's
+output — a closed-set recombination of an already-reviewed description's own words
+cannot manufacture genuinely novel imperative phrasing the way an LLM paraphrase
+could. This also keeps `description_update` consistent with `Gate 0/NOTES.md`'s own
+stated architectural philosophy ("Drifter enforces the equivalent constraint
+architecturally... a stronger guarantee, not dependent on an LLM following
+instructions") — an LLM-paraphrase-then-reject design would have made Drifter's own
+operator rely on exactly the weaker mechanism that note draws a contrast against.
+Also keeps mutation generation free of API dependency/cost, matching this project's
+consistent record/replay-once, execute-many-times-for-free architecture (most
+recently demonstrated by `drifter score`'s zero-network-calls guarantee, Gate 2).
+
+---
+
 ## 2026-08-25 — F-34's actual scope is narrower than FEATURES.md's original wording
 
 F-34 as written in FEATURES.md described a URL-based proxy address and separate
