@@ -6,6 +6,57 @@ not just a diff.
 
 ---
 
+## Kill criterion attempted twice against Claude Code: UNKNOWN both times,
+converging on a structural finding, not a fixture-richness problem
+
+The baseline-vs-mutation comparison PHASES.md's Gate 3 kill criterion depends on was
+actually run, twice, against the real Gate 0 dogfood pairing (Claude Code + the real
+filesystem MCP server, via `drifter replay-serve`) — the environment block from the
+prior entry was worked around (plain `claude -p`, no `--dangerously-skip-permissions`,
+`--allowedTools` for non-interactive MCP approval).
+
+**Attempt #1** used the minimal 2-call fixture already on hand. Every one of 9 real
+runs across baseline/`description_update`/`tool_addition` fell below
+`fidelity_floor=0.70` (0.25–0.5) — both mutated arms and the baseline arm all reported
+`has_data=False`, so `compute_behavior_effect_size` returned `UNKNOWN` for both
+operators, not because of a crash but because there was no valid data to compare.
+Reading the recorded sequences showed why: the agent's first call exactly matched the
+fixture, but every real run then made at least one additional exploratory call
+(alternate path separators, a parent-directory check, `directory_tree`) that the thin
+fixture never recorded.
+
+**Attempt #2** recorded a deliberately richer fixture, live, specifically covering
+those two follow-up patterns (4 real calls instead of 2). Same result: `UNKNOWN` for
+both operators again, fidelities 0.25–0.60 across another 9 real runs. Two fixtures
+failing identically for the identical reason rules out "not enough coverage yet" as
+the explanation.
+
+**The actual mechanism**, confirmed by reading all 9 second-attempt sequences: a
+near-universal first move (`list_allowed_directories`) was absent from both fixtures;
+once any single call misses, the agent doesn't retry once, it escalates through an
+open-ended combination of path formats, tools, and directory levels — some runs
+reached 8–9 calls for a task that needs 2. This isn't enumerable from any single
+anticipated follow-up set, which means exact-tier-only replay may not be practically
+viable against a real, curious agent regardless of how rich one recorded fixture is.
+
+**This reframes semantic-tier resolution's priority**, documented in SPEC.md §7:
+deferred earlier this gate on the (still-correct) reasoning that neither
+`description_update` nor `tool_addition` changes argument values in a way that needs
+it. This finding is a different, larger justification — semantic resolution (or
+equivalent broadened match tolerance) may be a prerequisite for exact-tier replay to
+work against any real agent at all, independent of mutation. Not decided here which
+path to take (broader/repeated fixture recording vs. building semantic resolution
+ahead of its original schedule) — flagged explicitly as the next decision point,
+PHASES.md's Gate 3 Status section, rather than defaulted into either silently.
+
+**Minor, separate finding:** in 3 of the 9 second-attempt runs, Claude Code's own
+natural-language summary claimed every call missed when the recorded trace showed
+real hits — not a Drifter defect, a reminder that an agent's self-narration isn't a
+substitute for the recorded trace when interpreting results.
+
+Kill criterion status: still unresolved — attempted twice, UNKNOWN both times, for a
+now well-understood structural reason rather than an unattempted comparison.
+
 ## Gate 3 exit test: satisfied by an injection-defense finding, not a
 mutation-behavior finding — kill criterion still open
 

@@ -227,14 +227,51 @@ SPEC.md §15 limitation 12, deliberately not silently patched — no design deci
 been made yet on how to add the missing signal (duration heuristic vs. explicit
 task-attempt marker vs. something else).
 
-**Kill criterion — NOT YET EVALUATED (blocked, not cleared)**
+**Kill criterion — ATTEMPTED TWICE, still UNKNOWN, converging on a structural finding**
 
-The kill criterion is conditioned on a completed baseline-vs-mutation comparison
-producing NO_REGRESSION across both operators. **That comparison has not been run.**
-A full runbook exists for running it from a plain terminal; it was never executed,
-because spawning a nested `claude` process is blocked inside the session where this
-gate's work was done. This is an environment constraint of that specific session, not
-a Drifter defect and not evidence toward either side of the kill criterion.
+The comparison was run for real, twice, against Claude Code through the real
+filesystem MCP server (`drifter replay-serve`) — the environment block noted in this
+section's original version was worked around (plain `claude -p` without
+`--dangerously-skip-permissions`, `--allowedTools` for non-interactive MCP-tool
+approval). Both attempts returned `EffectSizeResult(verdict='UNKNOWN')` for both
+operators — every arm's `valid_runs` was 0, every real run falling below
+`fidelity_floor=0.70`.
+
+Attempt #1 used a minimal 2-call fixture (`list_directory` + `read_text_file`).
+Attempt #2 recorded a deliberately richer 4-call fixture, live, specifically covering
+the two most common follow-up patterns attempt #1 revealed (`directory_tree`, a
+parent-directory `list_directory`). Both failed the identical way for the identical
+reason across 9 real live-agent attempts (fidelities 0.25–0.60) — ruling out "the
+fixture wasn't rich enough yet" as the explanation.
+
+**The actual mechanism, confirmed by reading all 9 recorded call sequences:** a real,
+curious agent's tool-selection verification behavior is combinatorial (path format ×
+tool choice × directory depth), not enumerable from a single anticipated follow-up
+set. A near-universal first move (`list_allowed_directories`) was absent from both
+recorded fixtures; once any call misses, the agent doesn't retry once, it escalates
+through an open-ended sequence — some runs reached 8–9 calls for a 2-call task. No
+finite single-session recording can realistically pre-populate that space at
+exact-tier-only resolution.
+
+**This reframes a prior Gate 3 scoping decision.** Tier 3 (semantic matching,
+`replay/`'s F-13) was deferred from F-16/F-17 on the reasoning that neither operator's
+own mutation changes argument values in a way that needs it (SPEC.md §7's Gate 3
+implementation-status note) — correct as far as it went. This finding shows tier 3 (or
+an equivalent broadening of match resolution) may be a prerequisite for exact-tier
+replay to be viable against *any* real, curious agent at all, independent of whether a
+mutation is active. That's a different, larger justification than the one tier 3 was
+originally deferred against, and changes its priority from "nice-to-have for later
+operators" to "possibly blocking exact-tier replay's real-world viability."
+
+Neither honest path forward — an even more exhaustive fixture, or building tier-3
+semantic resolution — was attempted here; both are real, substantive pieces of work,
+not something to decide as a byproduct of this investigation.
+
+**Secondary, minor finding:** in 3 of 9 runs, Claude Code's own natural-language
+self-report claimed "every call returned MISS" or equivalent, when the recorded trace
+showed real hits. Not a Drifter defect — a reminder that an agent's own narration of
+its tool use is not a reliable substitute for the recorded trace when interpreting
+results.
 
 **Do not read Gate 3 as fully closed on the strength of the exit test alone.** The
 exit test's satisfaction and the kill criterion's status are independent facts:
@@ -242,18 +279,15 @@ exit test's satisfaction and the kill criterion's status are independent facts:
 | | Status |
 |---|---|
 | Exit test (one real fragility found) | ✅ Satisfied |
-| Kill criterion (harness detects real mutation effect, or confirmed via brittle-agent fallback) | ⏳ Unattempted — comparison never run |
+| Kill criterion (harness detects real mutation effect, or confirmed via brittle-agent fallback) | ⏳ Attempted twice — UNKNOWN both times, for a structural reason, not a harness crash or an unattempted comparison |
 
-**To actually resolve the kill criterion**, run the handoff runbook (reproducible from
-`cli/replay_serve.py`'s own docstring + `mutate/description_update.py` /
-`mutate/tool_addition.py`'s test suites) from a plain, non-nested terminal: baseline
-arm (3+ repeats, `n=3` used to bound API cost — read the runbook's own
-small-sample-size caveat before trusting a single verdict), then both mutated arms,
-then `compute_behavior_effect_size` per arm. If real REGRESSION is found: Gate 3 gains
-a second, stronger exit-test example. If genuinely clean at an adequate sample size:
-the kill criterion's next step (construct a known-brittle test agent, confirm the
-harness can detect a planted regression) becomes the actual next action before
-concluding either "ship as-is" or "the harness doesn't work."
+**The actual next decision point**, flagged explicitly rather than defaulted into
+silently: either (a) attempt an even more exhaustive live fixture recording (probably
+still probabilistic — the exploration space is not obviously boundable), or (b) treat
+this as sufficient evidence to prioritize tier-3 semantic matching ahead of its
+original v1+ scheduling, before the kill criterion's own "construct a known-brittle
+test agent" step is even reachable. Whoever picks this up should make that call
+deliberately, not by default.
 
 ---
 

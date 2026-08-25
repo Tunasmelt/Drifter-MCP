@@ -185,6 +185,22 @@ scope for `tool_addition`'s own fidelity accounting (the very next sentence's
 tested) — it is not general F-14, and nothing later should assume "a missed call to
 any tool now gets a structurally-valid synthesized response" from this note alone.
 
+**Semantic tier's priority, reframed by a real finding (Gate 3, PHASES.md's kill
+criterion, two live attempts against Claude Code):** semantic resolution was deferred
+above on the reasoning that `description_update`/`tool_addition` don't change argument
+values in a way that needs it — true as far as it goes. Two separate live fixtures (a
+minimal 2-call recording and a deliberately richer 4-call one) both failed to clear
+`fidelity_floor` against a real agent for the *unmutated baseline arm alone*, for a
+reason that has nothing to do with either operator: a real, curious agent's tool-
+verification behavior (alternate path formats, alternate tools, parent-directory
+checks) is combinatorial, not enumerable from any single anticipated follow-up set,
+and every one of those exploratory calls is a guaranteed exact-tier MISS. This means
+semantic resolution (or an equivalent broadening of match tolerance) may be a
+prerequisite for exact-tier replay to be usable against *any* real agent at all —
+independent of mutation — not just a refinement for later operators whose mutations
+happen to change argument values. See PHASES.md's Gate 3 Status section for the full
+investigation.
+
 ## 8. Evaluation — three axes, never merged
 
 **Behavior.** Baseline establishes dominant path + variant frequencies + natural
