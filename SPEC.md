@@ -185,21 +185,33 @@ scope for `tool_addition`'s own fidelity accounting (the very next sentence's
 tested) — it is not general F-14, and nothing later should assume "a missed call to
 any tool now gets a structurally-valid synthesized response" from this note alone.
 
-**Semantic tier's priority, reframed by a real finding (Gate 3, PHASES.md's kill
-criterion, two live attempts against Claude Code):** semantic resolution was deferred
-above on the reasoning that `description_update`/`tool_addition` don't change argument
-values in a way that needs it — true as far as it goes. Two separate live fixtures (a
-minimal 2-call recording and a deliberately richer 4-call one) both failed to clear
-`fidelity_floor` against a real agent for the *unmutated baseline arm alone*, for a
-reason that has nothing to do with either operator: a real, curious agent's tool-
-verification behavior (alternate path formats, alternate tools, parent-directory
-checks) is combinatorial, not enumerable from any single anticipated follow-up set,
-and every one of those exploratory calls is a guaranteed exact-tier MISS. This means
-semantic resolution (or an equivalent broadening of match tolerance) may be a
-prerequisite for exact-tier replay to be usable against *any* real agent at all —
-independent of mutation — not just a refinement for later operators whose mutations
-happen to change argument values. See PHASES.md's Gate 3 Status section for the full
-investigation.
+**Kill-criterion attempts #1 and #2 — both UNKNOWN, converging on a structural
+finding, not a fixture-richness problem.** A second, richer 4-call fixture (recorded
+live, deliberately covering the two most common follow-up patterns from attempt #1)
+was run through the identical three-arm comparison. Result: UNKNOWN again, all three
+arms below fidelity_floor=0.70 (fidelities 0.25-0.60 across 9 real attempts). Two
+fixtures failing the same way for the same reason rules out "the fixture wasn't rich
+enough yet" as the explanation.
+
+The actual mechanism, confirmed by reading all 9 recorded sequences: a real, curious
+agent's tool-selection verification behavior is combinatorial (path format × tool
+choice × directory depth), not enumerable from a single anticipated follow-up set. A
+near-universal first move (`list_allowed_directories`) was absent from both recorded
+fixtures; once any call misses, the agent doesn't retry once, it escalates through an
+open-ended sequence (some runs reached 8-9 calls for a 2-call task). No finite
+single-session recording can realistically pre-populate that space at exact-tier-only
+resolution.
+
+This reframes a prior Gate 3 scoping decision. Tier 3 (semantic matching) was
+deferred from F-16/F-17 on the reasoning that neither operator's own mutation changes
+argument values in a way that needs it — correct as far as it went. This finding
+shows tier 3 (or an equivalent broadening of match resolution) may be a prerequisite
+for exact-tier replay to be viable against ANY real, curious agent at all,
+independent of whether a mutation is active. This is a different, larger
+justification than the one tier 3 was originally deferred against, and changes its
+priority from "nice-to-have for later operators" to "possibly blocking exact-tier
+replay's real-world viability." See PHASES.md's Gate 3 Status section and
+CHANGELOG.md for the full investigation.
 
 ## 8. Evaluation — three axes, never merged
 

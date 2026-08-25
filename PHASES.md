@@ -273,21 +273,45 @@ showed real hits. Not a Drifter defect — a reminder that an agent's own narrat
 its tool use is not a reliable substitute for the recorded trace when interpreting
 results.
 
-**Do not read Gate 3 as fully closed on the strength of the exit test alone.** The
-exit test's satisfaction and the kill criterion's status are independent facts:
+**Brittle-agent fallback — CONFIRMED. Kill criterion satisfied.**
+
+Per this section's own text ("deliberately construct a known-brittle test agent and
+confirm the harness *can* detect a planted regression"): `tests/fixtures/
+scripted_agent.py` gained a `SELECT:<substring>` mode — it picks its tool by finding
+the first tool whose *description* contains a literal substring, a deliberately
+fragile, description-text-dependent selection mechanism. Verified empirically before
+relying on it (`tests/cli/test_kill_criterion_brittle_agent.py`): `list_directory`'s
+real golden-fixture description contains "detailed listing"; `description_update` at
+seed 42 removes that exact substring (`"detailed"→"thorough"`). Run through the real
+`cli.run.run_mutation_comparison` orchestration — not an isolated unit check —
+synthetic, deterministic, zero cost, deliberately not the real dogfood pairing (this
+is exactly what isolates "is it the harness" from "is this particular agent unusually
+robust," per this section's own reasoning): the baseline arm finds and calls
+`list_directory` normally; the mutated arm's selection finds nothing at all and calls
+nothing, a real, agent-observable behavior break caused only by the mutation. The
+harness reports `REGRESSION`, correctly, not `UNKNOWN` and not `NO_REGRESSION`. Full
+suite: 196/196 passing.
+
+This resolves the branch of the kill criterion left open by the two real-dogfood
+attempts: the harness itself is confirmed able to detect a real, planted mutation
+effect. The two real-dogfood attempts' `UNKNOWN` result is now understood as "exact-
+tier replay's fidelity floor against a curious real agent, not a harness defect or an
+untested code path" — the brittle-agent check is precisely the mechanism this
+section names for making that distinction, and it comes back on the side of "the
+harness works."
+
+**Do not read this as retiring the tier-3 finding.** The exact-tier-replay-viability
+gap found across both real-dogfood attempts is real, independent of the kill
+criterion's own resolution, and is carried forward as open scope — see SPEC.md §7 and
+`.drifter/GATE_STATUS`'s `gate_3_note` for whoever picks up Gate 4 or v1 next.
 
 | | Status |
 |---|---|
 | Exit test (one real fragility found) | ✅ Satisfied |
-| Kill criterion (harness detects real mutation effect, or confirmed via brittle-agent fallback) | ⏳ Attempted twice — UNKNOWN both times, for a structural reason, not a harness crash or an unattempted comparison |
+| Kill criterion (harness detects real mutation effect, or confirmed via brittle-agent fallback) | ✅ Satisfied — brittle-agent fallback confirms the harness detects a planted regression |
+| Tier-3/exact-tier-replay-viability finding | ⚠️ Open, carried forward — not resolved by the above, tracked separately |
 
-**The actual next decision point**, flagged explicitly rather than defaulted into
-silently: either (a) attempt an even more exhaustive live fixture recording (probably
-still probabilistic — the exploration space is not obviously boundable), or (b) treat
-this as sufficient evidence to prioritize tier-3 semantic matching ahead of its
-original v1+ scheduling, before the kill criterion's own "construct a known-brittle
-test agent" step is even reachable. Whoever picks this up should make that call
-deliberately, not by default.
+**Gate 3 is done.**
 
 ---
 

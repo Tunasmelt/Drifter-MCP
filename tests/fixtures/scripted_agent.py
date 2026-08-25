@@ -18,6 +18,25 @@ recorded" and "one call is a deliberate MISS" without near-duplicate
 scripts: each argv entry is "tool_name|json_arguments". One JSON
 outcome line per call goes to stderr (never stdout — stdout is the
 wire) so the test can assert on what actually happened.
+
+Second mode, added for Gate 3's kill-criterion brittle-agent check
+(PHASES.md): an argv entry of the form "SELECT:<substring>|
+<json_arguments>" makes this script pick its tool by calling
+`list_tools()` and selecting the FIRST tool whose *description*
+contains `<substring>` (a literal substring, case-sensitive) — a
+deliberately fragile, description-text-dependent selection mechanism,
+standing in for "a real agent's tool routing that happens to key off
+exact wording" per the kill criterion's own text ("construct a known-
+brittle test agent"). If no tool's description contains the substring,
+this script calls NOTHING for that entry (not an error, not a fallback
+guess) — the planted failure mode is "selection silently finds
+nothing," which shows up downstream as an empty tool-call path, not a
+crash. This is what makes `description_update`'s synonym substitution
+a plausible, deterministic way to break it: a substring chosen from a
+tool's real, pre-mutation description can be verified (see
+tests/cli/test_kill_criterion_brittle_agent.py) to no longer appear
+after a specific seed's substitution, with no code change needed here
+to prove the harness detects it.
 """
 
 from __future__ import annotations
@@ -81,6 +100,27 @@ async def main() -> None:
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
             for spec in sys.argv[1:]:
+                if spec.startswith("SELECT:"):
+                    substring, _, args_json = spec[len("SELECT:"):].partition("|")
+                    arguments = json.loads(args_json) if args_json else {}
+                    tools_result = await session.list_tools()
+                    matches = [t for t in tools_result.tools if substring in (t.description or "")]
+                    if not matches:
+                        # The planted failure mode: silently find nothing
+                        # and call nothing, rather than error or guess --
+                        # see this module's own docstring for why.
+                        outcome = {"select": substring, "ok": False, "error": "no tool description matched"}
+                        print(json.dumps(outcome), file=sys.stderr, flush=True)
+                        continue
+                    tool_name = matches[0].name
+                    try:
+                        result = await session.call_tool(tool_name, arguments)
+                        outcome = {"select": substring, "matched_tool": tool_name, "ok": True, "is_error": result.is_error}
+                    except Exception as exc:
+                        outcome = {"select": substring, "matched_tool": tool_name, "ok": False, "error": str(exc)}
+                    print(json.dumps(outcome), file=sys.stderr, flush=True)
+                    continue
+
                 tool_name, _, args_json = spec.partition("|")
                 arguments = json.loads(args_json) if args_json else {}
                 try:

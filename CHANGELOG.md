@@ -6,56 +6,83 @@ not just a diff.
 
 ---
 
-## Kill criterion attempted twice against Claude Code: UNKNOWN both times,
-converging on a structural finding, not a fixture-richness problem
+## Gate 3 closed: brittle-agent fallback confirms the harness, tier-3 finding carried forward
 
-The baseline-vs-mutation comparison PHASES.md's Gate 3 kill criterion depends on was
-actually run, twice, against the real Gate 0 dogfood pairing (Claude Code + the real
-filesystem MCP server, via `drifter replay-serve`) — the environment block from the
-prior entry was worked around (plain `claude -p`, no `--dangerously-skip-permissions`,
-`--allowedTools` for non-interactive MCP approval).
+Kill criterion satisfied, via the fallback path its own text names, not via the real
+dogfood pairing: `tests/fixtures/scripted_agent.py` gained a `SELECT:<substring>`
+mode — tool selection by literal substring match against a tool's description, a
+deliberately fragile mechanism standing in for a real agent whose routing happens to
+key off exact wording. Verified empirically before relying on it: `list_directory`'s
+real golden-fixture description contains "detailed listing"; `description_update` at
+seed 42 removes that exact substring via its synonym table (`"detailed"→"thorough"`).
+Run through the real `cli.run.run_mutation_comparison` orchestration (not an isolated
+unit check): the baseline arm finds and calls `list_directory` normally; the mutated
+arm's selection finds nothing and calls nothing — a real, agent-observable behavior
+break caused only by the mutation. The harness reports `REGRESSION`, correctly.
+196/196 full suite passing (`tests/cli/test_kill_criterion_brittle_agent.py`).
 
-**Attempt #1** used the minimal 2-call fixture already on hand. Every one of 9 real
-runs across baseline/`description_update`/`tool_addition` fell below
-`fidelity_floor=0.70` (0.25–0.5) — both mutated arms and the baseline arm all reported
-`has_data=False`, so `compute_behavior_effect_size` returned `UNKNOWN` for both
-operators, not because of a crash but because there was no valid data to compare.
-Reading the recorded sequences showed why: the agent's first call exactly matched the
-fixture, but every real run then made at least one additional exploratory call
-(alternate path separators, a parent-directory check, `directory_tree`) that the thin
-fixture never recorded.
+This resolves the ambiguity the two real-dogfood `UNKNOWN` results left open (per the
+kill criterion's own reasoning: distinguishing "harness problem" from "agent
+unusually robust"). The harness is confirmed to detect a real, planted mutation
+effect — the two real attempts' `UNKNOWN` outcome is understood as an exact-tier
+replay fidelity limitation against a curious real agent, not evidence the harness
+itself doesn't work.
 
-**Attempt #2** recorded a deliberately richer fixture, live, specifically covering
-those two follow-up patterns (4 real calls instead of 2). Same result: `UNKNOWN` for
-both operators again, fidelities 0.25–0.60 across another 9 real runs. Two fixtures
-failing identically for the identical reason rules out "not enough coverage yet" as
-the explanation.
+**Explicitly not retired by this**: the tier-3/exact-tier-replay-viability finding
+from the two real-dogfood attempts is a separate, still-open fact, carried forward as
+open scope for Gate 4/v1 (SPEC.md §7, PHASES.md's Gate 3 Status, `.drifter/
+GATE_STATUS`'s `gate_3_note`) — resolving the kill criterion via a synthetic brittle
+agent doesn't mean a real agent's combinatorial verification behavior against
+exact-tier-only replay stopped being a real problem.
 
-**The actual mechanism**, confirmed by reading all 9 second-attempt sequences: a
-near-universal first move (`list_allowed_directories`) was absent from both fixtures;
-once any single call misses, the agent doesn't retry once, it escalates through an
-open-ended combination of path formats, tools, and directory levels — some runs
-reached 8–9 calls for a task that needs 2. This isn't enumerable from any single
-anticipated follow-up set, which means exact-tier-only replay may not be practically
-viable against a real, curious agent regardless of how rich one recorded fixture is.
+`.drifter/GATE_STATUS` moves to `gate: 4`.
 
-**This reframes semantic-tier resolution's priority**, documented in SPEC.md §7:
-deferred earlier this gate on the (still-correct) reasoning that neither
-`description_update` nor `tool_addition` changes argument values in a way that needs
-it. This finding is a different, larger justification — semantic resolution (or
-equivalent broadened match tolerance) may be a prerequisite for exact-tier replay to
-work against any real agent at all, independent of mutation. Not decided here which
-path to take (broader/repeated fixture recording vs. building semantic resolution
-ahead of its original schedule) — flagged explicitly as the next decision point,
-PHASES.md's Gate 3 Status section, rather than defaulted into either silently.
+## Kill-criterion attempts #1 and #2 — both UNKNOWN, converging on a
+structural finding, not a fixture-richness problem
 
-**Minor, separate finding:** in 3 of the 9 second-attempt runs, Claude Code's own
-natural-language summary claimed every call missed when the recorded trace showed
-real hits — not a Drifter defect, a reminder that an agent's self-narration isn't a
-substitute for the recorded trace when interpreting results.
+A second, richer 4-call fixture (recorded live, deliberately covering the two
+most common follow-up patterns from attempt #1) was run through the
+identical three-arm comparison. Result: UNKNOWN again, all three arms
+below fidelity_floor=0.70 (fidelities 0.25-0.60 across 9 real
+attempts). Two fixtures failing the same way for the same reason rules
+out "the fixture wasn't rich enough yet" as the explanation.
 
-Kill criterion status: still unresolved — attempted twice, UNKNOWN both times, for a
-now well-understood structural reason rather than an unattempted comparison.
+**The actual mechanism, confirmed by reading all 9 recorded
+sequences:** a real, curious agent's tool-selection verification
+behavior is combinatorial (path format × tool choice × directory
+depth), not enumerable from a single anticipated follow-up set. A
+near-universal first move (`list_allowed_directories`) was absent from
+both recorded fixtures; once any call misses, the agent doesn't retry
+once, it escalates through an open-ended sequence (some runs reached
+8-9 calls for a 2-call task). No finite single-session recording can
+realistically pre-populate that space at exact-tier-only resolution.
+
+**This reframes a prior Gate 3 scoping decision.** Tier 3 (semantic
+matching) was deferred from F-16/F-17 on the reasoning that neither
+operator's own mutation changes argument values in a way that needs
+it — correct as far as it went. This finding shows tier 3 (or an
+equivalent broadening of match resolution) may be a prerequisite for
+exact-tier replay to be viable against ANY real, curious agent at all,
+independent of whether a mutation is active. This is a different,
+larger justification than the one tier 3 was originally deferred
+against, and changes its priority from "nice-to-have for later
+operators" to "possibly blocking exact-tier replay's real-world
+viability."
+
+**Kill criterion status:** still unresolved. Neither honest path
+forward (recording an even more exhaustive fixture, vs. building tier-
+3 semantic resolution) was attempted — both are real, substantive
+pieces of work, not something to decide as a byproduct of this
+investigation. Flagging this explicitly as the actual next decision
+point for whoever picks this up, rather than defaulting to either
+silently.
+
+**Secondary, minor finding:** in 3 of 9 runs, Claude Code's own
+natural-language self-report claimed "every call returned MISS" or
+equivalent, when the recorded trace showed real hits. Not a Drifter
+defect — a reminder that an agent's own narration of its tool use is
+not a reliable substitute for the recorded trace when interpreting
+results.
 
 ## Gate 3 exit test: satisfied by an injection-defense finding, not a
 mutation-behavior finding — kill criterion still open
