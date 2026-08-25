@@ -250,14 +250,22 @@ def _run_fidelity(records: list) -> float:
     this project's nullable-field discipline rather than assuming an
     unknown fault status was fine.
 
-    A run with zero ToolCall records gets fidelity 1.0, vacuously —
-    there were no unfaithful calls, matching the existing "empty path
-    is a valid variant" precedent (an agent that calls nothing isn't
-    unreliable, it just didn't call anything; nothing here would ever
-    trigger fidelity-floor exclusion for a reason unrelated to replay
-    fidelity itself).
+    Calls with `result_provenance == "synthetic"` (F-17's tool_addition,
+    F-14-scoped) are excluded from this computation entirely — SPEC.md
+    §7's own text: "tool_addition calls are excluded from the fidelity
+    denominator (no prior recording can exist by definition) and
+    reported separately." They're neither a hit nor a miss for THIS
+    purpose; counting them either way would misrepresent what fraction
+    of the session's genuinely-checkable calls actually matched a real
+    recording.
+
+    A run with zero remaining (non-synthetic) ToolCall records — either
+    no calls at all, or every call was to a tool_addition-injected tool
+    — gets fidelity 1.0, vacuously: there are no unfaithful calls among
+    what's being measured, matching the existing "empty path is a valid
+    variant" precedent.
     """
-    calls = [r for r in records if isinstance(r, ToolCall)]
+    calls = [r for r in records if isinstance(r, ToolCall) and r.result_provenance != "synthetic"]
     if not calls:
         return 1.0
     hits = sum(1 for c in calls if c.fault is False)

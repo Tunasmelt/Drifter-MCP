@@ -215,6 +215,81 @@ async def test_on_message_lets_sessionrecorder_produce_a_valid_new_session(tmp_p
     assert trajectory_ends[0].call_seqs == [c.seq for c in new_calls]
 
 
+# --- tool_addition (F-17) synthesis, scoped F-14 --------------------------
+
+
+@pytest.mark.anyio
+async def test_call_to_a_tool_addition_injected_tool_resolves_as_synthetic_not_miss(tmp_path):
+    """The real, end-to-end path F-17's own done-when depends on: a call
+    to a tool_addition-injected tool must resolve via synthesis (a
+    normal, successful CallToolResult on the wire) rather than an
+    ordinary MISS, and the resulting recorded ToolCall must carry
+    result_provenance="synthetic" so evaluate.baseline._run_fidelity can
+    correctly exclude it. Verified through the real replay_proxy.py
+    stack (a real ClientSession, a real SessionRecorder), not asserted
+    against add_tool()/run_replay_proxy() in isolation from each other.
+    """
+    from mutate.tool_addition import add_tool
+    from record.writer import SessionRecorder
+
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    siblings = tools_served_from_session(GOLDEN_FIXTURE)
+    added_tool, log_entry = add_tool(siblings, seed=1)
+    tools_served = [*siblings, added_tool]
+
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=GOLDEN_SERVER)
+
+    real_calls = _golden_calls()[:1]
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                run_replay_proxy,
+                *server_streams,
+                store,
+                GOLDEN_SERVER,
+                tools_served,
+                recorder.observe,
+                frozenset({added_tool.name}),
+            )
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                for call in real_calls:
+                    await session.call_tool(call.tool_name, call.arguments)
+                # The actual, structural point of this test: this call
+                # must NOT raise MCPError(REPLAY_MISS_CODE) the way an
+                # ordinary unrecorded call does (see the MISS test
+                # above) — it's in synthetic_tool_names, so it resolves.
+                result = await session.call_tool(added_tool.name, {})
+                assert result.is_error is False
+                assert result.content  # a real, non-empty placeholder result
+            tg.cancel_scope.cancel()
+    recorder.close()
+
+    new_session_files = list(runs_dir.glob("*.jsonl"))
+    assert len(new_session_files) == 1
+    new_records = list(read_session(new_session_files[0]))
+    new_calls = [r for r in new_records if isinstance(r, ToolCall)]
+    assert len(new_calls) == 2  # 1 real hit + 1 synthetic
+
+    real_call, synthetic_call = new_calls
+    assert real_call.result_provenance == "real"
+    assert real_call.fault is False
+
+    assert synthetic_call.tool_name == added_tool.name
+    assert synthetic_call.result_provenance == "synthetic"
+    assert synthetic_call.fault is False  # genuinely resolved, not a protocol fault
+    assert synthetic_call.is_error is False
+
+    # The actual point of building this at all (F-17's done-when):
+    # fidelity accounting must exclude the synthetic call correctly,
+    # verified against the REAL recorded session, not a hand-built one.
+    from evaluate.baseline import _run_fidelity
+
+    assert _run_fidelity(new_records) == 1.0  # 1/1 REAL calls hit; the synthetic call isn't in the denominator
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"

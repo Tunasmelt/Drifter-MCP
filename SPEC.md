@@ -171,6 +171,20 @@ gate the same way). Inverse-mutation and semantic resolution, `SEMANTIC_WEIGHT`
 itself, and the `between FLOOR and FLAG_THRESHOLD` degraded-but-included row are all
 unbuilt — read the rest of this section as the target design, not current behavior.
 
+*Gate 3 implementation status — "Miss → structurally synthesized response from the
+recorded schema" (line above), i.e. F-14:* general synthesis for an ordinary missed
+call to an EXISTING tool is still unbuilt — an ordinary MISS today still resolves as
+MISS (`REPLAY_MISS_CODE`), not a synthesized response. What exists is much narrower:
+`mutate/tool_addition.py`'s own injected tool (which, per this section's next
+sentence, has no prior recording to synthesize FROM at all) resolves via a single,
+fixed, generic placeholder response (`replay/replay_proxy.py`'s
+`synthetic_tool_names`) — not response content derived from any recorded schema,
+since none exists for a tool that was never real. This is real, narrow, working
+scope for `tool_addition`'s own fidelity accounting (the very next sentence's
+"excluded from the fidelity denominator" behavior is genuinely implemented and
+tested) — it is not general F-14, and nothing later should assume "a missed call to
+any tool now gets a structurally-valid synthesized response" from this note alone.
+
 ## 8. Evaluation — three axes, never merged
 
 **Behavior.** Baseline establishes dominant path + variant frequencies + natural

@@ -49,7 +49,15 @@ from record.calibration import Calibration, load_calibration
 from record.fingerprint import build_environment, compute_tool_manifest_hash
 from record.proxy import Direction
 from record.redact import redact_rpc_payload, redact_secrets
-from record.schema import SessionStart, ToolCall, ToolDescriptor, ToolsList, TrajectoryEnd
+from record.schema import (
+    SYNTHETIC_RESULT_MARKER_KEY,
+    ResultProvenance,
+    SessionStart,
+    ToolCall,
+    ToolDescriptor,
+    ToolsList,
+    TrajectoryEnd,
+)
 from record.segment import Trajectory, TrajectoryTracker, extract_trace_id
 
 _TRACKED_METHODS = ("initialize", "tools/list", "tools/call")
@@ -229,7 +237,19 @@ class SessionRecorder:
             elif pending["method"] == "tools/call":
                 self._ensure_session_start_written()
                 duration_ms = (time.monotonic() - pending["requested_at"]) * 1000
-                self._write_tool_call(pending["params"], rpc.result, offset, duration_ms)
+                # A synthetic-response producer (tool_addition's F-14-
+                # scoped support) marks its result dict with this private
+                # key before handing it to on_message -- never present on
+                # a real recorded response, and never sent to the actual
+                # agent (that's a separate, clean dict on the wire; see
+                # replay_proxy.py's on_call_tool). Stripped here so it
+                # never leaks into result_shape as if it were a real key.
+                result = rpc.result
+                provenance: ResultProvenance = "real"
+                if isinstance(result, dict) and SYNTHETIC_RESULT_MARKER_KEY in result:
+                    result = dict(result)
+                    provenance = result.pop(SYNTHETIC_RESULT_MARKER_KEY)
+                self._write_tool_call(pending["params"], result, offset, duration_ms, result_provenance=provenance)
             elif pending["method"] == "tools/list":
                 # Must run before _ensure_session_start_written(): the
                 # manifest hash has to be known *before* SessionStart is
@@ -258,7 +278,14 @@ class SessionRecorder:
                 duration_ms = (time.monotonic() - pending["requested_at"]) * 1000
                 self._write_tool_call_fault(pending["params"], offset, duration_ms)
 
-    def _write_tool_call(self, params: dict, result: dict, raw_frame_offset: int, duration_ms: float) -> None:
+    def _write_tool_call(
+        self,
+        params: dict,
+        result: dict,
+        raw_frame_offset: int,
+        duration_ms: float,
+        result_provenance: ResultProvenance = "real",
+    ) -> None:
         seq = self._next_seq()
         self.call_count += 1
         arguments = params.get("arguments") or {}
@@ -296,6 +323,7 @@ class SessionRecorder:
                 # `None` default), so fault_rate can read "definitely zero
                 # faults" rather than "unknown" for a corpus with none.
                 fault=False,
+                result_provenance=result_provenance,
                 references=outcome.references,
                 raw_frame_offset=raw_frame_offset,
             )

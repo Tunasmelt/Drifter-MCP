@@ -201,18 +201,29 @@ class MutationResult:
 
 @dataclass(frozen=True)
 class MutationLogEntry:
-    """Minimal, description_update-specific audit record (see module
-    docstring for why this isn't F-18's general log format yet).
-    `inverse` is always None for this operator -- explicit, not
-    omitted: description_update is schema-immune and text-only, outside
-    tier 2's (inverse-mutation replay) applicability entirely, confirmed
-    this round. A caller reading this field sees a deliberate "no
-    inverse exists," not a forgotten one.
+    """Minimal, shared-between-operators audit record (see module
+    docstring for why this isn't F-18's general log format yet) --
+    reused as-is by mutate/tool_addition.py rather than each operator
+    defining its own near-identical shape. `inverse` is always None:
+    both Gate 3 operators are outside tier 2's (inverse-mutation
+    replay) applicability entirely (description_update is schema-
+    immune and text-only; tool_addition has no prior recording to
+    invert against, SPEC.md §7's own text). Explicit, not omitted — a
+    caller reading this field sees a deliberate "no inverse exists,"
+    not a forgotten one.
+
+    `before` is `str | None` — widened deliberately, not left at a
+    single-operator assumption: `None` specifically for tool_addition,
+    where nothing existed before the mutation (there is no prior
+    description to have a "before" value at all), vs. a real string for
+    description_update's genuine before/after text pair. Never a
+    placeholder value standing in for "nothing" — `None` means exactly
+    that.
     """
 
     tool_name: str
     operator: str
-    before: str
+    before: str | None
     after: str
     inverse: str | None
     seed: int

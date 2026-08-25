@@ -99,7 +99,7 @@ from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
 from record.proxy import Direction, MessageObserver
 from record.reader import read_session
-from record.schema import ToolDescriptor, ToolsList
+from record.schema import SYNTHETIC_RESULT_MARKER_KEY, ToolDescriptor, ToolsList
 from replay.replay_store import RecordedResponse, ReplayStore
 
 # Deliberately OUTSIDE JSON-RPC 2.0's entire reserved band (-32768..-32000
@@ -141,6 +141,25 @@ def _to_wire_tool(tool: ToolDescriptor) -> types.Tool:
     return types.Tool(name=tool.name, description=tool.description, input_schema=tool.input_schema)
 
 
+def _synthesize_added_tool_result() -> types.CallToolResult:
+    """F-14, scoped narrowly to F-17 (tool_addition)'s own case: a tool
+    that was injected by mutation has, by definition (SPEC.md §7), no
+    prior recording at all — there is no `result_shape` to reconstruct
+    from the way `_synthesize_call_tool_result` does for an ordinary
+    exact-tier HIT. This is NOT general F-14 (no historical-shape
+    inference across arbitrary real tools, no LLM) — it is the one
+    fixed, generic, structurally-valid placeholder every tool_addition
+    call gets, since there is nothing tool-specific to draw from. See
+    `run_replay_proxy`'s `synthetic_tool_names` parameter for how a
+    call actually reaches here instead of an ordinary MISS.
+    """
+    placeholder = types.TextContent(
+        type="text",
+        text="[drifter tool_addition: this tool has no real backing implementation — synthetic response]",
+    )
+    return types.CallToolResult(content=[placeholder], is_error=False)
+
+
 def _synthesize_call_tool_result(hit: RecordedResponse) -> types.CallToolResult:
     """Structurally reconstructs a response matching `hit.result_shape`
     — never its original content, which was never recorded in the first
@@ -172,6 +191,7 @@ async def run_replay_proxy(
     server_name: str,
     tools_served: list[ToolDescriptor],
     on_message: MessageObserver | None = None,
+    synthetic_tool_names: frozenset[str] = frozenset(),
 ) -> None:
     """Serves one MCP session over `read_stream`/`write_stream` entirely
     from `replay_store` and `tools_served`. Stream-parameterized (matching
@@ -200,6 +220,25 @@ async def run_replay_proxy(
     convenience wrapper does — that swallowing lives in `MCPServer`'s own
     `_handle_call_tool`, not in the lower-level dispatch this module
     uses).
+
+    `synthetic_tool_names`, if given, names tools that resolve via
+    F-14-scoped-to-tool_addition synthesis on a `replay_store` MISS
+    instead of `MCPError(REPLAY_MISS_CODE)` — the injected tool a
+    `mutate.tool_addition` mutation added to `tools_served`, which by
+    definition (SPEC.md §7) never has a prior recording, so an ordinary
+    MISS would be indistinguishable from "an existing tool's call was
+    never recorded," losing exactly the "reported separately, excluded
+    from the fidelity denominator" distinction SPEC.md §7 requires.
+    The wire response the agent actually receives is a clean, generic
+    placeholder (`_synthesize_added_tool_result`); a *separate* dict,
+    carrying `SYNTHETIC_RESULT_MARKER_KEY`, is what reaches `on_message`
+    for recording — never sent to the agent (see `record/schema.py`'s
+    marker-key docstring). A name in `synthetic_tool_names` that's also
+    a real `ReplayStore` HIT still resolves as an ordinary HIT — this
+    only applies on MISS, so a recorded, exact-tier-matched call to a
+    once-synthetic tool (impossible today, since nothing ever calls a
+    tool before it's added, but not structurally prevented) is never
+    silently downgraded to synthetic.
 
     `on_message`, if given, receives synthesized `JSONRPCRequest`/
     `JSONRPCResponse`/`JSONRPCError` objects matching exactly what
@@ -276,6 +315,12 @@ async def run_replay_proxy(
 
         hit = replay_store.lookup(server_name, params.name, arguments)
         if hit is None:
+            if params.name in synthetic_tool_names:
+                result = _synthesize_added_tool_result()
+                record_result = result.model_dump(mode="json", by_alias=True, exclude_unset=True)
+                record_result[SYNTHETIC_RESULT_MARKER_KEY] = "synthetic"
+                _emit(Direction.SERVER_TO_AGENT, JSONRPCResponse(jsonrpc="2.0", id=req_id, result=record_result))
+                return result
             message = f"replay MISS: no recorded response for {server_name}.{params.name} with these arguments"
             _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_MISS_CODE, message=message)))
             raise MCPError(code=REPLAY_MISS_CODE, message=message)

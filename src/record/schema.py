@@ -38,6 +38,16 @@ ClassificationSource = Literal[
 
 ResultProvenance = Literal["real", "synthetic"]
 
+# A private key a synthetic-response producer (e.g. replay_proxy.py's
+# tool_addition support, F-14-scoped-to-tool_addition) can set on the
+# raw `result` dict it hands to SessionRecorder.observe() ONLY -- never
+# sent to the actual connecting agent (see replay_proxy.py's on_call_tool,
+# which builds two separate dicts: a clean one returned on the wire, and
+# a second, marker-carrying one passed to on_message for recording only).
+# observe() strips this key before computing result_shape, so it never
+# leaks into a recorded ToolCall's own shape as if it were a real field.
+SYNTHETIC_RESULT_MARKER_KEY = "_drifter_result_provenance"
+
 SegmentationMethod = Literal["trace_context", "heuristic"]
 
 

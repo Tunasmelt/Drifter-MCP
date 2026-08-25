@@ -102,6 +102,48 @@ def _write_session_with_faults(
     return path
 
 
+def _write_session_with_provenance(
+    dir_path: Path,
+    session_id: str,
+    calls: list[tuple[str, str]],
+    tool_manifest_hash: str | None = "h",
+) -> Path:
+    """Like _write_session_with_faults, but each entry is (tool_name,
+    result_provenance) -- "real" or "synthetic" -- for testing
+    F-17/F-14's fidelity-denominator exclusion. A synthetic call is
+    fault=False (it genuinely resolved, no protocol error), matching
+    exactly what replay_proxy.py's tool_addition support records."""
+    lines = [
+        SessionStart(
+            session_id=session_id,
+            seq=0,
+            started_at="2026-08-25T00:00:00Z",
+            environment=Environment(tool_manifest_hash=tool_manifest_hash),
+            raw_frame_offset=0,
+        ).model_dump_json()
+    ]
+    for i, (tool_name, provenance) in enumerate(calls, start=1):
+        lines.append(
+            ToolCall(
+                session_id=session_id,
+                seq=i,
+                timestamp="2026-08-25T00:00:01Z",
+                server="fake",
+                tool_name=tool_name,
+                arguments={},
+                result_shape={"type": "object", "keys": []},
+                is_error=False,
+                duration_ms=1.0,
+                fault=False,
+                result_provenance=provenance,
+                raw_frame_offset=i * 100,
+            ).model_dump_json()
+        )
+    path = dir_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def _runner(dir_path: Path, plan: list[tuple[str, list[str], str | None]]):
     """Returns a zero-arg run_once callable that yields each (session_id,
     tool_names, tool_manifest_hash) entry in plan, in order, one per call."""
@@ -451,6 +493,40 @@ def test_zero_call_run_has_fidelity_one_and_is_never_fidelity_excluded(tmp_path)
     assert result.excluded_runs == []
     assert result.baseline_fidelity == 1.0
     assert result.dominant_path == ()
+
+
+def test_synthetic_calls_excluded_from_fidelity_denominator_not_counted_as_hits_or_misses(tmp_path):
+    """F-17's own done-when (FEATURES.md): tool_addition calls are
+    correctly excluded from fidelity accounting -- SPEC.md §7's text is
+    explicit that they're neither a hit nor a miss for this purpose. A
+    session with 1 real hit + 1 synthetic call must report fidelity
+    1.0 (computed over the 1 real call alone), not 0.5 (which is what
+    counting the synthetic call as a miss would produce) and not
+    excluded from the run entirely (the run itself is still valid --
+    only the synthetic CALL is excluded from the ratio)."""
+    path = _write_session_with_provenance(tmp_path, "sess_mixed", [("real_tool", "real"), ("added_tool", "synthetic")])
+    paths = iter([path])
+
+    result = run_baseline("task_synthetic", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is True
+    assert result.valid_runs == 1
+    assert result.excluded_runs == []  # the RUN isn't excluded -- only the call is excluded from fidelity
+    assert result.baseline_fidelity == 1.0  # 1/1 real calls hit -- the synthetic call isn't in the denominator
+    # dominant_path still reflects the FULL tool-call sequence, including
+    # the synthetic call -- fidelity exclusion is not path exclusion.
+    assert result.dominant_path == ("real_tool", "added_tool")
+
+
+def test_a_session_of_only_synthetic_calls_has_vacuous_fidelity_one(tmp_path):
+    path = _write_session_with_provenance(tmp_path, "sess_all_synthetic", [("added_tool", "synthetic")])
+    paths = iter([path])
+
+    result = run_baseline("task_all_synthetic", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is True
+    assert result.baseline_fidelity == 1.0
+    assert result.excluded_runs == []
 
 
 def test_fidelity_and_null_hash_exclusions_coexist_with_distinct_reasons(tmp_path):
