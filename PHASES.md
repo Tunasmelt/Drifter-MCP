@@ -191,6 +191,70 @@ Before proceeding to Gate 4 or v1, deliberately construct a known-brittle test a
 and confirm the harness *can* detect a planted regression — isolating whether the
 issue is the harness or simply that this particular agent is unusually robust.
 
+### Status (2026-08-25)
+
+**Exit test — SATISFIED**
+
+One real, previously-unknown fragility found using the Gate 0 dogfood pairing (Claude
+Code + the real filesystem MCP server), not a synthetic one — per this section's own
+requirement.
+
+**Finding:** `replay/replay_proxy.py`'s synthesized response content for any
+replay-served call with no prior recording (`_synthesize_call_tool_result`, active on
+every call by default — F-02/F-04's shape-only recording means most real corpora hit
+this path routinely) contained prose disclosing its own synthetic nature ("original
+payload was never recorded... not implemented yet"). A real, safety-aware agent
+(Claude Code) correctly read that disclosure as prompt-injection-shaped content and
+refused to proceed past the first tool call in three consecutive live runs — not a
+rare edge case, a systemic block on completing any multi-step task in replay mode as
+originally built.
+
+This satisfies the exit test's letter and spirit even though it landed in Drifter's
+own synthesis code rather than in agent behavior induced by a mutation operator: it is
+a genuine fragility, found empirically against the real dogfood pairing, previously
+unknown, and directly actionable — exactly the category of finding this gate exists to
+surface. See `CHANGELOG.md` (`257f9ce`, `e06b122`) for the full investigation and fix.
+
+**Secondary finding, same investigation:** while preparing to trust a real
+baseline-vs-mutation comparison, `evaluate/baseline.py`'s aggregation logic was found
+to silently conflate a `claude mcp get` connectivity-check artifact (manifest hash
+populated, zero `ToolCall` records) with a genuine "the agent legitimately called
+nothing" run — both produce byte-identical recorded shapes, and no signal exists in
+the schema today to distinguish them. Confirmed via direct inspection of a real
+8-file corpus (`natural_variation: 0.25`, `baseline_spread: 0.433`, one of four
+"valid" runs never having attempted the task). Regression-tested, documented as
+SPEC.md §15 limitation 12, deliberately not silently patched — no design decision has
+been made yet on how to add the missing signal (duration heuristic vs. explicit
+task-attempt marker vs. something else).
+
+**Kill criterion — NOT YET EVALUATED (blocked, not cleared)**
+
+The kill criterion is conditioned on a completed baseline-vs-mutation comparison
+producing NO_REGRESSION across both operators. **That comparison has not been run.**
+A full runbook exists for running it from a plain terminal; it was never executed,
+because spawning a nested `claude` process is blocked inside the session where this
+gate's work was done. This is an environment constraint of that specific session, not
+a Drifter defect and not evidence toward either side of the kill criterion.
+
+**Do not read Gate 3 as fully closed on the strength of the exit test alone.** The
+exit test's satisfaction and the kill criterion's status are independent facts:
+
+| | Status |
+|---|---|
+| Exit test (one real fragility found) | ✅ Satisfied |
+| Kill criterion (harness detects real mutation effect, or confirmed via brittle-agent fallback) | ⏳ Unattempted — comparison never run |
+
+**To actually resolve the kill criterion**, run the handoff runbook (reproducible from
+`cli/replay_serve.py`'s own docstring + `mutate/description_update.py` /
+`mutate/tool_addition.py`'s test suites) from a plain, non-nested terminal: baseline
+arm (3+ repeats, `n=3` used to bound API cost — read the runbook's own
+small-sample-size caveat before trusting a single verdict), then both mutated arms,
+then `compute_behavior_effect_size` per arm. If real REGRESSION is found: Gate 3 gains
+a second, stronger exit-test example. If genuinely clean at an adequate sample size:
+the kill criterion's next step (construct a known-brittle test agent, confirm the
+harness can detect a planted regression) becomes the actual next action before
+concluding either "ship as-is" or "the harness doesn't work."
+
 ---
 
 ## Gate 4 — Second User

@@ -6,6 +6,20 @@ not just a diff.
 
 ---
 
+## 2026-08-25 — PHASES.md records Gate 3's exit test as satisfied, kill criterion as unattempted
+
+Added a "Status" subsection to PHASES.md's Gate 3 section, distinct from the exit
+test's and kill criterion's own requirement text: the exit test is satisfied (the
+injection-defense finding and the connectivity-artifact-contamination finding, both
+`257f9ce`/`e06b122`, both found via the real Gate 0 dogfood pairing), but the kill
+criterion is explicitly unattempted, not passed — the baseline-vs-mutation comparison
+it depends on was never run, blocked by this session's own inability to spawn a
+nested `claude` process, not by anything in Drifter. Written now, separately from
+running that comparison, specifically so the two facts (exit test satisfied; kill
+criterion still open) don't collapse into an implied "Gate 3 is done" the evidence
+doesn't yet support — the comparison remains a real, separate next action for
+whoever runs the handoff runbook from a plain terminal.
+
 ## 2026-08-25 — Gate 3 exit-test evidence: a real fragility, found in Drifter's own code
 
 Attempted the real dogfood run PHASES.md's Gate 3 exit test asks for — Claude Code,
