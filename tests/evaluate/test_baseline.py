@@ -58,6 +58,50 @@ def _write_session(
     return path
 
 
+def _write_session_with_faults(
+    dir_path: Path,
+    session_id: str,
+    calls: list[tuple[str, bool]],
+    tool_manifest_hash: str | None = "h",
+) -> Path:
+    """Like _write_session, but each entry is (tool_name, fault) so a
+    fidelity-gating test can build a session with a mix of real hits
+    (fault=False) and misses/faults (fault=True), matching exactly what
+    replay_proxy.py actually records for a MISS or a replayed fault
+    (result_shape=None, is_error left at schema default) rather than
+    faking an is_error=True hit, which is a different, already-tested
+    case.
+    """
+    lines = [
+        SessionStart(
+            session_id=session_id,
+            seq=0,
+            started_at="2026-08-25T00:00:00Z",
+            environment=Environment(tool_manifest_hash=tool_manifest_hash),
+            raw_frame_offset=0,
+        ).model_dump_json()
+    ]
+    for i, (tool_name, fault) in enumerate(calls, start=1):
+        lines.append(
+            ToolCall(
+                session_id=session_id,
+                seq=i,
+                timestamp="2026-08-25T00:00:01Z",
+                server="fake",
+                tool_name=tool_name,
+                arguments={},
+                result_shape=None if fault else {"type": "object", "keys": []},
+                is_error=None if fault else False,
+                duration_ms=1.0,
+                fault=fault,
+                raw_frame_offset=i * 100,
+            ).model_dump_json()
+        )
+    path = dir_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def _runner(dir_path: Path, plan: list[tuple[str, list[str], str | None]]):
     """Returns a zero-arg run_once callable that yields each (session_id,
     tool_names, tool_manifest_hash) entry in plan, in order, one per call."""
@@ -245,6 +289,102 @@ def test_run_once_failure_and_null_hash_exclusions_coexist_with_distinct_reasons
     raised = next(r for r in result.excluded_runs if r.session_id is None)
     assert "agent never started" in raised.reason
     assert raised.reason != _NULL_HASH_REASON
+
+
+# --- fidelity gating (SPEC.md §7/§8, DEC-020) -----------------------------
+
+
+def test_low_fidelity_run_is_excluded_with_its_own_reason(tmp_path):
+    """A run whose fidelity falls below calibration.fidelity_floor is
+    excluded the same way as a null-hash run, but with a distinct
+    reason string -- 2 misses out of 4 calls (fidelity 0.5) must be
+    caught by a floor of 0.7, and a clean run in the same batch must
+    still contribute."""
+    low_fidelity_calls = [("a", False), ("b", True), ("c", True), ("d", False)]
+    low_fidelity_path = _write_session_with_faults(tmp_path, "sess_low", low_fidelity_calls)
+    clean_path = _write_session_with_faults(tmp_path, "sess_clean", [("a", False), ("b", False)])
+    paths = iter([low_fidelity_path, clean_path])
+
+    calibration = Calibration()
+    calibration.fidelity_floor = 0.7
+    result = run_baseline("task_fidelity", run_once=lambda: next(paths), repeats=2, calibration=calibration)
+
+    assert result.has_data is True
+    assert result.valid_runs == 1
+    assert result.dominant_path == ("a", "b")
+
+    assert len(result.excluded_runs) == 1
+    excluded = result.excluded_runs[0]
+    assert excluded.session_id == "sess_low"
+    assert excluded.path == low_fidelity_path
+    assert "fidelity 0.50 below floor 0.70" == excluded.reason
+
+    assert result.baseline_fidelity == 1.0  # only the clean run's fidelity is averaged in
+
+
+def test_baseline_fidelity_of_zero_is_not_confused_with_no_data(tmp_path):
+    """A run that clears the floor but still has a real, low fidelity
+    (0.0 is allowed to pass a floor of 0.0) must report that real value,
+    distinguishable from "never computed" via has_data -- same
+    truthiness-trap check already applied to natural_variation/
+    baseline_spread."""
+    all_miss_path = _write_session_with_faults(tmp_path, "sess_all_miss", [("a", True), ("b", True)])
+    paths = iter([all_miss_path])
+
+    calibration = Calibration()
+    calibration.fidelity_floor = 0.0  # everything clears a floor of 0.0
+    result = run_baseline("task_zero_fidelity", run_once=lambda: next(paths), repeats=1, calibration=calibration)
+
+    assert result.has_data is True
+    assert result.valid_runs == 1
+    assert result.excluded_runs == []
+    assert result.baseline_fidelity == 0.0  # real, computed, not None
+    assert result.baseline_fidelity is not None
+
+
+def test_no_baseline_fidelity_computed_when_every_run_is_excluded(tmp_path):
+    low_fidelity_path = _write_session_with_faults(tmp_path, "sess_low", [("a", True)])
+    paths = iter([low_fidelity_path])
+
+    result = run_baseline("task_all_excluded", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is False
+    assert result.baseline_fidelity is None
+    assert len(result.excluded_runs) == 1
+    assert "fidelity 0.00 below floor" in result.excluded_runs[0].reason
+
+
+def test_zero_call_run_has_fidelity_one_and_is_never_fidelity_excluded(tmp_path):
+    """An agent that calls no tools is a legitimate baseline path (see
+    test_empty_path_is_a_valid_variant) -- it must never be excluded on
+    fidelity-floor grounds specifically, since there's nothing unfaithful
+    about calling nothing."""
+    empty_path = _write_session_with_faults(tmp_path, "sess_empty", [])
+    paths = iter([empty_path])
+
+    calibration = Calibration()
+    calibration.fidelity_floor = 0.99  # a near-maximal floor
+    result = run_baseline("task_empty", run_once=lambda: next(paths), repeats=1, calibration=calibration)
+
+    assert result.has_data is True
+    assert result.excluded_runs == []
+    assert result.baseline_fidelity == 1.0
+    assert result.dominant_path == ()
+
+
+def test_fidelity_and_null_hash_exclusions_coexist_with_distinct_reasons(tmp_path):
+    null_hash_path = _write_session_with_faults(tmp_path, "sess_null", [("a", False)], tool_manifest_hash=None)
+    low_fidelity_path = _write_session_with_faults(tmp_path, "sess_low", [("a", True)])
+    paths = iter([null_hash_path, low_fidelity_path])
+
+    result = run_baseline("task_mixed_reasons", run_once=lambda: next(paths), repeats=2)
+
+    assert result.has_data is False
+    assert len(result.excluded_runs) == 2
+    reasons = {r.reason for r in result.excluded_runs}
+    assert _NULL_HASH_REASON in reasons
+    assert any(r.startswith("fidelity") for r in reasons)
+    assert len(reasons) == 2  # genuinely distinct strings, not collapsed
 
 
 # --- dominant path / variant frequency / natural_variation / spread ------

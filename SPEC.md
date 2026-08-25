@@ -165,6 +165,12 @@ fidelity = (exact + inverse + SEMANTIC_WEIGHT × semantic) / total_calls
 `SEMANTIC_WEIGHT`, `FLOOR`, `FLAG_THRESHOLD` are calibration constants (§9), not fixed
 truths.
 
+*Gate 2 implementation status:* only the exact tier and the `< FLOOR` row exist today
+(`evaluate/baseline.py`, gating baseline-arm fidelity — no mutation arm exists yet to
+gate the same way). Inverse-mutation and semantic resolution, `SEMANTIC_WEIGHT`
+itself, and the `between FLOOR and FLAG_THRESHOLD` degraded-but-included row are all
+unbuilt — read the rest of this section as the target design, not current behavior.
+
 ## 8. Evaluation — three axes, never merged
 
 **Behavior.** Baseline establishes dominant path + variant frequencies + natural
