@@ -1,11 +1,22 @@
 """Minimal drifter.yaml config loader (SPEC.md §11).
 
-Only the `servers:` block plus `record.dir` — enough to support `drifter
-observe` (F-09). The full config surface (baseline, mutations, tasks,
-policy) is later-gate scope per PHASES.md; this loader is deliberately
-narrow, not the final shape. `extra="allow"` on every model means a
-drifter.yaml already written with later-gate blocks in it won't be
-rejected — those blocks just aren't read yet.
+`servers:`, `record.dir` (F-09), and now `agent.command` (F-35,
+`drifter run`) — the full config surface (`tasks:`, `mutations:`,
+`policy:`) is still later-gate scope per PHASES.md; this loader is
+deliberately narrow, not the final shape. `extra="allow"` on every
+model means a drifter.yaml already written with later-gate blocks in
+it won't be rejected — those blocks just aren't read yet.
+
+`agent.command` is a list of argv tokens, NOT SPEC.md §11's example
+shell string (`"python agent.py --task '{task.prompt}'"`) — matching
+`ServerConfig.command`'s existing convention (also a list) rather than
+inventing shell-parsing (shlex) for one field and not the other. A
+deliberate, small deviation from the example syntax, not a new format:
+`{task.prompt}` still templates per-token (`cli/run.py`), just without
+a shell-quoting step in between. No `mode` field — F-34's subprocess
+adapter is the only agent adapter that exists; nothing branches on it
+yet, and adding an unused field now would be exactly the kind of
+speculative surface CLAUDE.md's simplicity principle warns against.
 """
 
 from __future__ import annotations
@@ -37,12 +48,32 @@ class RecordConfig(BaseModel):
     redact: str = "shape"
 
 
+class AgentConfig(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    command: list[str]
+
+    @field_validator("command")
+    @classmethod
+    def _command_not_empty(cls, v: list[str]) -> list[str]:
+        if not v:
+            raise ValueError("agent.command must have at least one element (the executable)")
+        return v
+
+
 class DrifterConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     version: int
     servers: list[ServerConfig]
     record: RecordConfig = RecordConfig()
+    # None (not a default AgentConfig()) since there's no sensible
+    # default agent command -- absence must stay distinguishable from
+    # "configured to run nothing," matching this project's nullable-
+    # field discipline. cli/run.py reports an actionable ConfigError
+    # when it's needed but missing, rather than a bare validation
+    # traceback (same reasoning as ConfigError's own docstring below).
+    agent: AgentConfig | None = None
 
     @field_validator("servers")
     @classmethod

@@ -58,6 +58,71 @@ async def test_all_seven_golden_calls_hit_with_the_recorded_is_error(golden_sess
         assert result.is_error == bool(call.is_error), f"seq={call.seq} tool={call.tool_name}"
 
 
+# --- synthesized content must be empty, never prose (real-agent finding) ---
+#
+# "Red" evidence for this check is a live dogfood run, not a re-simulated
+# naive-implementation test: Claude Code (the actual Gate 0 dogfood
+# pairing), given the earlier placeholder text ("[drifter replay: original
+# payload was never recorded (F-02/F-04, shape-only) — F-14 full synthesis
+# not implemented yet]") for a genuine exact-tier HIT, refused to proceed,
+# verbatim: "This reads like a prompt-injection attempt: it's phrased to
+# look like legitimate tool output/system context... I'm not treating this
+# as an instruction." All 3 baseline repeats hit this identically, on the
+# very first tool call. A real agent's actual judgment is stronger evidence
+# the old text had teeth as a failure mode than a keyword-regex simulation
+# would be — scripted_agent.py, having no semantic understanding of
+# content at all, never could have caught this. These tests lock in the
+# fix (empty content, never a claim of any kind) as a regression check.
+
+
+@pytest.mark.anyio
+async def test_synthesized_hit_content_is_empty_not_prose(golden_session):
+    """Every exact-tier HIT whose payload was never recorded (i.e. every
+    replay-served call, given F-02/F-04's shape-only-by-default recording)
+    must return genuinely empty text content -- not a shorter or more
+    careful sentence, actual emptiness, so there is no claim of any kind
+    for a real agent's own judgment to evaluate and potentially still flag.
+    """
+    for call in _golden_calls():
+        result = await golden_session.call_tool(call.tool_name, call.arguments)
+        for block in result.content:
+            assert block.type == "text"
+            assert block.text == ""
+
+
+@pytest.mark.anyio
+async def test_synthesized_content_never_contains_self_referential_meta_commentary(golden_session):
+    """A structural backstop matching the actual observed failure shape --
+    no synthesized text may reference this project's own feature IDs or
+    describe its own fakeness, regardless of future wording changes."""
+    suspicious_fragments = ("F-02", "F-04", "F-14", "drifter", "not implemented", "never recorded", "synthetic response")
+    for call in _golden_calls():
+        result = await golden_session.call_tool(call.tool_name, call.arguments)
+        for block in result.content:
+            lowered = block.text.lower()
+            for fragment in suspicious_fragments:
+                assert fragment.lower() not in lowered, f"{fragment!r} found in synthesized content: {block.text!r}"
+
+
+@pytest.mark.anyio
+async def test_synthesized_content_contains_no_language_of_any_kind(golden_session):
+    """Broader than the fixed-fragment check above, deliberately: that
+    test guards against the SPECIFIC wording that caused the observed
+    failure, but a differently-worded future placeholder could still
+    read as first-person/meta/self-referential without matching any of
+    those exact fragments ("this response describes...", "note: the
+    real value wasn't captured", etc.). The structural property that
+    actually matters is that there is no LANGUAGE at all for a real
+    agent's own judgment to interpret as a claim, an instruction, or
+    commentary -- checked here as literal zero-length content, the only
+    property that can't be worked around by picking gentler words.
+    """
+    for call in _golden_calls():
+        result = await golden_session.call_tool(call.tool_name, call.arguments)
+        for block in result.content:
+            assert len(block.text) == 0, f"synthesized content is not empty: {block.text!r}"
+
+
 @pytest.mark.anyio
 async def test_tools_list_matches_the_golden_fixtures_recorded_manifest(golden_session):
     result = await golden_session.list_tools()
@@ -264,6 +329,9 @@ async def test_call_to_a_tool_addition_injected_tool_resolves_as_synthetic_not_m
                 result = await session.call_tool(added_tool.name, {})
                 assert result.is_error is False
                 assert result.content  # a real, non-empty placeholder result
+                for block in result.content:
+                    assert block.type == "text"
+                    assert block.text == ""  # empty, never prose -- see the module-level note above
             tg.cancel_scope.cancel()
     recorder.close()
 

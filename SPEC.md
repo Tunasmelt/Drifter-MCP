@@ -373,3 +373,21 @@ when*.
     its older calls, which a reader unfamiliar with this history wouldn't otherwise
     know to expect. Expect this list to grow, not shrink, as more per-call diagnostic
     fields are added over time.
+11. A synthesized response's own placeholder content is itself subject to a real
+    agent's injection-defense judgment, not just the target server's. Found via the
+    real Gate 0 dogfood pairing (Claude Code + filesystem, Gate 3): an early version of
+    `replay/replay_proxy.py`'s shape-only synthesis (limitation 1 above) described its
+    own fakeness in prose ("original payload was never recorded... F-14 full synthesis
+    not implemented yet") for an ordinary, correctly-resolved exact-tier HIT. Claude
+    Code read that text and refused to proceed, treating it as a plausible prompt-
+    injection attempt — reproduced identically on the first tool call in 3/3 baseline
+    repeats. `scripted_agent.py`, this project's own test stand-in, has no semantic
+    understanding of content at all and could never have caught this; only a real
+    agent's real judgment surfaced it. Fixed by making synthesized content genuinely
+    empty (never a claim of any kind, `content: [{"type": "text", "text": ""}]`) rather
+    than more carefully worded — an empty string has no language for either a keyword
+    filter or a real agent's own reasoning to interpret as suspicious, which is a
+    categorically different guarantee than softer phrasing would have been. This
+    doesn't retire limitation 1: "structurally, not semantically, correct" content can
+    still diverge from what a real server would return in ways that affect agent
+    behavior downstream, independent of whether the placeholder text itself is safe.

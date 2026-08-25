@@ -38,6 +38,27 @@ def test_record_dir_honored_when_specified(tmp_path):
     assert config.record.dir == "custom/runs"
 
 
+def test_agent_defaults_to_none_when_not_specified(tmp_path):
+    """None, not a default AgentConfig -- absence must stay
+    distinguishable from "configured to run nothing" (nullable-field
+    discipline, see AgentConfig's own docstring in cli/config.py)."""
+    config = load_config(_write(tmp_path, VALID_YAML))
+    assert config.agent is None
+
+
+def test_agent_command_honored_when_specified(tmp_path):
+    text = VALID_YAML + '\nagent:\n  command: ["python", "agent.py", "--task", "{task.prompt}"]\n'
+    config = load_config(_write(tmp_path, text))
+    assert config.agent is not None
+    assert config.agent.command == ["python", "agent.py", "--task", "{task.prompt}"]
+
+
+def test_agent_with_empty_command_raises_config_error(tmp_path):
+    text = VALID_YAML + "\nagent:\n  command: []\n"
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, text))
+
+
 def test_missing_file_raises_config_error(tmp_path):
     with pytest.raises(ConfigError, match="not found"):
         load_config(tmp_path / "does_not_exist.yaml")

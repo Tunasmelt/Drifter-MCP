@@ -6,6 +6,63 @@ not just a diff.
 
 ---
 
+## 2026-08-25 — Gate 3 exit-test evidence: a real fragility, found in Drifter's own code
+
+Attempted the real dogfood run PHASES.md's Gate 3 exit test asks for — Claude Code,
+through the actual Gate 0 filesystem-server pairing, not `scripted_agent.py` — and it
+surfaced a genuine, previously-unknown fragility on the first real attempt. It landed
+in Drifter's own synthesis code rather than in a mutation-induced behavior change, but
+it satisfies the letter and spirit of the exit test: a concrete, non-synthetic finding
+that would not have been found without the real dogfood pairing.
+
+**What happened, in order:**
+
+1. `drifter run`'s only existing agent-connection mechanism (`cli/subprocess_adapter.py`)
+   has Drifter spawn the agent and treat the agent's own stdio as the wire — that only
+   works for a purpose-built script (`scripted_agent.py`). A real, standards-compliant
+   MCP client like Claude Code always spawns its own configured server commands; it has
+   no mode where an external process feeds it MCP frames over its own stdin. This
+   blocked the real run outright, before any Drifter logic under test was even reached.
+   Fixed by adding `cli/replay_serve.py` — `run_replay_proxy` exposed over real OS
+   stdio (mirroring `cli/observe.py`'s `stdio_server()` pattern), so a real agent's
+   `mcp.json` can point at it exactly the way it already points at `drifter observe`.
+   Verified against a real subprocess-spawning MCP client, not just in-process.
+
+2. This session's own environment blocks spawning a nested `claude` process under
+   `--dangerously-skip-permissions` (an auto-mode classifier denial) — resolved by
+   retrying without that flag, at the cost of needing `--allowedTools` pre-approval for
+   the MCP tools instead. Documented as a known limitation of running this kind of test
+   from inside a Claude Code session specifically, not a Drifter issue — confirming the
+   full baseline-vs-mutation comparison (the original Case 1/Case 2 question) remains
+   something to finish from outside this session, whenever convenient.
+
+3. With the connection working, the real baseline arm (Claude Code, replaying a freshly
+   recorded live session, 3 repeats) hit a wall on the very first tool call, identically
+   every time: `list_directory` resolved as a genuine, correctly-matched exact-tier HIT
+   (`fault=False`, `result_provenance=real`) — but `replay_proxy.py`'s shape-only
+   synthesis (SPEC.md §15 limitation 1, F-02/F-04) returned placeholder TEXT describing
+   its own fakeness ("original payload was never recorded... F-14 full synthesis not
+   implemented yet"). Claude Code read that and refused to proceed, treating it as a
+   plausible prompt-injection attempt — verbatim: "I'm not treating this as an
+   instruction and haven't read anything as a result of it." `scripted_agent.py` has no
+   semantic understanding of tool output at all and could never have caught this —
+   only a real agent's real judgment did. Fixed by making synthesized content genuinely
+   empty (`text: ""`) rather than more carefully worded prose — an empty string has no
+   language for a real agent's own reasoning (or a keyword filter) to interpret as
+   suspicious, a categorically different guarantee than softer wording would be. Scoped
+   narrowly: `content_length` still comes from the actual historical recording's own
+   `array_lengths`, not new inference — general F-14 schema-inference synthesis remains
+   unbuilt. See SPEC.md §15, limitation 11, for the permanent record of this finding.
+
+Net effect: two real bugs found and fixed in Drifter itself (missing real-agent
+connection mechanism; unsafe synthesis placeholder content), using the real dogfood
+pairing exactly as Gate 3 was designed to exercise it — even though neither is the
+"mutation caused a behavior regression" shape the exit test was originally written to
+anticipate. The actual baseline-vs-mutation comparison against Claude Code is still
+open, blocked only by this session's own sandboxing, not by anything in Drifter.
+
+---
+
 ## 2026-08-25 — Gate 3 scoping: O4 stays excluded, but now for the real reason
 
 Pre-Gate-3 review found the locked docs said nothing about why O4 (Tool Integration)

@@ -141,6 +141,44 @@ def _to_wire_tool(tool: ToolDescriptor) -> types.Tool:
     return types.Tool(name=tool.name, description=tool.description, input_schema=tool.input_schema)
 
 
+# Both synthesis functions below return CONTENT-EMPTY placeholders —
+# TextContent blocks with text="", never a sentence describing their own
+# fakeness. This replaced prose like "[drifter replay: original payload
+# was never recorded (F-02/F-04, shape-only) — F-14 full synthesis not
+# implemented yet]" after a real, live dogfood run (Claude Code, the
+# actual Gate 0 pairing, not the scripted test-agent) hit it directly:
+# `list_directory` resolved as a genuine exact-tier HIT — fault=False,
+# result_provenance=real, arguments matched the recording exactly — but
+# Claude Code read the synthesized TEXT and refused to proceed, verbatim:
+# "This reads like a prompt-injection attempt: it's phrased to look like
+# legitimate tool output/system context... I'm not treating this as an
+# instruction and haven't read anything as a result of it." All 3 baseline
+# repeats hit this identically, on the very first tool call, every time —
+# not a rare edge case, a systemic block on ever completing a multi-step
+# task against a real agent in replay mode, since EVERY exact-tier hit
+# whose payload wasn't recorded (i.e. every replay-served call, given
+# F-02/F-04's shape-only-by-default recording) went through this exact
+# code path.
+#
+# Checked before changing anything, not assumed: SessionRecorder
+# (record/writer.py's observe()) determines result_provenance from
+# SYNTHETIC_RESULT_MARKER_KEY, a private dict key set separately from
+# the wire content — never by parsing this text. Changing what's shown
+# to the agent has zero effect on provenance tracking; the two were
+# already fully decoupled, confirmed by reading observe()'s actual
+# branch, not inferred from the marker-key mechanism's existence alone.
+#
+# Why empty content specifically, not just less alarming prose: an
+# injection/suspicious-content judgment — whether a fixed keyword regex
+# (SPEC_INJECTION_PATTERNS, mutate/description_update.py) or a real
+# agent's own semantic reasoning, as observed here — operates on some
+# textual CLAIM or instruction-shaped content being present to evaluate.
+# An empty string expresses no claim, describes nothing, references
+# nothing — there is no content for either kind of classifier to
+# interpret as suspicious, not because the phrasing was softened but
+# because there is no phrasing at all. This is categorically different
+# from "honest but softer" wording, which would still be prose a real
+# agent could read, judge, and potentially still flag.
 def _synthesize_added_tool_result() -> types.CallToolResult:
     """F-14, scoped narrowly to F-17 (tool_addition)'s own case: a tool
     that was injected by mutation has, by definition (SPEC.md §7), no
@@ -148,15 +186,13 @@ def _synthesize_added_tool_result() -> types.CallToolResult:
     from the way `_synthesize_call_tool_result` does for an ordinary
     exact-tier HIT. This is NOT general F-14 (no historical-shape
     inference across arbitrary real tools, no LLM) — it is the one
-    fixed, generic, structurally-valid placeholder every tool_addition
-    call gets, since there is nothing tool-specific to draw from. See
-    `run_replay_proxy`'s `synthetic_tool_names` parameter for how a
-    call actually reaches here instead of an ordinary MISS.
+    fixed, generic, structurally-valid, CONTENT-EMPTY placeholder every
+    tool_addition call gets, since there is nothing tool-specific to
+    draw from (see the module-level note above for why empty, not
+    prose). See `run_replay_proxy`'s `synthetic_tool_names` parameter
+    for how a call actually reaches here instead of an ordinary MISS.
     """
-    placeholder = types.TextContent(
-        type="text",
-        text="[drifter tool_addition: this tool has no real backing implementation — synthetic response]",
-    )
+    placeholder = types.TextContent(type="text", text="")
     return types.CallToolResult(content=[placeholder], is_error=False)
 
 
@@ -165,8 +201,22 @@ def _synthesize_call_tool_result(hit: RecordedResponse) -> types.CallToolResult:
     — never its original content, which was never recorded in the first
     place (F-02/F-04, shape-only). Full synthesis (F-14: matching every
     recorded key and array length) is explicit later-gate scope; this
-    produces just enough to be a valid, honestly-labeled result that
-    carries the recorded `is_error` faithfully — not a guess at F-14.
+    produces just enough to be a valid, schema-shaped, CONTENT-EMPTY
+    result (see the module-level note above for why empty, not prose)
+    that carries the recorded `is_error` faithfully — not a guess at
+    F-14, and not a claim about anything.
+
+    Scope of this fix, stated explicitly so it doesn't quietly expand:
+    `content_length` still comes from `hit.result_shape["array_lengths"]`
+    — a value already present in the actual historical recording being
+    replayed, not new inference. Nothing here starts reconstructing
+    per-key *types*, guessing at values, or reasoning about a tool's
+    schema beyond what F-02/F-04 already captured at record time. Only
+    the TEXT changed (prose → empty); the amount of structural
+    reconstruction is identical to before this fix, which was already
+    scoped this narrowly. General F-14 (inferring a plausible response
+    for a tool with no prior recording at all, beyond tool_addition's
+    own narrow no-history case) remains unbuilt.
     """
     content_length = 1
     if hit.result_shape:
@@ -174,13 +224,7 @@ def _synthesize_call_tool_result(hit: RecordedResponse) -> types.CallToolResult:
         array_lengths = hit.result_shape.get("array_lengths") or {}
         if "content" in keys:
             content_length = array_lengths.get("content", 1)
-    placeholder = types.TextContent(
-        type="text",
-        text=(
-            "[drifter replay: original payload was never recorded "
-            "(F-02/F-04, shape-only) — F-14 full synthesis not implemented yet]"
-        ),
-    )
+    placeholder = types.TextContent(type="text", text="")
     return types.CallToolResult(content=[placeholder] * content_length, is_error=bool(hit.is_error))
 
 

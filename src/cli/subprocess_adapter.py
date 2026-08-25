@@ -112,6 +112,7 @@ def make_run_once(
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
     timeout_s: float | None = None,
+    synthetic_tool_names: frozenset[str] = frozenset(),
 ):
     """Binds `run_agent_subprocess`'s fixed parameters once and returns a
     zero-arg, synchronous callable matching
@@ -176,6 +177,7 @@ def make_run_once(
             env,
             cwd,
             timeout_s,
+            synthetic_tool_names,
         )
 
     return run_once
@@ -231,6 +233,7 @@ async def run_agent_subprocess(
     env: dict[str, str] | None = None,
     cwd: Path | None = None,
     timeout_s: float | None = None,
+    synthetic_tool_names: frozenset[str] = frozenset(),
 ) -> Path:
     """Spawns `command` (an already-resolved argv — templating and
     config-loading are the caller's job, see module docstring point 1),
@@ -239,9 +242,15 @@ async def run_agent_subprocess(
     `SessionRecorder`, and returns the path to the resulting session
     JSONL.
 
+    `synthetic_tool_names` passes straight through to `run_replay_proxy`
+    (F-17's tool_addition support, F-14-scoped) — added when `drifter
+    run` (F-35) needed a real, subprocess-driven path for a call to a
+    tool_addition-injected tool to resolve as synthetic rather than an
+    ordinary MISS; this parameter was missing entirely until then (found
+    by checking, not assumed present, during F-35's own STOP-AND-CHECK).
+
     Matches `evaluate.baseline.run_baseline`'s `run_once` contract when
-    partially applied down to a zero-arg callable (not done here — that
-    wiring is explicitly the next, separate prompt).
+    partially applied down to a zero-arg callable.
     """
     recorder = SessionRecorder(session_dir=session_dir, raw_dir=raw_dir, server_name=server_name)
 
@@ -253,7 +262,16 @@ async def run_agent_subprocess(
         async with anyio.create_task_group() as tg:
             tg.start_soon(_pump_stdout_to_proxy, process, read_stream_writer)
             tg.start_soon(_pump_proxy_to_stdin, process, write_stream_reader)
-            tg.start_soon(run_replay_proxy, read_stream, write_stream, replay_store, server_name, tools_served, recorder.observe)
+            tg.start_soon(
+                run_replay_proxy,
+                read_stream,
+                write_stream,
+                replay_store,
+                server_name,
+                tools_served,
+                recorder.observe,
+                synthetic_tool_names,
+            )
 
             with anyio.move_on_after(timeout_s):
                 await process.wait()
