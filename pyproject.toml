@@ -2,6 +2,8 @@
 name = "mcp-drifter"
 version = "0.1.0"
 description = "Proxy-based regression-testing harness for MCP tool interfaces."
+readme = "README.md"
+license = { text = "MIT" }
 requires-python = ">=3.11"
 dependencies = [
     "mcp>=2.0.0",
