@@ -1,12 +1,12 @@
-"""Record schema for Drifter session logs (SPEC.md §6).
+"""Record schema for Drifter session logs (docs/SPEC.md §6).
 
 One JSONL file per session; every line is one of the record models below,
 disambiguated by `record_type`. `schema_version` is stamped on every record
 so `record/reader.py` can validate compatibility as the schema evolves.
 
-Field-inclusion rule (SPEC.md §6): a field is recorded only if it cannot be
+Field-inclusion rule (docs/SPEC.md §6): a field is recorded only if it cannot be
 derived later from what *is* recorded. The fields below marked "cannot be
-added retroactively" are the exception list from SPEC.md §6 — they exist in
+added retroactively" are the exception list from docs/SPEC.md §6 — they exist in
 full now even though the logic that populates most of them doesn't land
 until later gates (F-05 environment fingerprinting, F-08 data-flow
 references, F-26 tool risk classification, F-21/F-22 baseline fidelity).
@@ -138,9 +138,9 @@ class ToolCall(BaseModel):
     session_id: str
     seq: int
     # ISO 8601 UTC, captured when the response was observed. Added in
-    # Prompt 6 (CHANGELOG.md) — F-07's idle-gap segmentation and F-28's
+    # Prompt 6 (docs/CHANGELOG.md) — F-07's idle-gap segmentation and F-28's
     # signature normalization both presuppose a per-call timestamp exists,
-    # but SPEC.md §6's original field list never named one. Genuinely
+    # but docs/SPEC.md §6's original field list never named one. Genuinely
     # transient data: cannot be added retroactively to an already-recorded
     # call, so it belongs on this same list going forward.
     timestamp: str
@@ -149,7 +149,7 @@ class ToolCall(BaseModel):
     arguments: dict = {}
     # Type/keys/length only — never the payload itself (F-02, F-04).
     result_shape: dict | None = None
-    # Added in Prompt 8 (CHANGELOG.md), for the same reason as `timestamp`:
+    # Added in Prompt 8 (docs/CHANGELOG.md), for the same reason as `timestamp`:
     # F-10's error rate needs to know whether this specific call failed,
     # and `result_shape` deliberately never stores values — only type/keys/
     # length — so a result's `isError: true` (MCP's CallToolResult field;
@@ -162,7 +162,7 @@ class ToolCall(BaseModel):
     # `| None`, deliberately, unlike `timestamp`'s plain `str`: `timestamp`
     # was added (Prompt 6) when no real recorded data existed anywhere to
     # protect. `is_error`/`duration_ms` are being added with a real weekly
-    # trial imminent (PHASES.md Gate 1's exit test), so a record written
+    # trial imminent (docs/PHASES.md Gate 1's exit test), so a record written
     # before this field existed must still parse — `record/reader.py`
     # raising a raw pydantic ValidationError on old data, or a required
     # field silently coercing to a default, are exactly the two failure
@@ -187,7 +187,7 @@ class ToolCall(BaseModel):
     # arrives, mid-request. `| None` for the same backward-compatibility
     # reason as `is_error` above.
     duration_ms: float | None = None
-    # Added in this prompt (CHANGELOG.md), closing the exact gap the
+    # Added in this prompt (docs/CHANGELOG.md), closing the exact gap the
     # is_error investigation surfaced: through v1.0.9, a `tools/call` that
     # failed at the protocol level (a JSON-RPC error response, not a
     # CallToolResult — record/writer.py's `observe()` JSONRPCError branch)

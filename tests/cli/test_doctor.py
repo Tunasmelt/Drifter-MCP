@@ -7,7 +7,7 @@ below) — not just a static read of stdio_client's shutdown code — because
 this exact class of bug (a cooperative-cancellation path hanging on an
 uncancellable subprocess/thread read) has bitten this project twice
 already (record/proxy.py's Prompt-2 shutdown hang, cli/observe.py's
-Ctrl+C hang; see both files' docstrings/CHANGELOG.md). `anyio.fail_after`
+Ctrl+C hang; see both files' docstrings/docs/CHANGELOG.md). `anyio.fail_after`
 wrapping `stdio_client` + `ClientSession.initialize()` is a new use of
 cooperative cancellation in this codebase and gets the same scrutiny.
 """

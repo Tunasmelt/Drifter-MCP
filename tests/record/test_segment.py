@@ -6,7 +6,7 @@ Three fixtures, per the Gate 1 prompt pack:
    -> heuristic segments correctly AND captures the reference.
 3. Adversarial: no trace context, no idle gap, two calls unrelated by content
    -> documented as a known limitation if the heuristic gets it wrong
-   (SPEC.md §15's practice of stating limitations plainly).
+   (docs/SPEC.md §15's practice of stating limitations plainly).
 """
 
 import sys
@@ -108,7 +108,7 @@ async def test_heuristic_segments_on_idle_gap_and_captures_data_flow_reference(t
 
 @pytest.mark.anyio
 async def test_adversarial_no_trace_no_gap_unrelated_calls_still_grouped(tmp_path):
-    """Known limitation (SPEC.md §15): with no trace context and no idle
+    """Known limitation (docs/SPEC.md §15): with no trace context and no idle
     gap, the heuristic has no signal to separate two calls that are
     unrelated by content — they get grouped into one trajectory. This
     test documents that behavior rather than hiding it.

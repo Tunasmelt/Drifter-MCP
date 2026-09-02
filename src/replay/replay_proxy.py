@@ -1,5 +1,5 @@
 """Replay-serving proxy mode: answers `tools/call`/`tools/list` from a
-`ReplayStore` (F-11) instead of forwarding to a real server. SPEC.md §5's
+`ReplayStore` (F-11) instead of forwarding to a real server. docs/SPEC.md §5's
 architecture diagram calls this the "resolve (replay | synthetic | live)"
 stage — this module is the `replay` branch; `live` is `record/proxy.py`
 (F-01); `synthetic` (F-14) and mutation-serving (Gate 3) don't exist yet.
@@ -39,7 +39,7 @@ Structural guarantee, not a runtime check: this module never imports
 outbound connection. There is no code path here that can fall through to
 a live server, because the code to do so does not exist in this file —
 confirmed by inspection, not by a flag defaulting the "right" way (the
-same standard SPEC.md §10/DEC-005 already holds mutation testing to).
+same standard docs/SPEC.md §10/DEC-005 already holds mutation testing to).
 
 Recording (F-34 prerequisite, closed here rather than left implicit):
 `run_replay_proxy` had no recording hook at all until this addition —
@@ -181,7 +181,7 @@ def _to_wire_tool(tool: ToolDescriptor) -> types.Tool:
 # agent could read, judge, and potentially still flag.
 def _synthesize_added_tool_result() -> types.CallToolResult:
     """F-14, scoped narrowly to F-17 (tool_addition)'s own case: a tool
-    that was injected by mutation has, by definition (SPEC.md §7), no
+    that was injected by mutation has, by definition (docs/SPEC.md §7), no
     prior recording at all — there is no `result_shape` to reconstruct
     from the way `_synthesize_call_tool_result` does for an ordinary
     exact-tier HIT. This is NOT general F-14 (no historical-shape
@@ -269,10 +269,10 @@ async def run_replay_proxy(
     F-14-scoped-to-tool_addition synthesis on a `replay_store` MISS
     instead of `MCPError(REPLAY_MISS_CODE)` — the injected tool a
     `mutate.tool_addition` mutation added to `tools_served`, which by
-    definition (SPEC.md §7) never has a prior recording, so an ordinary
+    definition (docs/SPEC.md §7) never has a prior recording, so an ordinary
     MISS would be indistinguishable from "an existing tool's call was
     never recorded," losing exactly the "reported separately, excluded
-    from the fidelity denominator" distinction SPEC.md §7 requires.
+    from the fidelity denominator" distinction docs/SPEC.md §7 requires.
     The wire response the agent actually receives is a clean, generic
     placeholder (`_synthesize_added_tool_result`); a *separate* dict,
     carrying `SYNTHETIC_RESULT_MARKER_KEY`, is what reaches `on_message`

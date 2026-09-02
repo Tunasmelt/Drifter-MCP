@@ -3,26 +3,26 @@ produces — per-(server, tool) call frequency, unused tools, retry rate,
 error rate, and latency percentiles.
 
 Reads every `*.jsonl` file under the corpus directory independently (one
-file per `drifter observe` session — SPEC.md's architecture, F-09) and
+file per `drifter observe` session — docs/SPEC.md's architecture, F-09) and
 aggregates across all of them. Must work against whatever corpus exists at
 the time it's run, including zero sessions or a single call: this is meant
-to be run mid-trial, not only once a full week of data exists (FEATURES.md
+to be run mid-trial, not only once a full week of data exists (docs/FEATURES.md
 F-10's "Done when" explicitly ties this to the author checking it against
 their own real usage).
 
-Retry rate's definition (not specified anywhere in SPEC.md/FEATURES.md —
+Retry rate's definition (not specified anywhere in docs/SPEC.md/docs/FEATURES.md —
 a genuine design decision made here, not a hidden assumption): a tool_call
 is a retry if it repeats the immediately preceding call to the same
 (server, tool_name) *within the same session* with identical (already-
 redacted) arguments. Reset per session, since two independent `drifter
-observe` connections aren't the same interaction. No time window — SPEC.md
+observe` connections aren't the same interaction. No time window — docs/SPEC.md
 §13's own example (`search → get_customer → retry → create_invoice`) is
 about adjacency in the call sequence, not elapsed time, and no calibration
 precedent exists for inventing one here.
 
 Error rate uses `is_error` (added Prompt 8, CHANGELOG v1.0.7) — never
 `result_shape`'s keys, which never carried the boolean value. Fault rate
-uses `fault` (added this prompt, CHANGELOG.md) — a `tools/call` that
+uses `fault` (added this prompt, docs/CHANGELOG.md) — a `tools/call` that
 failed at the protocol level (a JSON-RPC error response, never reaching a
 CallToolResult) rather than a tool-reported failure. Deliberately two
 separate columns, not one merged "didn't succeed" rate: `is_error` is

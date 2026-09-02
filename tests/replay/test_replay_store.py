@@ -1,4 +1,4 @@
-"""Tests for the replay store (F-11), SPEC.md §7 tier 1 (exact-key) only.
+"""Tests for the replay store (F-11), docs/SPEC.md §7 tier 1 (exact-key) only.
 
 Loads from the golden fixture (tests/fixtures/golden_v0.1.jsonl) as the
 primary test corpus — per CLAUDE.md's testing discipline, that's the only

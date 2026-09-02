@@ -1,4 +1,4 @@
-"""Tests for the tool_addition mutation operator (F-17), SPEC.md §10.
+"""Tests for the tool_addition mutation operator (F-17), docs/SPEC.md §10.
 
 Same safety discipline as description_update (F-16): built red-test-
 first. Unlike description_update, this operator's archetype pool is

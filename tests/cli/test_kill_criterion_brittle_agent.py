@@ -1,9 +1,9 @@
-"""Gate 3's kill criterion (PHASES.md), the actual final piece: "before
+"""Gate 3's kill criterion (docs/PHASES.md), the actual final piece: "before
 proceeding to Gate 4 or v1, deliberately construct a known-brittle test
 agent and confirm the harness *can* detect a planted regression."
 
 Deliberately NOT the real dogfood pairing — that's the whole point
-(PHASES.md's own text: "isolating whether the issue is the harness or
+(docs/PHASES.md's own text: "isolating whether the issue is the harness or
 simply that this particular agent is unusually robust"). This uses
 `tests/fixtures/scripted_agent.py`'s `SELECT:<substring>` mode: a
 description-text-dependent tool-selection mechanism, planted to break

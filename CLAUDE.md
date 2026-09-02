@@ -1,17 +1,17 @@
 # CLAUDE.md — Working instructions for Drifter
 
 You're working in the Drifter repository. Read this before touching code. It assumes
-you've read (or will read as part of Gate 0) `SPEC.md` and `FEATURES.md` — this file
+you've read (or will read as part of Gate 0) `docs/SPEC.md` and `docs/FEATURES.md` — this file
 is *how to work*, those are *what to build*.
 
 ## The one rule above all others
 
-**No new planning documents.** SPEC.md, FEATURES.md, PHASES.md, HANDOFF.md, and
-CHANGELOG.md are the complete, locked planning surface (DEC-026). If something seems
+**No new planning documents.** docs/SPEC.md, docs/FEATURES.md, docs/PHASES.md, docs/HANDOFF.md, and
+docs/CHANGELOG.md are the complete, locked planning surface (DEC-026). If something seems
 wrong or underspecified once you're in the code, the move is:
 
 1. Check if it's actually addressed and you missed it (these documents are long)
-2. If genuinely missing or wrong: fix it in place with a CHANGELOG.md entry
+2. If genuinely missing or wrong: fix it in place with a docs/CHANGELOG.md entry
    explaining why, in the same PR as the code change that needed the fix
 3. Never create a new `*.md` planning file, a "v2 spec," a "notes" file, or an
    "alternative approach" document. If you feel the pull to write one, that pull is
@@ -19,7 +19,7 @@ wrong or underspecified once you're in the code, the move is:
 
 ## Where you are
 
-Check PHASES.md for the current gate. Do not start work belonging to a later gate
+Check docs/PHASES.md for the current gate. Do not start work belonging to a later gate
 before the current gate's exit test has passed — each gate's exit test exists
 specifically to catch a foundational problem before more is built on top of it. If
 you're unsure which gate is active, check `.drifter/GATE_STATUS` (create it at
@@ -28,12 +28,12 @@ exist.
 
 ## Build order within a gate
 
-Follow FEATURES.md's dependency chain, not convenience. F-numbers indicate build
+Follow docs/FEATURES.md's dependency chain, not convenience. F-numbers indicate build
 order within a module, and modules have a strict dependency order:
 `record/` → `replay/` → `mutate/` → `evaluate/` → `mine/` → `policy/` → `cli/`.
 Don't start `mutate/` work while `record/`'s golden fixture test is still red.
 
-## Non-negotiable invariants (SPEC.md §3) — check these on every relevant PR
+## Non-negotiable invariants (docs/SPEC.md §3) — check these on every relevant PR
 
 - Recording never writes payload data by default, only shapes. If a change to
   `record/` touches what gets written to disk, the secret-redaction fixture test
@@ -53,7 +53,7 @@ Don't start `mutate/` work while `record/`'s golden fixture test is still red.
 
 ## Testing discipline
 
-Every feature in FEATURES.md has an explicit "Done when" criterion — that's your test
+Every feature in docs/FEATURES.md has an explicit "Done when" criterion — that's your test
 target, not a vague suggestion. For F-01 through F-15 especially, prefer fixture-based
 tests over mocks: record a real (or realistically synthetic) session once, commit it,
 and test against it. The golden fixture (`tests/fixtures/golden_v0.1.jsonl`) is
@@ -94,29 +94,29 @@ be timed, per this pattern's three confirmed occurrences.
 
 ## When something in the spec turns out to be wrong
 
-It will happen — SPEC.md's calibration register exists because several of its
+It will happen — docs/SPEC.md's calibration register exists because several of its
 constants are known-uncertain by design. The distinction that matters:
 
 - **A calibration constant needs adjusting** → update `calibration.yaml`, note it in
-  CHANGELOG.md under the current version with the data that justified the change. No
+  docs/CHANGELOG.md under the current version with the data that justified the change. No
   architecture discussion needed.
-- **An architectural invariant (SPEC.md §3) seems wrong** → this is rare and serious.
-  Stop, write up specifically what broke and why in a CHANGELOG.md entry, and treat
+- **An architectural invariant (docs/SPEC.md §3) seems wrong** → this is rare and serious.
+  Stop, write up specifically what broke and why in a docs/CHANGELOG.md entry, and treat
   it as a decision requiring the same scrutiny the original decision got — not a
-  quick patch. Check SPEC.md §15 first; it may already be a documented, accepted
+  quick patch. Check docs/SPEC.md §15 first; it may already be a documented, accepted
   limitation rather than a bug.
 
 ## What "done" looks like for this session
 
-If you're starting fresh: Gate 0's five checklist items in PHASES.md, none of which
+If you're starting fresh: Gate 0's five checklist items in docs/PHASES.md, none of which
 are code. Do them in order; the AgentAssay read and the competitor survey both
 directly affect what Gate 1 should look like.
 
 If Gate 0 is already done: pick up the next unchecked task in the active gate's
-checklist in PHASES.md, in dependency order per FEATURES.md.
+checklist in docs/PHASES.md, in dependency order per docs/FEATURES.md.
 
 Do not skip ahead to a feature that looks more interesting than the next one in
-sequence. The dependency ordering in FEATURES.md and the gate ordering in PHASES.md
+sequence. The dependency ordering in docs/FEATURES.md and the gate ordering in docs/PHASES.md
 are both load-bearing — several were specifically designed to surface foundational
 problems (Gate 1's proxy stability, Gate 2's free-replay proof) before time is spent
 on things that would be built on top of a broken foundation.

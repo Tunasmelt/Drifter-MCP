@@ -75,7 +75,7 @@ def _record_synthetic_session(session_dir: Path, raw_dir: Path, session_id: str)
 def _write_pre_prompt8_session(runs_dir: Path, session_id: str, tool_calls: list[tuple[str, dict]]) -> None:
     """Writes a session JSONL file in the exact shape record/writer.py
     produced through Prompt 7 — before is_error/duration_ms existed on
-    ToolCall (CHANGELOG.md v1.0.7). Raw dicts, not the current ToolCall
+    ToolCall (docs/CHANGELOG.md v1.0.7). Raw dicts, not the current ToolCall
     model, deliberately: constructing via the current model would just
     exercise its own defaults, not reproduce what's genuinely sitting on
     disk from before this schema change. Field values below (result_shape
@@ -256,7 +256,7 @@ def test_pre_fault_field_data_does_not_crash_and_does_not_misreport_as_no_fault(
     all yet); it must also be shown to fail against a naive
     non-Optional `fault: bool = False` implementation before the real,
     Optional-with-explicit-unknown-tracking implementation lands — see
-    CHANGELOG.md's entry for this change for that verification step.
+    docs/CHANGELOG.md's entry for this change for that verification step.
     """
     runs_dir = tmp_path / "runs"
     _write_pre_fault_field_session(

@@ -1,7 +1,7 @@
 """Structured recording (F-02), raw frame mirroring (F-03), and
 environment fingerprinting (F-05).
 
-Deliberately kept separate from reader.py (CLAUDE.md, PHASES.md Gate 1): a
+Deliberately kept separate from reader.py (CLAUDE.md, docs/PHASES.md Gate 1): a
 shared read/write module invites silent format drift between what's written
 and what's read.
 
@@ -95,7 +95,7 @@ class SessionRecorder:
         self.session_id = session_id or uuid.uuid4().hex
         self.server_name = server_name
         # MCP traffic has no concept of "which model" — the protocol only
-        # ever exposes agent/server identity (SPEC.md §15's limitation 2).
+        # ever exposes agent/server identity (docs/SPEC.md §15's limitation 2).
         # Sourced out-of-band by the caller (env var, later drifter.yaml).
         self.model_name = model_name
 
@@ -269,7 +269,7 @@ class SessionRecorder:
             # the SDK's own docstring: this SHOULD only happen for "errors
             # in finding the tool," not a tool-reported failure, which
             # goes through isError instead) now gets a real record — see
-            # `fault` on ToolCall (CHANGELOG.md, this prompt). Previously
+            # `fault` on ToolCall (docs/CHANGELOG.md, this prompt). Previously
             # dropped silently, with no per-tool attribution possible at
             # all — closing the exact gap the is_error investigation
             # surfaced, not a new unrelated feature.

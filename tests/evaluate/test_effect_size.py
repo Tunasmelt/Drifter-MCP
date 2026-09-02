@@ -1,4 +1,4 @@
-"""Tests for behavior effect-size scoring (F-23), SPEC.md §8.
+"""Tests for behavior effect-size scoring (F-23), docs/SPEC.md §8.
 
 BaselineResult instances built directly (not via run_baseline/
 aggregate_baseline_runs) -- this module tests the pure comparison

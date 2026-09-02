@@ -1,13 +1,13 @@
-"""description_update mutation operator (F-16), SPEC.md §10.
+"""description_update mutation operator (F-16), docs/SPEC.md §10.
 
 Closed-set structural transformation, decided and recorded explicitly
-this round (CHANGELOG.md, 2026-08-25): synonym substitution from a
+this round (docs/CHANGELOG.md, 2026-08-25): synonym substitution from a
 fixed table, plus sentence-level reordering, both confined to a
 description's own existing content. No LLM call, no free-text
 generation anywhere in this module — the whole operator is a pure,
 deterministic (given a seed) function over a string.
 
-Consequence for SPEC.md §10's imperative-pattern rejection, also
+Consequence for docs/SPEC.md §10's imperative-pattern rejection, also
 decided this round: this mechanism structurally CANNOT manufacture a
 genuinely new imperative-instruction phrase that wasn't already present
 in the source — recombining a description's own existing words and
@@ -26,14 +26,14 @@ unflagged. That confirms this really is the live risk this operator
 has to guard against, not a purely theoretical one.
 
 Scope boundary: this module is a pure function over a tool manifest
-(FEATURES.md F-16, "Depends on: none"). It is not wired into
+(docs/FEATURES.md F-16, "Depends on: none"). It is not wired into
 replay_proxy.py's tools/list response path — that's cache-busting/F-19
 territory, a separate, later prompt, matching this gate's established
 pattern (replay_proxy before subprocess_adapter) of building each
 piece standalone with a direct test before wiring it into anything
 live.
 
-Audit logging: SPEC.md §10 requires "every mutation logged with exact
+Audit logging: docs/SPEC.md §10 requires "every mutation logged with exact
 before/after and an inverse mapping." MutationLogEntry below is the
 minimal, description_update-specific shape for that — before/after
 plus an explicit `inverse=None`, not a fabricated one, since this
@@ -41,7 +41,7 @@ operator genuinely has no inverse: it's schema-immune (never touches
 inputSchema) and text-only, confirmed this round to be outside tier
 2's (inverse-mutation replay) applicability entirely. This is
 deliberately NOT F-18's general mutation-audit-log module — F-18's own
-FEATURES.md entry states "Depends on: F-16, F-17," so a general log
+docs/FEATURES.md entry states "Depends on: F-16, F-17," so a general log
 format spanning both operators cannot exist before F-17 (tool_addition)
 does either. Building a minimal, correct log shape here now and
 generalizing once both operators exist matches this gate's own
@@ -58,7 +58,7 @@ from dataclasses import dataclass
 
 from record.schema import ToolDescriptor
 
-# SPEC.md §10's literal pattern list, verbatim -- not a broader or
+# docs/SPEC.md §10's literal pattern list, verbatim -- not a broader or
 # stricter reading of "imperative-shaped." "instead of" specifically
 # (not bare "instead") matters in practice: the golden fixture's real
 # read_file description ends "...Use read_text_file instead." -- a
@@ -208,7 +208,7 @@ class MutationLogEntry:
     both Gate 3 operators are outside tier 2's (inverse-mutation
     replay) applicability entirely (description_update is schema-
     immune and text-only; tool_addition has no prior recording to
-    invert against, SPEC.md §7's own text). Explicit, not omitted — a
+    invert against, docs/SPEC.md §7's own text). Explicit, not omitted — a
     caller reading this field sees a deliberate "no inverse exists,"
     not a forgotten one.
 
@@ -342,7 +342,7 @@ def mutate_tool_manifest(
     tools: list[ToolDescriptor], seed: int
 ) -> tuple[list[ToolDescriptor], list[MutationLogEntry]]:
     """Applies mutate_description to every tool's description field.
-    Name and input_schema are never touched (Schema Immunity, SPEC.md
+    Name and input_schema are never touched (Schema Immunity, docs/SPEC.md
     §10 corroborating evidence, Gate 0/NOTES.md) — only `description`
     changes. Each tool gets its own seed-derived per-tool seed (seed,
     tool_name) so that reordering/substitution outcomes aren't

@@ -1,12 +1,12 @@
-"""Environment fingerprinting (F-05, SPEC.md §3 principle 9).
+"""Environment fingerprinting (F-05, docs/SPEC.md §3 principle 9).
 
 Every session hashes agent identity, model name, MCP server names/versions,
 and a tool-manifest hash into one `environment.fingerprint` field on the
-SessionStart record — SPEC.md §6 lists `environment.fingerprint` among the
+SessionStart record — docs/SPEC.md §6 lists `environment.fingerprint` among the
 fields that "cannot be added retroactively."
 
 Comparisons across sessions must match except for the intended mutation
-delta, or the comparison is invalid. SPEC.md is explicit this must "block
+delta, or the comparison is invalid. docs/SPEC.md is explicit this must "block
 comparison with an explicit error, not a silent wrong answer" — so
 `require_matching_environments` raises rather than returning a boolean a
 caller could silently ignore.
@@ -30,7 +30,7 @@ def compute_fingerprint(
 
     Deterministic regardless of server_versions' insertion order — it's
     sorted before hashing. Prefixed like tool_manifest_hash's own
-    `sha256:` convention (SPEC.md §6) so a fingerprint reads as "one of
+    `sha256:` convention (docs/SPEC.md §6) so a fingerprint reads as "one of
     these hashes," not an opaque blob.
     """
     canonical = json.dumps(
@@ -78,7 +78,7 @@ def build_environment(
 
 
 class FingerprintMismatchError(ValueError):
-    """Two sessions' environments differ — SPEC.md §5: block comparison
+    """Two sessions' environments differ — docs/SPEC.md §5: block comparison
     with an explicit error, never proceed silently."""
 
 
@@ -113,19 +113,19 @@ def diff_environments(a: Environment, b: Environment) -> list[str]:
 def require_matching_environments(a: SessionStart, b: SessionStart) -> None:
     """Raises FingerprintMismatchError if a and b's environments differ,
     naming exactly which sub-field(s) changed. Matching environments
-    return silently — SPEC.md's "block comparison with an explicit error,
+    return silently — docs/SPEC.md's "block comparison with an explicit error,
     not a silent wrong answer" implemented as a raise, not a boolean a
     caller could ignore.
 
     Every sub-field is fatal, deliberately, not just agent_identity/
     tool_manifest_hash — e.g. a server patch-version bump with an
-    unchanged manifest still blocks. SPEC.md §3 principle 9 states this
+    unchanged manifest still blocks. docs/SPEC.md §3 principle 9 states this
     as a flat "must match... or the comparison is invalid," and treating
     server_versions as advisory would mean silently comparing across the
-    exact blind spot SPEC.md §15 limitation 4 names (a tool's *behavior*
+    exact blind spot docs/SPEC.md §15 limitation 4 names (a tool's *behavior*
     can change while its schema stays identical) — a version bump with no
     manifest change is precisely when that's most likely to have
-    happened. Revisit only with a deliberate SPEC.md amendment, not a
+    happened. Revisit only with a deliberate docs/SPEC.md amendment, not a
     quiet loosening here.
     """
     diffs = diff_environments(a.environment, b.environment)

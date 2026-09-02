@@ -1,4 +1,4 @@
-"""Baseline calibration (F-21), SPEC.md §7/§8.
+"""Baseline calibration (F-21), docs/SPEC.md §7/§8.
 
 Runs a task N times (default `calibration.yaml`'s `baseline.repeats`) and
 establishes what's *normal* for it before any mutation is active: the
@@ -13,12 +13,12 @@ Scope, deliberately: this module owns the aggregation/analysis logic only.
 replay-serving proxy mode don't exist yet, and building them is its own
 task with real architectural decisions (how a stdio-based agent gets
 pointed at a replay-serving server) that aren't settled anywhere in
-SPEC.md yet. A future real `run_once` implementation plugs into this same
+docs/SPEC.md yet. A future real `run_once` implementation plugs into this same
 slot without this module's contract changing. Fidelity gating (F-22) and
 effect-size scoring against a mutation arm (F-23) are separate, later
 checklist items — not attempted here.
 
-Explicit design change from PHASES.md's original sketch (per
+Explicit design change from docs/PHASES.md's original sketch (per
 .drifter/GATE_STATUS's `gate_1_note`): the real-world null rate for
 `SessionStart.environment.tool_manifest_hash` was never measured — the
 Gate 1 trial that would have told us was skipped. So this module never
@@ -42,12 +42,12 @@ a single flaky repeat degrades `valid_runs`, it doesn't nuke the run.
 `ExcludedRun.session_id`/`.path` are `None` for this reason specifically
 — there is no session to point at when `run_once` never produced one.
 
-Third exclusion reason — fidelity gating (SPEC.md §7/§8, DEC-020, F-22),
+Third exclusion reason — fidelity gating (docs/SPEC.md §7/§8, DEC-020, F-22),
 now implemented since a real replay-served pipeline exists to gate. Per-
 run fidelity is `exact_hit_calls / total_attempted_calls` over that run's
 recorded `ToolCall`s. Only the exact tier exists right now
 (`replay_store.py`'s `MatchTier` is `"exact"` only) — inverse/semantic
-tiers and SPEC.md §9's `semantic_weight` apply once Gate 3's mutations
+tiers and docs/SPEC.md §9's `semantic_weight` apply once Gate 3's mutations
 exist; no placeholder weighting is built for tiers that don't exist yet.
 
 STOP-AND-CHECK done before writing this, not assumed: does a replay MISS
@@ -56,7 +56,7 @@ does the recorder's write path silently drop it (no `CallToolResult` to
 build one from)? Read `record/writer.py`'s `observe()`/`_write_tool_call*`
 branch structure directly — a `JSONRPCError` response for a `tools/call`
 already routes to `_write_tool_call_fault`, writing a real `ToolCall`
-with `fault=True`, `result_shape=None` (added v1.0.10, per CHANGELOG.md,
+with `fault=True`, `result_shape=None` (added v1.0.10, per docs/CHANGELOG.md,
 and already exercised by `tests/replay/test_replay_proxy.py`'s
 `test_on_message_lets_sessionrecorder_produce_a_valid_new_session`,
 which asserts the MISS call IS recorded with `fault=True`). So the
@@ -67,7 +67,7 @@ writer.py fix was needed.
 as an unconsumed constant — same situation `idle_gap_seconds` was in
 before Gate 1 Prompt 6 actually read it. This module is now the first
 reader. `calibration.fidelity_flag_threshold` (0.90) also already exists;
-SPEC.md §8's table describes a fuller three-tier scheme (below floor:
+docs/SPEC.md §8's table describes a fuller three-tier scheme (below floor:
 excluded; between floor and flag_threshold: included but flagged
 degraded; at/above flag_threshold: clean) — only the floor-based
 exclusion is built here. The "flagged but included" middle tier is a
@@ -86,7 +86,7 @@ rule as the other three aggregate fields, checked explicitly here rather
 than assumed safe because it "returns a float."
 
 Execution/analysis split (F-36, `drifter score`, Gate 2's actual exit
-test): SPEC.md §5's architecture diagram already draws this as a hard
+test): docs/SPEC.md §5's architecture diagram already draws this as a hard
 line ("above: costs money, has side effects / below: free, instant,
 repeatable") — `drifter score` re-analyzes already-recorded session
 JSONL with zero new agent execution. STOP-AND-CHECK before building
@@ -230,7 +230,7 @@ class BaselineResult:
 
 
 def _tool_path(records: list) -> tuple[str, ...]:
-    """The ordered sequence of tool names called in a session — SPEC.md
+    """The ordered sequence of tool names called in a session — docs/SPEC.md
     §8's "path" (e.g. the report format's `search → get_customer →
     create_invoice`). Whole-session, not per-trajectory: a baseline run
     is one task, one session, so there's no need to segment further here.
@@ -251,7 +251,7 @@ def _run_fidelity(records: list) -> float:
     unknown fault status was fine.
 
     Calls with `result_provenance == "synthetic"` (F-17's tool_addition,
-    F-14-scoped) are excluded from this computation entirely — SPEC.md
+    F-14-scoped) are excluded from this computation entirely — docs/SPEC.md
     §7's own text: "tool_addition calls are excluded from the fidelity
     denominator (no prior recording can exist by definition) and
     reported separately." They're neither a hit nor a miss for THIS
@@ -278,13 +278,13 @@ def aggregate_baseline_runs(
     calibration: Calibration | None = None,
     pre_excluded: Sequence[ExcludedRun] = (),
 ) -> BaselineResult:
-    """The pure analysis core (SPEC.md §5's "below the line": free,
+    """The pure analysis core (docs/SPEC.md §5's "below the line": free,
     instant, repeatable, zero execution). Computes a `BaselineResult`
     entirely from already-existing session JSONL paths on disk — no
     `run_once`, no subprocess, no proxy, no execution of any kind. This
     is what `cli/score.py`'s `drifter score` calls directly, re-
     analyzing already-recorded data with zero new agent execution, per
-    F-36's "Done when" (PHASES.md's Gate 2 exit test).
+    F-36's "Done when" (docs/PHASES.md's Gate 2 exit test).
 
     `pre_excluded` carries exclusions that happened *before* a session
     even existed — today, only `run_baseline`'s "run_once raised" case.

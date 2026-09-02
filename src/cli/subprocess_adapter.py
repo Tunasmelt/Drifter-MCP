@@ -1,9 +1,9 @@
-"""Subprocess agent adapter (F-34), SPEC.md §11's `agent.command` shape.
+"""Subprocess agent adapter (F-34), docs/SPEC.md §11's `agent.command` shape.
 
 Spawns a real CLI agent as a subprocess, wires it to a replay-serving
 proxy (`replay/replay_proxy.py`, F-11/last commit), and produces the
 session JSONL `evaluate.baseline.run_baseline`'s `run_once` callable is
-waiting for. Module: `cli/` — FEATURES.md's `## Module: cli/ and
+waiting for. Module: `cli/` — docs/FEATURES.md's `## Module: cli/ and
 adapters` heading, cross-referenced against CLAUDE.md's module list (no
 standalone `adapters/`), same correction already applied twice this gate
 to `record/proxy.py` and `evaluate/baseline.py`.
@@ -11,17 +11,17 @@ to `record/proxy.py` and `evaluate/baseline.py`.
 Four scope decisions, stated explicitly rather than discovered mid-review:
 
 1. Config-loading is OUT of scope here. `cli/config.py`'s loader only
-   reads `servers:`/`record.dir` today; extending it to parse SPEC.md
+   reads `servers:`/`record.dir` today; extending it to parse docs/SPEC.md
    §11's `agent:` block is a separate, later concern. This module takes
    an already-resolved argv and an already-substituted task prompt —
    whoever calls `run_agent_subprocess` is responsible for reading
    `agent.command` out of drifter.yaml and doing the `{task.prompt}`
    templating before calling in.
 
-2. Transport is stdio-wired, not "a URL via env var." FEATURES.md's own
+2. Transport is stdio-wired, not "a URL via env var." docs/FEATURES.md's own
    Technical note for F-34 describes injecting a proxy URL by
    environment variable and capturing the agent's stdout as a separate
-   "final answer" string — but SPEC.md's architecture diagram is
+   "final answer" string — but docs/SPEC.md's architecture diagram is
    explicit that v0 is stdio-only ("MCP (stdio in v0; +HTTP in v1)"),
    and no HTTP/URL-addressable transport exists anywhere in this
    codebase. Raised to the user as a genuine conflict between two locked
@@ -120,12 +120,12 @@ def make_run_once(
     contract exactly — each call spawns a fresh agent subprocess and
     returns its session JSONL path.
 
-    Module placement: FEATURES.md names neither this function nor a
+    Module placement: docs/FEATURES.md names neither this function nor a
     dedicated composition step. F-34 (this module) is the adapter in
     isolation; F-21 (`evaluate/baseline.py`) is deliberately
     aggregation-only with `run_once` injected (see that module's own
     docstring — building a real `run_once` was explicitly deferred
-    there). Nothing in FEATURES.md's F-21–F-37 range names "wire the two
+    there). Nothing in docs/FEATURES.md's F-21–F-37 range names "wire the two
     together" as its own feature. Given no named home, this lives here
     rather than in `evaluate/baseline.py`, for a structural reason, not
     just convenience: this project's module dependency chain (CLAUDE.md)

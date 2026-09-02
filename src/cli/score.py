@@ -1,10 +1,10 @@
-"""`drifter score` (F-36), SPEC.md §12/§13. Gate 2's actual exit test
-(PHASES.md): re-analyzes already-recorded session JSONL with zero new
+"""`drifter score` (F-36), docs/SPEC.md §12/§13. Gate 2's actual exit test
+(docs/PHASES.md): re-analyzes already-recorded session JSONL with zero new
 agent execution and zero network/subprocess calls, producing output in
 seconds against a corpus of any age.
 
 Module: `cli/` — same `## Module: cli/ and adapters` heading F-34
-resolved to earlier this gate; F-36 is filed there in FEATURES.md's own
+resolved to earlier this gate; F-36 is filed there in docs/FEATURES.md's own
 list, unambiguous this time (no stale/typo'd module name to correct).
 
 Zero execution, structurally, not just by what this module happens to

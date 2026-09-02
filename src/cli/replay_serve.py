@@ -19,7 +19,7 @@ commands; it has no mode where an external process spawns it and feeds
 it MCP frames over its own stdin. This module is that missing piece.
 
 Manifest selection: `--fixture` provides the `ReplayStore` + baseline
-`tools_served` (SPEC.md's replay-first architecture — an already-
+`tools_served` (docs/SPEC.md's replay-first architecture — an already-
 recorded corpus, never a live connection: this command never imports
 `mcp.client.stdio` or anything that could dial a real tool server,
 same structural guarantee as `replay_proxy.py`/`subprocess_adapter.py`

@@ -1,11 +1,11 @@
-"""Replay store (F-11): SPEC.md §7 tier 1 (exact-key) only.
+"""Replay store (F-11): docs/SPEC.md §7 tier 1 (exact-key) only.
 
 Indexes every recorded `ToolCall` from one or more session JSONL files under
 `sha256(server + tool_name + canonical_json(args))`, so a later request with
 identical (server, tool_name, args) resolves to HIT with the originally
 recorded `result_shape`/`is_error`/`fault` — no live call needed.
 
-Gate 2 scope, deliberately incomplete: SPEC.md §7's tiers 2 (inverse-
+Gate 2 scope, deliberately incomplete: docs/SPEC.md §7's tiers 2 (inverse-
 mutation, F-12) and 3 (semantic, F-13) are NOT implemented here — both need
 a real mutation's recorded inverse/argument-value multiset to resolve
 against, and `mutate/` doesn't exist until Gate 3. Every lookup here either
@@ -46,7 +46,7 @@ class RecordedResponse:
 
 
 def replay_key(server: str, tool_name: str, arguments: dict) -> str:
-    """`sha256(server + tool + canonical_json(args))` — SPEC.md §7 tier 1.
+    """`sha256(server + tool + canonical_json(args))` — docs/SPEC.md §7 tier 1.
 
     Arguments are redacted the same way `record/writer.py` redacts them
     before writing (`redact_secrets`, deterministic, no salt) — a

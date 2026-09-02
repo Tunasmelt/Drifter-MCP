@@ -1,8 +1,8 @@
-"""`drifter` CLI dispatch (SPEC.md §12).
+"""`drifter` CLI dispatch (docs/SPEC.md §12).
 
 `observe`, `stats`, `score`, `run`, `replay-serve`, and `doctor`
-(connectivity checks only, per PHASES.md Gate 1) are wired up — the
-rest of SPEC.md §12's command list (`init`, `tasks mine`, `tasks
+(connectivity checks only, per docs/PHASES.md Gate 1) are wired up — the
+rest of docs/SPEC.md §12's command list (`init`, `tasks mine`, `tasks
 approve`, `report`, doctor's classification-sanity checks) lands in
 later gates. `run` is F-35's deliberately minimal Gate 3 scope (see
 cli/run.py's own docstring) — baseline + one mutation operator +
@@ -99,7 +99,7 @@ def main() -> None:
             run_observe(config_path=args.config, server_name=args.server)
         except ConfigError as e:
             print(f"drifter observe: {e}", file=sys.stderr)
-            raise SystemExit(4) from None  # SPEC.md §12: exit code 4 = config/connectivity error
+            raise SystemExit(4) from None  # docs/SPEC.md §12: exit code 4 = config/connectivity error
     elif args.command == "stats":
         from cli.stats import run_stats
 
@@ -112,7 +112,7 @@ def main() -> None:
         from cli.doctor import run_doctor
 
         ok = run_doctor(config_path=args.config)
-        raise SystemExit(0 if ok else 4)  # SPEC.md §12: exit code 4 = config/connectivity error
+        raise SystemExit(0 if ok else 4)  # docs/SPEC.md §12: exit code 4 = config/connectivity error
     elif args.command == "score":
         from cli.score import run_score
 

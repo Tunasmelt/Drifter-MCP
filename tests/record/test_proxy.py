@@ -1,7 +1,7 @@
 """Integration tests for record/proxy.py (F-01) and record/writer.py +
 record/reader.py (F-02, F-03).
 
-"Done when" per FEATURES.md: an agent using the proxied server behaves
+"Done when" per docs/FEATURES.md: an agent using the proxied server behaves
 identically to using the server directly, with zero added latency the user
 would notice (F-01); and a recorded session, read back, exactly reconstructs
 the sequence of tool calls that occurred (F-02).

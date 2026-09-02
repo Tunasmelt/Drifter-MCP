@@ -1,6 +1,6 @@
-"""Tests for the baseline runner (F-21), SPEC.md §7/§8.
+"""Tests for the baseline runner (F-21), docs/SPEC.md §7/§8.
 
-Focus: the explicit design change from PHASES.md's original sketch — a
+Focus: the explicit design change from docs/PHASES.md's original sketch — a
 null `tool_manifest_hash` must be surfaced, never silently treated as a
 match. This directly tests the thing the skipped Gate 1 trial would have
 told us the real-world rate of (see .drifter/GATE_STATUS's gate_1_note).
@@ -414,7 +414,7 @@ def test_run_baseline_and_aggregate_baseline_runs_agree_given_the_same_sessions(
     assert via_run_baseline.baseline_fidelity == via_aggregate.baseline_fidelity
 
 
-# --- fidelity gating (SPEC.md §7/§8, DEC-020) -----------------------------
+# --- fidelity gating (docs/SPEC.md §7/§8, DEC-020) -----------------------------
 
 
 def test_low_fidelity_run_is_excluded_with_its_own_reason(tmp_path):
@@ -534,8 +534,8 @@ def test_a_connectivity_check_artifact_is_indistinguishable_from_a_real_zero_cal
 
 
 def test_synthetic_calls_excluded_from_fidelity_denominator_not_counted_as_hits_or_misses(tmp_path):
-    """F-17's own done-when (FEATURES.md): tool_addition calls are
-    correctly excluded from fidelity accounting -- SPEC.md §7's text is
+    """F-17's own done-when (docs/FEATURES.md): tool_addition calls are
+    correctly excluded from fidelity accounting -- docs/SPEC.md §7's text is
     explicit that they're neither a hit nor a miss for this purpose. A
     session with 1 real hit + 1 synthetic call must report fidelity
     1.0 (computed over the 1 real call alone), not 0.5 (which is what

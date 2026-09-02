@@ -1,4 +1,4 @@
-"""Calibration register loader (SPEC.md §9).
+"""Calibration register loader (docs/SPEC.md §9).
 
 Every constant here is an engineering default, not a research finding —
 CLAUDE.md's non-negotiable invariant: don't treat these as authoritative,
@@ -48,7 +48,7 @@ class Mutation(BaseModel):
 
 class Doctor(BaseModel):
     model_config = ConfigDict(extra="allow")
-    # Not in SPEC.md §9's original table — added here per CLAUDE.md's
+    # Not in docs/SPEC.md §9's original table — added here per CLAUDE.md's
     # invariant that new invented constants belong in this file, not
     # hardcoded (same reasoning as segmentation.heuristic_confidence
     # above). How long `drifter doctor` waits for a configured server to

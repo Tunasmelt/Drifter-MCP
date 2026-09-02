@@ -1,4 +1,4 @@
-"""tool_addition mutation operator (F-17), SPEC.md §10.
+"""tool_addition mutation operator (F-17), docs/SPEC.md §10.
 
 Mechanism, decided explicitly (same discipline as description_update's
 closed-set decision — a real architectural choice, not a formality):
@@ -8,7 +8,7 @@ call via a seed. No free-text generation, no LLM, matching this gate's
 zero-generation architectural stance — the "structural, not free-text"
 framing that motivated description_update's own mechanism applies
 identically here. "Styled plausibly consistent with sibling tools"
-(F-17's own FEATURES.md wording) is achieved by each archetype already
+(F-17's own docs/FEATURES.md wording) is achieved by each archetype already
 being written in an ordinary, generic "MCP server utility tool" register
 (snake_case verb_noun naming, a short declarative description, a small
 JSON-Schema `input_schema`) — the same register real MCP servers
@@ -44,10 +44,10 @@ unreviewed.
 
 Audit logging: reuses mutate.description_update.MutationLogEntry
 (imported, not redefined — same shape, same rationale: F-18's own
-FEATURES.md entry states "Depends on: F-16, F-17," so a general log
+docs/FEATURES.md entry states "Depends on: F-16, F-17," so a general log
 format can't exist before both operators do). `before=None` here
 specifically — nothing existed before an addition, not a placeholder.
-`inverse=None`, confirmed this round: SPEC.md §7's own text excludes
+`inverse=None`, confirmed this round: docs/SPEC.md §7's own text excludes
 tool_addition from tier 2's applicability outright (no prior recording
 to invert against, by definition).
 
@@ -57,7 +57,7 @@ parameter — not here. That module owns serving; this module only
 produces the tool definition and its audit record. See replay_proxy.py's
 own docstring for why the wire response is a single, generic placeholder
 rather than anything schema-derived (there is no prior recording to
-derive a plausible shape from, by definition — SPEC.md §7).
+derive a plausible shape from, by definition — docs/SPEC.md §7).
 """
 
 from __future__ import annotations
@@ -81,7 +81,7 @@ class NameCollisionError(Exception):
 
 
 class InjectionFlaggedError(Exception):
-    """An archetype's description matched SPEC.md §10's injection-
+    """An archetype's description matched docs/SPEC.md §10's injection-
     pattern check. Should be unreachable against the real, reviewed
     _ARCHETYPES pool below (see test_no_archetype_description_
     contains_an_injection_pattern) — this exists so a future archetype

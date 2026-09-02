@@ -1,4 +1,4 @@
-"""Golden fixture test (PHASES.md Gate 1 exit test: "Golden fixture parses
+"""Golden fixture test (docs/PHASES.md Gate 1 exit test: "Golden fixture parses
 cleanly in CI").
 
 `tests/fixtures/golden_v0.1.jsonl` is one hand-verified session, recorded
@@ -7,9 +7,9 @@ not hand-typed JSON) against the real `@modelcontextprotocol/server-
 filesystem` package — the actual Gate 1 dogfood server — pointed at a
 purpose-built scratch directory rather than the author's real Desktop, so
 nothing personal ever entered a permanently-committed file. Reviewed
-record-by-record before committing (see CHANGELOG.md).
+record-by-record before committing (see docs/CHANGELOG.md).
 
-This file is never modified in place (CLAUDE.md, PHASES.md): a future
+This file is never modified in place (CLAUDE.md, docs/PHASES.md): a future
 schema change produces `golden_v0.2.jsonl` alongside it, with both tested,
 never a same-file overwrite.
 """

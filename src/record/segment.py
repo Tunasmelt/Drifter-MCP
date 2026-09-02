@@ -23,13 +23,13 @@ which path grouped it: does any of this call's argument values match a
 value that appeared in a prior call's *result*, within the same
 trajectory? Matching is direct equality on scalar leaf values only
 (str/int/float/bool) — deliberately literal, not similarity-based
-(SPEC.md §3 principle 7's "structural, not free-text" spirit applies here
+(docs/SPEC.md §3 principle 7's "structural, not free-text" spirit applies here
 too). This means small/common values (True, 0, "") can produce a spurious
 reference; that's an accepted consequence of the literal design, not a
 bug to silently filter around.
 
 Result values are walked from the LIVE, unredacted dict at the moment a
-call completes — never persisted themselves (SPEC.md §6's redaction
+call completes — never persisted themselves (docs/SPEC.md §6's redaction
 default), only the fact of a match (source_seq + paths) is.
 """
 
@@ -44,7 +44,7 @@ from typing import Any
 
 from record.schema import DataFlowReference
 
-TRACE_CONTEXT_CONFIDENCE = 0.99  # F-06: fixed, not a calibration guess — SPEC.md states it directly.
+TRACE_CONTEXT_CONFIDENCE = 0.99  # F-06: fixed, not a calibration guess — docs/SPEC.md states it directly.
 
 _TRACEPARENT_RE = re.compile(r"^[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$", re.IGNORECASE)
 

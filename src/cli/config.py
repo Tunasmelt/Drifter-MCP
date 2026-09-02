@@ -1,13 +1,13 @@
-"""Minimal drifter.yaml config loader (SPEC.md §11).
+"""Minimal drifter.yaml config loader (docs/SPEC.md §11).
 
 `servers:`, `record.dir` (F-09), and now `agent.command` (F-35,
 `drifter run`) — the full config surface (`tasks:`, `mutations:`,
-`policy:`) is still later-gate scope per PHASES.md; this loader is
+`policy:`) is still later-gate scope per docs/PHASES.md; this loader is
 deliberately narrow, not the final shape. `extra="allow"` on every
 model means a drifter.yaml already written with later-gate blocks in
 it won't be rejected — those blocks just aren't read yet.
 
-`agent.command` is a list of argv tokens, NOT SPEC.md §11's example
+`agent.command` is a list of argv tokens, NOT docs/SPEC.md §11's example
 shell string (`"python agent.py --task '{task.prompt}'"`) — matching
 `ServerConfig.command`'s existing convention (also a list) rather than
 inventing shell-parsing (shlex) for one field and not the other. A
@@ -98,7 +98,7 @@ def load_config(path: Path | None = None) -> DrifterConfig:
     if not path.exists():
         raise ConfigError(
             f"{path} not found. `drifter observe` needs a drifter.yaml with at least one "
-            "server defined under `servers:` (SPEC.md §11) — see drifter.yaml at the repo "
+            "server defined under `servers:` (docs/SPEC.md §11) — see drifter.yaml at the repo "
             "root for the expected shape."
         )
     with path.open("r", encoding="utf-8") as f:

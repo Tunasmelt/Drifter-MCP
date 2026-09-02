@@ -1,6 +1,6 @@
 """Reads a session JSONL file back into the Pydantic models from schema.py.
 
-Deliberately kept separate from writer.py (CLAUDE.md, PHASES.md Gate 1): a
+Deliberately kept separate from writer.py (CLAUDE.md, docs/PHASES.md Gate 1): a
 shared read/write module invites silent format drift between what's written
 and what's read.
 """

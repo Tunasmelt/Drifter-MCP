@@ -1,7 +1,7 @@
 """`drifter doctor` (F-37), Gate 1 scope only: config parsing + server
 connectivity. Classification-sanity checks (unclassified destructive
 tools, missing task assertions) are explicitly later-gate scope per
-PHASES.md — they need `policy/` (F-26) and `tasks/` (F-33), neither of
+docs/PHASES.md — they need `policy/` (F-26) and `tasks/` (F-33), neither of
 which exists yet — and are not attempted here.
 
 The point (CLAUDE.md, F-37's "Done when"): every common misconfiguration
@@ -93,7 +93,7 @@ def run_doctor(config_path: Path | None = None, output_stream: TextIO = sys.stdo
     """Runs every Gate 1 doctor check, printing PASS/FAIL per check.
 
     Returns True iff every check passed — cli/app.py uses this to pick the
-    process exit code (SPEC.md §12: exit code 4 = config/connectivity
+    process exit code (docs/SPEC.md §12: exit code 4 = config/connectivity
     error).
     """
     display_path = config_path or Path("drifter.yaml")

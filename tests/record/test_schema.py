@@ -1,6 +1,6 @@
 """Round-trip test for record/schema.py.
 
-Per SPEC.md §6 / the Gate 1 prompt pack: construct one of each model with
+Per docs/SPEC.md §6 / the Gate 1 prompt pack: construct one of each model with
 realistic values, round-trip through model_dump_json() -> model_validate_json(),
 and assert equality. This is the seed of the golden fixture test — it must
 never break as the schema evolves.
@@ -88,7 +88,7 @@ MODELS = [
 # `mutation_inverse` and `baseline_fidelity` are None above because nothing
 # in Gate 1 populates them yet (mutate/ and evaluate/ don't exist). That's
 # not the same claim as "the field survives serialization with a real
-# value" — so these two instances deliberately populate every SPEC.md §6
+# value" — so these two instances deliberately populate every docs/SPEC.md §6
 # "cannot be added retroactively" field with a non-default value, including
 # the two above. If either field were dropped by (de)serialization, only
 # these instances would catch it.
@@ -149,7 +149,7 @@ def test_schema_version_stamped_on_every_record():
 
 
 def test_retroactive_fields_survive_with_real_values_not_just_defaults():
-    """SPEC.md §6: these fields can't be added after the fact, so it isn't
+    """docs/SPEC.md §6: these fields can't be added after the fact, so it isn't
     enough that they exist on the model — a populated, non-default value
     must actually survive serialization now, while Gate 1 can still verify it."""
     call, trajectory = FULLY_POPULATED_MODELS

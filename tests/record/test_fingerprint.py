@@ -1,10 +1,10 @@
 """Unit tests for record/fingerprint.py (F-05).
 
-FEATURES.md's "Done when": a mismatched fingerprint between baseline and
+docs/FEATURES.md's "Done when": a mismatched fingerprint between baseline and
 mutation arms blocks comparison with an explicit error, not a silent wrong
 answer. Every mismatch test below checks the error names the specific
 sub-field that changed — a bare "fingerprints don't match" wouldn't satisfy
-SPEC.md's stated requirement.
+docs/SPEC.md's stated requirement.
 """
 
 import pytest

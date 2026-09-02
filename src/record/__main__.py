@@ -6,16 +6,16 @@ the user-facing command that wraps this in later gates, including reading
 the server's name from drifter.yaml instead of using the raw command
 string; this module is intentionally usable standalone until then.
 
-Recording paths default to SPEC.md §11's `record: {dir: .drifter/runs}`
+Recording paths default to docs/SPEC.md §11's `record: {dir: .drifter/runs}`
 default, overridable via DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR — enough to
 keep tests hermetic without building the full config loader early.
 
 DRIFTER_MODEL_NAME is the same kind of stopgap for F-05's environment
 fingerprint: MCP traffic never reveals which model the agent is running
-(SPEC.md §15's limitation 2), so it can only ever be supplied out-of-band
+(docs/SPEC.md §15's limitation 2), so it can only ever be supplied out-of-band
 — an env var now, `drifter.yaml` once the config loader exists.
 
-DRIFTER_CALIBRATION_PATH overrides where calibration.yaml (SPEC.md §9) is
+DRIFTER_CALIBRATION_PATH overrides where calibration.yaml (docs/SPEC.md §9) is
 read from — a path override, not a per-field one, so tests can point at a
 throwaway file with e.g. a short idle_gap_seconds without a config loader
 having to exist yet.

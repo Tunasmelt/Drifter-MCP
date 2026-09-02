@@ -47,8 +47,8 @@ agent ──MCP──▶ drifter (replayed, mutated)        (drifter replay-serv
 
 ## Status
 
-Pre-v1, under active gated development (see [`PHASES.md`](PHASES.md)). Gates 0–3 are
-closed:
+Pre-v1, under active gated development (see [`docs/PHASES.md`](docs/PHASES.md)).
+Gates 0–3 are closed:
 
 - **Record & replay** (`drifter observe`, exact-key replay, redaction, trajectory
   segmentation) — built and tested.
@@ -62,10 +62,10 @@ closed:
   server).
 
 Task assertions, safety verdicts, mutation mining/approval, and the full report
-format are not built yet — see [`FEATURES.md`](FEATURES.md) for the complete
-per-feature breakdown and [`SPEC.md` §15](SPEC.md) for known limitations, stated
-plainly, including two found only by testing against a real agent rather than a
-scripted stand-in.
+format are not built yet — see [`docs/FEATURES.md`](docs/FEATURES.md) for the
+complete per-feature breakdown and [`docs/SPEC.md` §15](docs/SPEC.md) for known
+limitations, stated plainly, including two found only by testing against a real
+agent rather than a scripted stand-in.
 
 ## Install
 
@@ -112,7 +112,7 @@ drifter run --fixture <recorded.jsonl> --server my-server \
 
 ## Design principles
 
-The short version (full list in [`SPEC.md` §3](SPEC.md)):
+The short version (full list in [`docs/SPEC.md` §3](docs/SPEC.md)):
 
 - **Replay-first.** Mutation testing runs against recorded or synthesized responses
   by default — a live call under a mutated schema never happens.
@@ -128,11 +128,12 @@ The short version (full list in [`SPEC.md` §3](SPEC.md)):
 
 ## Contributing / project structure
 
-The planning surface (`SPEC.md`, `FEATURES.md`, `PHASES.md`, `CHANGELOG.md`) is
-locked — see [`CLAUDE.md`](CLAUDE.md) for the working process this project follows,
-including why there are no other planning documents and won't be. Module layout
-mirrors the pipeline: `record/` → `replay/` → `mutate/` → `evaluate/` → `mine/` →
-`policy/` → `cli/`.
+The planning surface (`docs/SPEC.md`, `docs/FEATURES.md`, `docs/PHASES.md`,
+`docs/CHANGELOG.md`, `docs/HANDOFF.md`) is locked — see [`CLAUDE.md`](CLAUDE.md) for
+the working process this project follows, including why there are no other planning
+documents and won't be. Gate 0's research artifacts live under `docs/gate0/`. Module
+layout mirrors the pipeline: `record/` → `replay/` → `mutate/` → `evaluate/` →
+`mine/` → `policy/` → `cli/`.
 
 ## License
 

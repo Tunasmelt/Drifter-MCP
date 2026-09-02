@@ -20,7 +20,7 @@ outcome line per call goes to stderr (never stdout — stdout is the
 wire) so the test can assert on what actually happened.
 
 Second mode, added for Gate 3's kill-criterion brittle-agent check
-(PHASES.md): an argv entry of the form "SELECT:<substring>|
+(docs/PHASES.md): an argv entry of the form "SELECT:<substring>|
 <json_arguments>" makes this script pick its tool by calling
 `list_tools()` and selecting the FIRST tool whose *description*
 contains `<substring>` (a literal substring, case-sensitive) — a

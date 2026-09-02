@@ -1,14 +1,14 @@
 """Secret redaction (F-04).
 
 Pattern-matches common credential shapes and redacts them from argument
-values and headers before write — SPEC.md §6, SECURITY.md. Applied in both
+values and headers before write — docs/SPEC.md §6, SECURITY.md. Applied in both
 the parsed JSONL writer path and the raw frame mirror (record/writer.py);
 the mirror gets the SAME redaction, not a weaker pass, since it's a common
 place to accidentally leave a gap by treating it as "just a backup copy."
 
 Structural, not free-text: this only ever replaces matched substrings with
 a fixed marker. It never generates or alters non-secret content — that
-distinction matters for the same reason SPEC.md §10 forbids free-text
+distinction matters for the same reason docs/SPEC.md §10 forbids free-text
 mutation of tool descriptions elsewhere in this project.
 """
 
@@ -43,7 +43,7 @@ _KNOWN_SECRET_PATTERNS = (_JWT_RE, _OPENAI_KEY_RE, _BEARER_RE)
 Heuristic, not derived: entropy threshold and the require-both
 (entropy AND character-class mix) condition were chosen empirically
 against test-fixture examples, not against a real corpus of secrets
-vs. identifiers. Treat as a tunable default in the spirit of SPEC.md
+vs. identifiers. Treat as a tunable default in the spirit of docs/SPEC.md
 §9's calibration register, not as a validated boundary. False
 negatives (a real secret that's low-entropy or single-case) are
 possible and not covered by pattern-matching alone.
@@ -86,7 +86,7 @@ def redact_string(text: str) -> str:
 def redact_secrets(value: Any) -> Any:
     """Recursively redacts secret-shaped strings anywhere inside value.
 
-    Applied to argument values and headers before write (SPEC.md §6). Never
+    Applied to argument values and headers before write (docs/SPEC.md §6). Never
     mutates `value` in place — callers pass in live objects still headed to
     `sink.send()` on the forwarding path, which must stay byte-for-byte
     unmodified (F-01); redaction only ever touches what gets written to disk.

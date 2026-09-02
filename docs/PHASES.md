@@ -149,13 +149,13 @@ rendering.
 
 Two mutation operators only: `description_update` (F-16, taxonomy O9) and
 `tool_addition` (F-17, taxonomy O1) — the two highest-impact *individually-scored*
-operators (`Gate 0/NOTES.md`). O4 (Tool Integration, third-worst overall) is
+operators (`docs/gate0/NOTES.md`). O4 (Tool Integration, third-worst overall) is
 deliberately excluded from Gate 3, for scope reasons: proving the harness cleanly
 on two independently-attributable operators before a composite third, so a
 detected regression's cause is never ambiguous between the harness and the
 kill criterion's exit test. This is a scope decision, not a technical
 blocker — an earlier claim that O4 had no clean replay-key inverse was checked
-against the primary source and found wrong (`Gate 0/NOTES.md`'s correction; O4
+against the primary source and found wrong (`docs/gate0/NOTES.md`'s correction; O4
 is compositionally O1 + description updates to related tools, not a schema
 merge). Revisit for v1 once F-16/F-17 are proven, not before.
 

@@ -1,4 +1,4 @@
-"""Tests for the description_update mutation operator (F-16), SPEC.md §10.
+"""Tests for the description_update mutation operator (F-16), docs/SPEC.md §10.
 
 Safety-critical: built red-test-first, same discipline as F-04's secret
 redaction. The rejection tests below were written and confirmed to fail
@@ -9,7 +9,7 @@ that red run; the assertions here are what proved it had teeth, not
 just presence.
 
 Realistic threat model, stated precisely because the mechanism is
-closed-set (CHANGELOG.md, 2026-08-25): synonym substitution and
+closed-set (docs/CHANGELOG.md, 2026-08-25): synonym substitution and
 sentence reordering, confined to a description's own existing content,
 cannot themselves manufacture a genuinely NEW imperative-instruction
 phrase that wasn't already present in the source. The real risk this
@@ -70,7 +70,7 @@ def test_pattern_matching_is_precise_not_substring_happy():
     description is 'Read the complete contents of a file as text.
     DEPRECATED: Use read_text_file instead.' -- it contains the bare
     word 'instead', which must NOT trip the 'instead of' pattern (a
-    two-word phrase, per SPEC.md §10's literal list). A pattern check
+    two-word phrase, per docs/SPEC.md §10's literal list). A pattern check
     that's too broad (matching 'instead' alone) would make this
     operator unusable against completely ordinary, real tool
     descriptions -- confirmed against real fixture data, not invented.

@@ -14,7 +14,7 @@ stderr explicitly rather than relying on that as the only safeguard —
 see tests/cli/test_observe.py for the test that verifies stdout stays
 clean end-to-end, not just that this file happens to write() correctly.
 
-Recording paths default to drifter.yaml's `record.dir` (SPEC.md §11),
+Recording paths default to drifter.yaml's `record.dir` (docs/SPEC.md §11),
 overridable via DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR — the same env vars
 record/__main__.py already supports, same precedence (env wins over
 config when set). Gap closed here rather than left for Prompt 8/9: both
@@ -43,7 +43,7 @@ from record.writer import SessionRecorder
 def select_server(config: DrifterConfig, server_name: str | None) -> ServerConfig:
     """Picks which drifter.yaml server to proxy for this invocation.
 
-    Drifter stands in for one server at a time over stdio (SPEC.md's
+    Drifter stands in for one server at a time over stdio (docs/SPEC.md's
     architecture — it's invoked as *the* server command in a client's
     config slot), so drifter.yaml's `servers:` list is a catalog, not a
     fan-out target. --server disambiguates when there's more than one.
@@ -192,7 +192,7 @@ def run_observe(
     # DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR take precedence over drifter.yaml
     # when set — same env vars, same precedence, as record/__main__.py.
     runs_dir = Path(os.environ.get("DRIFTER_RUNS_DIR", config.record.dir))
-    # Sibling directories under .drifter/ (SPEC.md architecture diagram) by
+    # Sibling directories under .drifter/ (docs/SPEC.md architecture diagram) by
     # default, computed from the (possibly overridden) runs_dir; itself
     # still overridable independently via DRIFTER_RAW_DIR.
     raw_dir = Path(os.environ.get("DRIFTER_RAW_DIR", str(runs_dir.parent / "raw")))

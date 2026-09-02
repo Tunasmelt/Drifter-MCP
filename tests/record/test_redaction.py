@@ -1,11 +1,11 @@
 """Integration test for secret redaction (F-04).
 
-Test-enforced, not documentation-enforced (FEATURES.md): this test is
+Test-enforced, not documentation-enforced (docs/FEATURES.md): this test is
 written and run red — confirming the planted secrets currently leak —
 before record/redact.py exists. Once the redaction layer is wired into
 record/writer.py, it must go green with zero code changes to this file.
 
-"Done when" per FEATURES.md: a fixture containing planted fake secrets
+"Done when" per docs/FEATURES.md: a fixture containing planted fake secrets
 produces zero leaked values in either output file (the parsed JSONL and the
 raw frame mirror) — the raw mirror is explicitly in scope, not exempt as
 "just a backup copy" (SECURITY.md).

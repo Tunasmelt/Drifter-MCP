@@ -175,7 +175,7 @@ def test_run_score_against_nonexistent_directory_does_not_crash(tmp_path):
 
 
 def test_run_score_against_the_golden_fixture_directory():
-    """The actual exit-test shape (PHASES.md), run as a test: an
+    """The actual exit-test shape (docs/PHASES.md), run as a test: an
     already-recorded, already-on-disk session, zero new execution."""
     out = io.StringIO()
     run_score(runs_dir=GOLDEN_FIXTURE_DIR, output_stream=out)

@@ -175,12 +175,12 @@ open, blocked only by this session's own sandboxing, not by anything in Drifter.
 ## 2026-08-25 — Gate 3 scoping: O4 stays excluded, but now for the real reason
 
 Pre-Gate-3 review found the locked docs said nothing about why O4 (Tool Integration)
-isn't in Gate 3's two-operator scope — `Gate 0/NOTES.md` already corrected the
+isn't in Gate 3's two-operator scope — `docs/gate0/NOTES.md` already corrected the
 original schema-merge/no-clean-inverse justification as factually wrong (O4 is
 compositionally O1 + related description updates, not a schema merge), but that
 correction never propagated to PHASES.md or FEATURES.md, and SPEC.md's own citation
 of the correction (§4, C19) pointed at a nonexistent path (`mutate/operators/NOTES.md`
-— the real file is `Gate 0/NOTES.md`). Decision: keep O4 out of Gate 3, but for scope
+— the real file is `docs/gate0/NOTES.md`). Decision: keep O4 out of Gate 3, but for scope
 reasons — prove the harness on two cleanly-attributable operators before a composite
 third, so the kill criterion's exit test never has to disentangle which operator
 caused a detected regression — not the debunked technical blocker. PHASES.md's Gate 3
@@ -203,7 +203,7 @@ defense-in-depth against a *source* description that already contained injection
 shaped text before mutation, not the primary defense against a generative process's
 output — a closed-set recombination of an already-reviewed description's own words
 cannot manufacture genuinely novel imperative phrasing the way an LLM paraphrase
-could. This also keeps `description_update` consistent with `Gate 0/NOTES.md`'s own
+could. This also keeps `description_update` consistent with `docs/gate0/NOTES.md`'s own
 stated architectural philosophy ("Drifter enforces the equivalent constraint
 architecturally... a stronger guarantee, not dependent on an LLM following
 instructions") — an LLM-paraphrase-then-reject design would have made Drifter's own

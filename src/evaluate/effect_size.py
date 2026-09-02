@@ -1,7 +1,7 @@
-"""Behavior effect-size scoring (F-23), SPEC.md §8.
+"""Behavior effect-size scoring (F-23), docs/SPEC.md §8.
 
 `effect_size = (deviation_rate − natural_variation) / baseline_spread`.
-Scheduled as "partial" in Gate 2 (PHASES.md: "baseline and scoring
+Scheduled as "partial" in Gate 2 (docs/PHASES.md: "baseline and scoring
 only, no mutation yet") — `natural_variation`/`baseline_spread` were
 computable from Gate 2 onward, but `deviation_rate` needs a real
 mutation arm to compare against, which didn't exist until Gate 3's
@@ -19,7 +19,7 @@ consistent with itself."
 
 Verdict defaults to UNKNOWN when either arm has no data at all
 (`has_data is False`) — same non-negotiable discipline as the task-
-assertion default (CLAUDE.md, SPEC.md §3): a verdict computed from
+assertion default (CLAUDE.md, docs/SPEC.md §3): a verdict computed from
 zero real observations is not a real verdict, and reporting NO_
 REGRESSION by default would be exactly the "lies calmly" failure mode
 CLAUDE.md warns about, just relocated to a different axis.

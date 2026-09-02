@@ -1,4 +1,4 @@
-"""`drifter run` (F-35), SPEC.md §12/§13.
+"""`drifter run` (F-35), docs/SPEC.md §12/§13.
 
 Orchestrates the pieces this gate and Gate 2 built into one command:
 baseline (`evaluate.baseline.run_baseline` via
@@ -9,7 +9,7 @@ serving proxy, and behavior comparison (`evaluate.effect_size`).
 Scope, deliberately minimal — this is Gate 3's actual exit test (one
 real fragility found in the real dogfood agent), not the polished v1
 command surface: no `--budget`/`--dry-run`, no adaptive repeat
-scheduling (F-27), no SPEC.md §13's full report-format mockup (task/
+scheduling (F-27), no docs/SPEC.md §13's full report-format mockup (task/
 safety verdict lines, calibration footnotes) — only what's needed to
 run a baseline, apply one operator, run the mutated arm, and report
 Behavior-axis NO_REGRESSION/INCONCLUSIVE/REGRESSION/UNKNOWN. Task axis
@@ -22,7 +22,7 @@ scope entirely this prompt (F-25/F-26 risk classification).
 
 STOP-AND-CHECK findings, load-bearing for this module's design (not
 re-derived here — see the session record for the full investigation):
-no `Task` type exists anywhere in this codebase, and SPEC.md §11's
+no `Task` type exists anywhere in this codebase, and docs/SPEC.md §11's
 `tasks: [...]` was never expanded into a real schema. Rather than
 inventing a `tasks:` YAML block / mining-and-approval workflow (F-30's
 job, not this prompt's), a task here is exactly two CLI-level values:
@@ -30,7 +30,7 @@ job, not this prompt's), a task here is exactly two CLI-level values:
 `evaluate.baseline.run_baseline` already accepts (a bare `task_id: str`
 label) and what `{task.prompt}` templating needs, nothing richer.
 
-Also per that STOP-AND-CHECK: PHASES.md states "Gate 3 stays in replay
+Also per that STOP-AND-CHECK: docs/PHASES.md states "Gate 3 stays in replay
 mode throughout" — this command never spawns or connects to a live
 server. It builds a `ReplayStore`/manifest from an ALREADY-RECORDED
 session (`--fixture`), and spawns only the real agent under test (via
@@ -99,7 +99,7 @@ def run_mutation_comparison(
     Behavior-axis effect size between them. Both arms replay from the
     same `fixture_path`-derived `ReplayStore` — the only difference
     between them is which manifest (`tools_served`) the replay proxy
-    serves, exactly matching what SPEC.md §7/§8 mean by "same task,
+    serves, exactly matching what docs/SPEC.md §7/§8 mean by "same task,
     mutation active vs. not."
     """
     if operator not in OPERATORS:
@@ -216,7 +216,7 @@ def run_run(
     if config.agent is None:
         raise ConfigError(
             f"{config_path or 'drifter.yaml'} has no `agent:` block — drifter run needs "
-            "`agent.command` to know how to spawn the agent under test (SPEC.md §11)."
+            "`agent.command` to know how to spawn the agent under test (docs/SPEC.md §11)."
         )
     if fixture_path is None:
         raise ConfigError("drifter run needs --fixture: an already-recorded session JSONL to replay from (Gate 3 stays in replay mode).")

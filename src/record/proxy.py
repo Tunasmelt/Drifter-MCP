@@ -7,7 +7,7 @@ the real server (the child process's stdin/stdout).
 
 Framing on both sides comes from the official MCP SDK's stdio transport
 (`mcp.client.stdio.stdio_client`, `mcp.server.stdio.stdio_server`) rather
-than hand-rolled JSON-RPC parsing, per FEATURES.md F-01.
+than hand-rolled JSON-RPC parsing, per docs/FEATURES.md F-01.
 
 `on_message` (optional) is a pure observer hook for record/writer.py to tap
 into: it never alters what's forwarded, and its default (None) reproduces
