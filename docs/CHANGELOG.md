@@ -6,6 +6,33 @@ not just a diff.
 
 ---
 
+## F-16/F-17 test corpus widened with real, published MCP server tool manifests
+
+Unit/regression-level test-corpus expansion, explicitly NOT Gate 4 work and NOT a
+resolution of Gate 3's tier-3 finding: `tests/mutate/test_real_world_manifests.py`
+runs `mutate_tool_manifest`/`add_tool` against real, verbatim tool descriptions from
+five independently-authored, genuinely public MCP servers (git, fetch, sqlite, time —
+`modelcontextprotocol/servers`; a subset of github/github-mcp-server's issue tools),
+chosen for description styles absent from the golden fixture's uniform filesystem-verb
+register. 30 new tests confirm: no injection-check false positives on ordinary real
+descriptions, no article-agreement or other grammatical defects across the corpus
+(checked with an independent oracle, not the implementation's own fix logic),
+reproducibility under seed, Schema Immunity against real (not fabricated) schemas, and
+collision-free `tool_addition` against every real manifest. Manual review of the full
+mutated corpus confirms styling stays plausible.
+
+One real, notable finding surfaced in the process, not manufactured: the official
+`mcp-server-fetch` reference server's `fetch` tool description contains genuinely
+injection-shaped language overriding an assumed prior instruction, verbatim from a
+real, shipped server — and it matches none of `description_update.py`'s five literal
+injection patterns, so it passes through unflagged. Documented as SPEC.md §15
+limitation 13 and locked in by
+`test_the_real_fetch_tool_description_is_a_known_injection_check_gap`. Not fixed here
+— widening the pattern list was Gate 3's own already-reviewed decision; changing it as
+a side effect of a test-corpus expansion would bypass that review.
+
+---
+
 ## Gate 3 closed: brittle-agent fallback confirms the harness, tier-3 finding carried forward
 
 Kill criterion satisfied, via the fallback path its own text names, not via the real
