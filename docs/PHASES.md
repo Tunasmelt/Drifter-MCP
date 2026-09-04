@@ -339,6 +339,26 @@ pattern at all, the adapter contract is too narrow — this is the single most l
 place for a hard blocker, since it was deliberately kept coarse for v0. Widening it
 (HTTP adapter, manual mode) becomes the first v1 priority rather than a nice-to-have.
 
+### Status (2026-09-04)
+
+Before the actual handoff, this checklist's own first step was sanity-checked against
+the real CLI rather than assumed correct: `drifter init` (F-33) did not exist as a
+registered subcommand — the friend's literal first command would have failed with
+argparse's "invalid choice" error before ever reaching `drifter observe`. Built now
+(docs/CHANGELOG.md's `drifter init` entry), deliberately narrower than F-33's own spec
+text since F-26 (tool risk classification) still doesn't exist. This is a pre-flight
+fix to make the checklist runnable, not new Gate-4 feature work — "No new features"
+above still holds for the gate's actual scope (the handoff itself).
+
+`drifter tasks mine` (this checklist's third command) remains unimplemented — expected
+and already documented: the v1 section below explicitly defers workflow mining
+(F-28/29/30) past Gate 3. The handoff should route around it (start the friend's
+sequence at `drifter observe`, or use `drifter run --fixture ...` directly against a
+hand-picked recorded session) rather than block on a command this checklist names but
+v1's own scope note excludes from Gate 4.
+
+The actual handoff (the friend running this sequence unassisted) has not happened yet.
+
 ---
 
 ## v1 — After Gate 4 only

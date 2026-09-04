@@ -60,6 +60,9 @@ Gates 0–3 are closed:
 - **Orchestration** (`drifter run`) — baseline + one mutation operator + behavioral
   comparison, run against a real dogfood pairing (Claude Code + a real filesystem MCP
   server).
+- **Setup** (`drifter init`) — scans `.mcp.json`/`.cursor/mcp.json`/Claude Desktop's
+  config for existing stdio MCP servers and writes a starter `drifter.yaml`, so you
+  don't have to hand-write your server list.
 
 Task assertions, safety verdicts, mutation mining/approval, and the full report
 format are not built yet — see [`docs/FEATURES.md`](docs/FEATURES.md) for the
@@ -81,6 +84,15 @@ uv run drifter --help
 ```
 
 ## Quickstart
+
+Already have the server registered with Claude Code, Cursor, or Claude Desktop? Let
+`drifter init` find it instead of writing `drifter.yaml` by hand:
+
+```
+drifter init
+```
+
+Otherwise, write it directly:
 
 ```
 # drifter.yaml

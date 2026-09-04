@@ -455,14 +455,23 @@ report on the partial data collected.
 
 **Technical:** Scans common MCP client config locations (`.mcp.json`,
 `.cursor/mcp.json`, `claude_desktop_config.json`), extracts server definitions, runs
-initial tool classification (F-26), writes a starter `drifter.yaml`.
+initial tool classification (F-26), writes a starter `drifter.yaml`. **Built narrower
+than this text** (see CHANGELOG.md's `drifter init` entry, added while sanity-checking
+Gate 4's own handoff checklist): F-26 (`policy/`) doesn't exist yet, and
+`cli.config.DrifterConfig` has no risk-classification field to populate even if it
+did, so the shipped `cli/init.py` scans and writes `drifter.yaml` without the
+classification step. The "Done when" bar below doesn't require classification output,
+so this narrower version still satisfies it — same pattern as F-34's own documented
+narrower-than-spec scope immediately below.
 
 **Simple:** Finds your existing tool setup automatically and writes most of the config
 file for you — you shouldn't have to type your own server list by hand.
 
-**Depends on:** F-26.
+**Depends on:** F-26 for the full spec above; the shipped version depends on none of
+the above (see the narrowing note).
 **Done when:** run against a real project, produces a working `drifter.yaml` with zero
-manual edits required to run `drifter observe`.
+manual edits required to run `drifter observe`. **Met** — verified end-to-end against
+a real scanned `.mcp.json`.
 
 ### F-34 Subprocess agent adapter
 
