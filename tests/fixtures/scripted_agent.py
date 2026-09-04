@@ -37,6 +37,18 @@ tool's real, pre-mutation description can be verified (see
 tests/cli/test_kill_criterion_brittle_agent.py) to no longer appear
 after a specific seed's substitution, with no code change needed here
 to prove the harness detects it.
+
+Third mode, added for the Gate 4 pre-handoff dry run (tests/cli/
+gate4_dry_run/): an argv entry of the form "LAST_TOOL|<json_arguments>"
+calls `list_tools()` and selects whichever tool is LAST in the returned
+list -- a deliberately fragile, position-dependent selection mechanism.
+`tool_addition` (mutate/tool_addition.py's add_tool) always APPENDS its
+new tool to the end of the served manifest, so a position-dependent
+agent that worked correctly against the unmutated manifest silently
+calls the wrong (newly-injected) tool once that operator is active --
+a real, planted regression this operator can cause, distinct from and
+never exercised by the SELECT mode above (which only tests
+description_update).
 """
 
 from __future__ import annotations
@@ -118,6 +130,23 @@ async def main() -> None:
                         outcome = {"select": substring, "matched_tool": tool_name, "ok": True, "is_error": result.is_error}
                     except Exception as exc:
                         outcome = {"select": substring, "matched_tool": tool_name, "ok": False, "error": str(exc)}
+                    print(json.dumps(outcome), file=sys.stderr, flush=True)
+                    continue
+
+                if spec.startswith("LAST_TOOL|") or spec == "LAST_TOOL":
+                    _, _, args_json = spec.partition("|")
+                    arguments = json.loads(args_json) if args_json else {}
+                    tools_result = await session.list_tools()
+                    if not tools_result.tools:
+                        outcome = {"last_tool": True, "ok": False, "error": "server reported zero tools"}
+                        print(json.dumps(outcome), file=sys.stderr, flush=True)
+                        continue
+                    tool_name = tools_result.tools[-1].name
+                    try:
+                        result = await session.call_tool(tool_name, arguments)
+                        outcome = {"last_tool": True, "matched_tool": tool_name, "ok": True, "is_error": result.is_error}
+                    except Exception as exc:
+                        outcome = {"last_tool": True, "matched_tool": tool_name, "ok": False, "error": str(exc)}
                     print(json.dumps(outcome), file=sys.stderr, flush=True)
                     continue
 

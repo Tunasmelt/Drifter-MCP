@@ -6,6 +6,69 @@ not just a diff.
 
 ---
 
+## Gate 4 pre-handoff dry run: 7 synthetic personas + a shutdown-timing check
+
+**Scope, stated explicitly:** this is pre-handoff stress-testing, NOT Gate 4 closure.
+Gate 4's exit test requires a real, unassisted human — nothing here substitutes for
+that, and `.drifter/GATE_STATUS` / PHASES.md's Gate 4 status are unchanged by this
+work. The point was finding and fixing real bugs cheaply before the actual friend
+touches the build, the same way Gate 3's brittle-agent fallback used a synthetic
+stand-in for a narrower, explicitly-scoped purpose without retiring the real finding
+it couldn't produce.
+
+`tests/cli/gate4_dry_run/` holds 7 numbered personas (test_user_1 through
+test_user_7, no persona names — plain numbered identifiers), each driving the REAL
+CLI entry points (`drifter init`, a real `drifter observe` subprocess connection,
+`drifter run`, `drifter replay-serve`, `drifter doctor`, `drifter stats`/`drifter
+score`) end to end against real spawned fake MCP servers, not internal function calls
+standing in for them:
+
+- **test_user_1** — happy path, multi-server config (one real server, one non-stdio
+  entry `init` must skip), a `description_update`-robust agent correctly getting
+  NO_REGRESSION.
+- **test_user_2** — adversarial config: two config files declaring a colliding server
+  name (tests `init`'s documented earlier-location-wins precedence for real), a
+  malformed entry, a pre-existing `drifter.yaml` (overwrite refusal + `--force`), and
+  a real `description_update` REGRESSION via the brittle `SELECT:<substring>` agent
+  mode, discovered through `init` -> `observe` -> `run` as the actual entry points —
+  not `run_mutation_comparison` called directly the way Gate 3's own kill-criterion
+  test did.
+- **test_user_3** — zero configs found anywhere (`init`'s actionable failure path,
+  never a crash or an empty file) and a bad hand-written config caught by `drifter
+  doctor` before `observe` ever starts.
+- **test_user_4** — the first end-to-end (not unit-level) `tool_addition` regression:
+  a new `LAST_TOOL` scripted-agent mode (tests/fixtures/scripted_agent.py) exploits
+  the fact that `add_tool` always appends to the end of the manifest.
+- **test_user_5** — `drifter replay-serve`'s real-external-client code path (distinct
+  from `run`'s in-process wiring), closed end to end for the first time using a
+  session the persona itself just recorded, not the pre-existing golden fixture every
+  other `replay-serve` test replays.
+- **test_user_6** — SPEC.md §15 limitation 12 (connectivity-check-artifact
+  contamination) reproduced via a real recorded session instead of a hand-built
+  fixture, plus `drifter stats`/`drifter score` against the resulting mixed corpus.
+  **Also surfaced a second, new, previously undocumented finding** (SPEC.md §15
+  limitation 14): a real, successful `drifter observe` session gets a permanently
+  null `tool_manifest_hash` — and is therefore silently excluded from
+  `aggregate_baseline_runs` — if its first tool call happens before its first
+  `list_tools()` call, confirmed by direct repro (`tools/call` then `list_tools()`
+  still produces a null hash) before writing the regression test that locks it in.
+- **test_user_7** — a permanent, deterministic regression test for Gate 3's single
+  biggest real finding: fidelity below `calibration.yaml`'s floor correctly reports
+  UNKNOWN through the full pipeline, not a false NO_REGRESSION/REGRESSION — built as
+  a synthetic, millisecond-fast reproduction of the same shape the real Gate 3
+  dogfood run needed a costly live agent session to surface.
+
+Plus one standalone, non-persona check (`test_shutdown_timing.py`): a TIMED
+confirmation (per CLAUDE.md's explicit "a timing test, not just a passing test"
+requirement for this project's own three-times-confirmed async-shutdown-hang bug
+shape) that `drifter observe` shuts down promptly after an abrupt client disconnect —
+a scenario (a crashed/force-killed agent, not a clean SIGINT) no existing test
+covered.
+
+All 12 new tests pass; full suite green throughout.
+
+---
+
 ## `drifter init` (F-33) built: found missing while sanity-checking Gate 4's own handoff checklist
 
 Before handing the build to a second real user (Gate 4), its own checklist was sanity-

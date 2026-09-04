@@ -461,3 +461,30 @@ when*.
     decision already got. Locked in by a regression test
     (`test_the_real_fetch_tool_description_is_a_known_injection_check_gap`) that
     documents current behavior rather than silently accepting it.
+14. A real, successful `drifter observe` session can end up with a permanently null
+    `tool_manifest_hash` — and therefore excluded from `aggregate_baseline_runs` for
+    reasons having nothing to do with its own validity — purely because of CALL ORDER,
+    not because `tools/list` never happened at all. Found while building the Gate 4
+    pre-handoff dry run (`tests/cli/gate4_dry_run/test_user_6.py`), confirmed by direct
+    repro before writing the regression test: `record/writer.py`'s
+    `_ensure_session_start_written()` locks in `SessionStart` — `tool_manifest_hash`
+    included — on whichever tracked response arrives first in a session, a `tools/call`
+    response or a `tools/list` response. `SessionStart` is JSONL's first, append-only
+    record and is never rewritten, so an agent that calls a tool before ever calling
+    `list_tools()` gets a null hash forever, even if `list_tools()` runs moments later
+    in the very same session — verified directly: tool-call-then-list-tools still
+    produces `tool_manifest_hash: null`. This is the mirror image of limitation 12: that
+    one is a connectivity-check ARTIFACT wrongly INCLUDED; this one is a fully
+    legitimate REAL session wrongly EXCLUDED, and both are invisible from
+    `aggregate_baseline_runs`'s output alone — both look like an ordinary null-hash
+    exclusion. Real agents observed so far (the Gate 0 dogfood pairing, Claude Code)
+    call `list_tools()` before their first tool call as a matter of normal MCP client
+    behavior, so this hasn't surfaced in practice yet — but nothing in the schema or the
+    recorder enforces that ordering, and an agent framework that skips or defers
+    `tools/list` (e.g. one that caches a tool list from a previous session) would hit
+    this silently. Not fixed here: a proper fix means either deferring `SessionStart`'s
+    write until end-of-session (contradicting the recorder's own stated invariant that
+    it's always the first record written) or accepting the hash may need a separate,
+    later-arriving home in the schema — a real design decision, not a reflexive patch,
+    matching limitation 12's own precedent. Locked in by
+    `test_user_6_a_tool_call_before_the_first_list_tools_permanently_nulls_the_hash`.
