@@ -6,6 +6,42 @@ not just a diff.
 
 ---
 
+## `drifter init` (F-33) built: found missing while sanity-checking Gate 4's own handoff checklist
+
+Before handing the build to a second real user (Gate 4), its own checklist was sanity-
+checked against the real CLI rather than assumed correct: `drifter init` — literally
+the first command Gate 4's checklist tells a second user to run — did not exist as a
+registered subcommand at all. `cli/app.py`'s parser only ever had `observe`, `stats`,
+`doctor`, `score`, `run`, `replay-serve`; running `drifter init` failed immediately
+with argparse's "invalid choice" error, before a second user could ever reach
+`drifter observe`.
+
+Built now, deliberately narrower than docs/FEATURES.md's own F-33 text ("runs initial
+tool classification (F-26)"): `policy/` (F-26, tool risk classification) is empty —
+never built in Gate 3 despite PHASES.md's own checklist naming it — and
+`cli.config.DrifterConfig` has no risk-classification field to populate even if it
+were. F-33's stated "Done when" bar ("produces a working drifter.yaml with zero
+manual edits required to run `drifter observe`") does not require classification
+output, so this narrower scope still satisfies it — same precedent as F-34's
+documented narrower-than-spec Gate 2 scope.
+
+`cli/init.py` scans `.mcp.json`, `.cursor/mcp.json`, and the platform Claude Desktop
+config path (in that precedence order) for `mcpServers`-shaped stdio server
+definitions — the real, documented Claude Code / Claude Desktop config schema,
+confirmed against Claude Code's own docs before writing the parser, not assumed. A
+non-stdio entry (`type` in http/sse/ws, or a bare `url`) is reported as explicitly
+skipped, never silently dropped or mis-parsed, since Drifter's v0 proxy can only
+drive stdio servers. Refuses to overwrite an existing `drifter.yaml` without
+`--force`. Built red-test-first (`tests/cli/test_init.py`, 16 tests) and verified
+end-to-end against a real scanned config, not just unit-tested in isolation.
+
+`drifter tasks mine` — the third command in Gate 4's checklist — remains
+unimplemented, but that gap is already documented and expected: PHASES.md's own v1
+section explicitly defers workflow mining (F-28/29/30) past Gate 3. `init` had no
+such documented deferral; it was simply missing.
+
+---
+
 ## F-16/F-17 test corpus widened with real, published MCP server tool manifests
 
 Unit/regression-level test-corpus expansion, explicitly NOT Gate 4 work and NOT a

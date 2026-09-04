@@ -1,10 +1,13 @@
 """`drifter` CLI dispatch (docs/SPEC.md §12).
 
-`observe`, `stats`, `score`, `run`, `replay-serve`, and `doctor`
+`init`, `observe`, `stats`, `score`, `run`, `replay-serve`, and `doctor`
 (connectivity checks only, per docs/PHASES.md Gate 1) are wired up — the
-rest of docs/SPEC.md §12's command list (`init`, `tasks mine`, `tasks
+rest of docs/SPEC.md §12's command list (`tasks mine`, `tasks
 approve`, `report`, doctor's classification-sanity checks) lands in
-later gates. `run` is F-35's deliberately minimal Gate 3 scope (see
+later gates. `init` is F-33, deliberately narrower than its own spec
+text (see cli/init.py's docstring for why — found missing while
+sanity-checking Gate 4's own handoff checklist, not planned this way).
+`run` is F-35's deliberately minimal Gate 3 scope (see
 cli/run.py's own docstring) — baseline + one mutation operator +
 behavior comparison, not the full v1 orchestration (`--budget`/
 `--dry-run`, adaptive scheduling, task/safety verdicts). `replay-serve`
@@ -47,6 +50,11 @@ def _ensure_utf8_console_streams() -> None:
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="drifter")
     subparsers = parser.add_subparsers(dest="command")
+
+    init_parser = subparsers.add_parser("init", help="Scan known MCP client configs and write a starter drifter.yaml")
+    init_parser.add_argument("--output", type=Path, default=Path("drifter.yaml"), help="Where to write the generated config")
+    init_parser.add_argument("--search-root", type=Path, default=Path("."), help="Directory to look for .mcp.json / .cursor/mcp.json in")
+    init_parser.add_argument("--force", action="store_true", help="Overwrite an existing config at --output")
 
     observe_parser = subparsers.add_parser("observe", help="Passthrough proxy, record only")
     observe_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
@@ -92,7 +100,15 @@ def main() -> None:
     parser = _build_parser()
     args = parser.parse_args()
 
-    if args.command == "observe":
+    if args.command == "init":
+        from cli.init import run_init
+
+        try:
+            run_init(output_path=args.output, search_root=args.search_root, force=args.force)
+        except ConfigError as e:
+            print(f"drifter init: {e}", file=sys.stderr)
+            raise SystemExit(4) from None
+    elif args.command == "observe":
         from cli.observe import run_observe
 
         try:
