@@ -24,7 +24,7 @@ from mcp.shared.memory import create_client_server_memory_streams
 from record.reader import read_session
 from record.schema import ToolCall
 from replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE, run_replay_proxy, tools_served_from_session
-from replay.replay_store import ReplayStore
+from replay.replay_store import RecordedResponse, ReplayStore, replay_key
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 GOLDEN_SERVER = "filesystem"
@@ -278,6 +278,69 @@ async def test_on_message_lets_sessionrecorder_produce_a_valid_new_session(tmp_p
     trajectory_ends = [r for r in new_records if r.record_type == "trajectory_end"]
     assert len(trajectory_ends) == 1
     assert trajectory_ends[0].call_seqs == [c.seq for c in new_calls]
+
+
+# --- F-14/F-15: content_length reconstruction edge cases -------------------
+
+
+async def _single_call_session(store: ReplayStore, tools_served):
+    """A minimal replay session serving exactly one hand-built store,
+    for tests that need a RecordedResponse the golden fixture doesn't
+    naturally contain."""
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_replay_proxy, *server_streams, store, GOLDEN_SERVER, tools_served)
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                yield session
+            tg.cancel_scope.cancel()
+
+
+@pytest.mark.anyio
+async def test_a_recorded_zero_length_content_array_synthesizes_as_genuinely_empty():
+    """`_synthesize_call_tool_result`'s content_length defaults to 1 when
+    array_lengths has no "content" entry -- but a REAL recorded response
+    whose content array was genuinely empty (array_lengths["content"] ==
+    0, a real, valid shape a tool can return) must synthesize as an
+    EMPTY content list, not silently fall back to the length-1 default.
+    Never exercised by the golden fixture (every real call there has
+    real content) -- hand-built here."""
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    store = ReplayStore()
+    key = replay_key(GOLDEN_SERVER, tools_served[0].name, {})
+    store._index[key] = RecordedResponse(
+        result_shape={"type": "object", "keys": ["content"], "array_lengths": {"content": 0}},
+        is_error=False,
+        fault=False,
+        match_tier="exact",
+    )
+
+    async for session in _single_call_session(store, tools_served):
+        result = await session.call_tool(tools_served[0].name, {})
+        assert result.content == []
+
+
+@pytest.mark.anyio
+async def test_a_recorded_multi_block_content_array_synthesizes_with_the_same_count():
+    """The inverse case: a real recorded response with MULTIPLE content
+    blocks (array_lengths["content"] == 3) must synthesize exactly 3
+    empty placeholders, not the length-1 default -- confirming
+    content_length genuinely reads the recorded value across its full
+    real range, not just "present vs. absent"."""
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    store = ReplayStore()
+    key = replay_key(GOLDEN_SERVER, tools_served[0].name, {})
+    store._index[key] = RecordedResponse(
+        result_shape={"type": "object", "keys": ["content"], "array_lengths": {"content": 3}},
+        is_error=False,
+        fault=False,
+        match_tier="exact",
+    )
+
+    async for session in _single_call_session(store, tools_served):
+        result = await session.call_tool(tools_served[0].name, {})
+        assert len(result.content) == 3
+        assert all(block.text == "" for block in result.content)
 
 
 # --- tool_addition (F-17) synthesis, scoped F-14 --------------------------

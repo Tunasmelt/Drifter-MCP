@@ -137,6 +137,114 @@ def test_index_session_last_writer_wins_on_a_repeated_key(tmp_path):
     assert hit.result_shape == {"type": "object", "keys": ["v", "w"]}  # the seq=2 result, not seq=1's
 
 
+def _write_session(path: Path, session_id: str, tool_calls: list[dict]) -> None:
+    import json
+
+    lines = [
+        {
+            "schema_version": "0.1",
+            "record_type": "session_start",
+            "session_id": session_id,
+            "seq": 0,
+            "started_at": "2026-08-16T19:40:00Z",
+            "environment": {
+                "agent_identity": None, "model_name": None, "server_versions": {},
+                "tool_manifest_hash": None, "fingerprint": None,
+            },
+            "raw_frame_offset": 0,
+        }
+    ]
+    for i, call in enumerate(tool_calls, start=1):
+        lines.append(
+            {
+                "schema_version": "0.1", "record_type": "tool_call", "session_id": session_id,
+                "seq": i, "timestamp": "2026-08-16T19:40:01Z", "server": call.get("server", "srv"),
+                "tool_name": call["tool_name"], "arguments": call.get("arguments", {}),
+                "result_shape": call.get("result_shape"), "is_error": call.get("is_error"),
+                "duration_ms": 1.0, "fault": call.get("fault", False), "result_provenance": "real",
+                "references": [], "mutation_inverse": None, "raw_frame_offset": i * 100,
+            }
+        )
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+
+
+def test_indexing_two_separate_session_files_into_one_store_merges_both(tmp_path):
+    """The public API allows index_session() to be called multiple
+    times on the same store -- not exercised by any existing test,
+    which only ever indexes a single golden-fixture file. A caller
+    building a store from several recorded sessions (e.g. a richer
+    corpus than one file) must get hits from EITHER file, not just
+    whichever was indexed most recently."""
+    path_a = tmp_path / "a.jsonl"
+    path_b = tmp_path / "b.jsonl"
+    _write_session(path_a, "sess_a", [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["v"]}, "is_error": False}])
+    _write_session(path_b, "sess_b", [{"tool_name": "list", "arguments": {}, "result_shape": {"type": "array", "length": 0}, "is_error": False}])
+
+    store = ReplayStore()
+    store.index_session(path_a)
+    store.index_session(path_b)
+
+    hit_a = store.lookup("srv", "get", {"id": "1"})
+    hit_b = store.lookup("srv", "list", {})
+    assert hit_a is not None and hit_a.result_shape == {"type": "object", "keys": ["v"]}
+    assert hit_b is not None and hit_b.result_shape == {"type": "array", "length": 0}
+
+
+def test_last_writer_wins_across_two_separate_files_not_just_within_one(tmp_path):
+    """The existing last-writer-wins test only covers two records in
+    ONE file. Confirmed here across two SEPARATE files indexed in
+    order -- the second file's recording must win, matching the same
+    "most recent recording is most representative" rationale."""
+    path_a = tmp_path / "a.jsonl"
+    path_b = tmp_path / "b.jsonl"
+    _write_session(path_a, "sess_a", [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["old"]}, "is_error": False}])
+    _write_session(path_b, "sess_b", [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["new"]}, "is_error": False}])
+
+    store = ReplayStore()
+    store.index_session(path_a)
+    store.index_session(path_b)
+    hit = store.lookup("srv", "get", {"id": "1"})
+    assert hit.result_shape == {"type": "object", "keys": ["new"]}
+
+
+def test_a_protocol_level_fault_call_hits_with_a_null_result_shape(tmp_path):
+    """The golden fixture has zero fault=True calls (confirmed directly,
+    not assumed) -- a protocol-level fault (a JSON-RPC error response,
+    never reaching a CallToolResult) has no result_shape at all, per
+    record/schema.py's own nullable field. Hand-built here since no
+    existing fixture covers this real, distinct outcome."""
+    path = tmp_path / "fault.jsonl"
+    _write_session(path, "sess_fault", [{"tool_name": "broken_tool", "arguments": {}, "result_shape": None, "is_error": None, "fault": True}])
+
+    store = ReplayStore()
+    store.index_session(path)
+    hit = store.lookup("srv", "broken_tool", {})
+    assert hit is not None
+    assert hit.fault is True
+    assert hit.result_shape is None
+
+
+def test_index_session_against_a_session_with_zero_tool_calls_does_not_crash(tmp_path):
+    """A session that's just a SessionStart (e.g. a connectivity check,
+    SPEC.md limitation 12) contributes nothing to the index but must
+    not raise."""
+    path = tmp_path / "empty.jsonl"
+    _write_session(path, "sess_empty", [])
+    store = ReplayStore()
+    store.index_session(path)  # must not raise
+    assert store.lookup("srv", "anything", {}) is None
+
+
+def test_replay_key_canonicalizes_nested_dict_key_order_too():
+    """The existing order-independence test only covers TOP-LEVEL key
+    order. json.dumps(sort_keys=True) recursively sorts nested dicts
+    too -- confirmed explicitly with a nested example, not assumed from
+    reading the stdlib's own behavior."""
+    key_a = replay_key("srv", "tool", {"outer": {"z": 1, "a": 2}})
+    key_b = replay_key("srv", "tool", {"outer": {"a": 2, "z": 1}})
+    assert key_a == key_b
+
+
 def test_secret_shaped_arguments_hit_when_the_live_lookup_uses_the_real_unredacted_value():
     """The recorded ToolCall.arguments on disk is already redacted
     (F-04) — a live lookup with the real, unredacted secret value must

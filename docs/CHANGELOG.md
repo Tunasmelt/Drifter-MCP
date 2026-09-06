@@ -6,6 +6,51 @@ not just a diff.
 
 ---
 
+## F-11–F-16 edge-case pass: no new bugs, real coverage gaps closed
+
+Continuing the edge-case pass onto F-11 through F-16. F-12 (inverse-mutation key
+resolution) and F-13 (semantic key resolution) have no code at all — confirmed directly
+from `replay_store.py`'s own docstring, not assumed — so no tests apply to them; they
+remain **needs building** per the build-status table.
+
+**`tests/replay/test_replay_store.py`** (F-11) — 6 new tests. The existing 9 were
+thorough but every one only ever indexed a single file (the golden fixture) or a single
+hand-built one: confirmed `index_session()` called twice on the same store correctly
+merges both files, and that last-writer-wins holds ACROSS files, not just within one.
+Also: a real protocol-level fault hit (fault=True, result_shape=None — never exercised
+by the golden fixture, which has zero fault calls, confirmed directly) round-trips
+correctly; an empty session (zero ToolCalls) doesn't crash; and `replay_key`'s
+canonicalization was only ever confirmed at the top level before this — now confirmed
+for NESTED dict key order too.
+
+**`tests/replay/test_replay_proxy.py`** (F-14) — 2 new tests for
+`_synthesize_call_tool_result`'s `content_length` reconstruction, which the existing
+11 tests only ever exercised implicitly via the golden fixture's own real content
+shapes. Hand-built `RecordedResponse`s confirm the two ends of the real range the golden
+fixture never contains: a recorded response with a genuinely EMPTY content array
+(`array_lengths["content"] == 0`) synthesizes as empty, not the length-1 default; and a
+recorded MULTI-block response (3 content items) synthesizes with the same count, not
+silently collapsed to 1.
+
+**`tests/mutate/test_description_update.py`** (F-16) — 2 new tests. Empty and
+whitespace-only descriptions don't crash (changed=False, honestly reported). A second,
+narrower known limitation found and confirmed alongside the already-documented
+injection-pattern gap: case preservation in `_substitute_synonyms` only checks a
+matched word's first letter, so an ALL-CAPS source ("GET") comes out title-cased
+("Obtain"), not ALL-CAPS ("OBTAIN") — the same class of narrow, low-probability,
+confirmed-not-fixed limitation as the existing letter-based (not phonetic) article-
+agreement fix.
+
+F-15 (fidelity computation/gating, `evaluate/baseline.py`) was reviewed but already had
+22 exceptionally thorough existing tests covering every documented edge case — no gap
+found worth adding to.
+
+No new bugs found in this batch (F-01–F-10's pass found and fixed a real `drifter
+observe` bug; this one didn't surface an equivalent). Full suite re-run after all of the
+above.
+
+---
+
 ## F-06–F-10 edge-case pass: a real `drifter observe` bug found and fixed
 
 Continuing the F-01–F-05 edge-case pass onto the next five features.

@@ -25,12 +25,12 @@ table and docs/PHASES.md for gate-level narrative.
 | F-08 | Data-flow reference tracking | ✅ Built | Gate 1. Literal-equality matching can produce a spurious reference on a common falsy value (True/0/"") — an accepted, documented tradeoff (`segment.py`'s own docstring), now also locked in by a direct unit test |
 | F-09 | `drifter observe` | ⚠️ Built, known gap | §15 limitation 9 — Ctrl+C doesn't wait for/terminate the real spawned server. A second gap (a bad server command crashed with a raw traceback instead of an actionable error, unlike `drifter doctor`) was found and FIXED during the same edge-case pass — see docs/CHANGELOG.md |
 | F-10 | `drifter stats` | ⚠️ Built, real interaction confirmed | Retry detection compares stored (already-redacted) arguments — two different real secrets that redact identically are misdetected as a retry. Confirmed and locked in by a test, not fixed (same class of accepted tradeoff as F-08's spurious-reference case) |
-| F-11 | Replay store | ⚠️ Built, exact-key only | Tier-3 finding (PHASES.md Gate 3) — may not be viable against any real agent alone |
+| F-11 | Replay store | ⚠️ Built, exact-key only | Tier-3 finding (PHASES.md Gate 3) — may not be viable against any real agent alone. Multi-session merging, cross-file last-writer-wins, fault/null-shape hits, and nested-key canonicalization now directly tested |
 | F-12 | Inverse-mutation key resolution | ⚠️ Stub only | Never implemented past the Gate 2 stub — **needs building** if tier 2 replay is ever exercised for real |
 | F-13 | Semantic key resolution | ❌ Not built | **Needs building** — the tier-3 gap F-11's own limitation points at; no longer "nice-to-have," possibly blocking |
 | F-14 | Synthetic response generation | ⚠️ Scoped to `tool_addition` only | General schema-inference synthesis explicitly out of scope; deliberate |
 | F-15 | Fidelity computation and gating | ✅ Built | Gate 2 |
-| F-16 | `description_update` | ⚠️ Built, known gap | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it |
+| F-16 | `description_update` | ⚠️ Built, two known gaps | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it. Also: case preservation is title-case-only — an ALL-CAPS source word ("GET") comes out "Obtain," not "OBTAIN" (narrow, confirmed, not fixed — real tool descriptions rarely use ALL-CAPS words) |
 | F-17 | `tool_addition` | ✅ Built | Gate 3, safety-reviewed |
 | F-18 | Mutation audit log | ⚠️ Minimal shared shape, deliberate | Not F-18's own eventual general log format — see `description_update.py`'s docstring |
 | F-19 | Cache-busting on mutated responses | ✅ Built | Gate 3 |
