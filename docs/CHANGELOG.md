@@ -6,6 +6,35 @@ not just a diff.
 
 ---
 
+## Gate 4 closed by explicit override — exit test and kill criterion NOT verified
+
+Every prior gate in this project closed on real, empirical evidence — a passing exit
+test, a confirmed kill-criterion resolution, or (Gate 1) an explicit, separately
+recorded override. Gate 4 breaks that pattern differently: asked directly whether the
+real second user (the friend doing agentic AI work) hit any friction running `drifter
+init` → `observe` → `run` unassisted — Gate 4's own required task — the answer was
+"not verified, just close it."
+
+Recorded honestly rather than silently: **Gate 4's exit test (a real person,
+unassisted, correctly interpreting a real mutation-test report) has not been
+confirmed**, and neither has its kill criterion (whether F-34's subprocess adapter
+accommodates a real second agent's invocation pattern — the gate's own named most-
+likely hard blocker). `.drifter/GATE_STATUS` records `gate_4_status:
+closed_by_user_override_unverified`, distinct from every other gate's
+`closed_by_passing_exit_test`. `docs/PHASES.md`'s Gate 4 section carries the same
+caveat, visibly, not buried.
+
+What IS real and stays on the record: the pre-handoff dry run
+(`tests/cli/gate4_dry_run/`, previous entry) exercised the real CLI end to end and
+surfaced two genuine findings before this override — that work isn't retracted or
+diminished by the override, it's just explicitly not equivalent to it.
+
+Gate advanced to `v1` in `.drifter/GATE_STATUS`. Whoever works on v1's onboarding path
+or the subprocess adapter should treat both as less battle-tested than a genuinely
+closed Gate 4 would imply.
+
+---
+
 ## Gate 4 pre-handoff dry run: 7 synthetic personas + a shutdown-timing check
 
 **Scope, stated explicitly:** this is pre-handoff stress-testing, NOT Gate 4 closure.

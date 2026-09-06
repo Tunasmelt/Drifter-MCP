@@ -357,6 +357,37 @@ sequence at `drifter observe`, or use `drifter run --fixture ...` directly again
 hand-picked recorded session) rather than block on a command this checklist names but
 v1's own scope note excludes from Gate 4.
 
+A pre-handoff dry run (`tests/cli/gate4_dry_run/`, 7 synthetic personas + a
+shutdown-timing check) then stress-tested the real CLI end to end against real spawned
+fake MCP servers before the actual handoff — not a substitute for a real second user
+(agreed explicitly before building it), but real, evidence-backed work: it surfaced
+two genuine, previously-unknown findings (SPEC.md §15 limitations 13 and 14). See
+`docs/CHANGELOG.md`'s corresponding entry.
+
+**Gate 4 is marked closed below, but NOT via a passing exit test — an explicit,
+recorded override, not a silent one.** Asked directly whether the real second user hit
+any friction, confusion, or failure running the checklist above unassisted (this
+gate's own required task), the answer was: not verified, close it anyway. So record
+this plainly: **the actual exit test — a real person, unassisted, correctly
+interpreting a real mutation-test report — has not been confirmed.** The kill
+criterion (whether F-34's subprocess adapter accommodates a real second agent's
+invocation pattern) is equally unconfirmed. This project's own established practice
+for every gate before this one (see the Gate 2/Gate 3 status sections above) is to
+close on real, empirical evidence; this entry is the one deliberate exception, made at
+the project owner's explicit direction, not a new default. Whoever picks up v1 next
+should treat the onboarding path and subprocess adapter with more suspicion than a
+genuinely-verified Gate 4 would have earned — see `.drifter/GATE_STATUS`'s
+`gate_4_note` for the full record.
+
+| | Status |
+|---|---|
+| Pre-handoff dry run (7 personas + timing check) | ✅ Done, real findings surfaced |
+| `drifter init` pre-flight fix (F-33) | ✅ Done |
+| Exit test (real second user, unassisted) | ⚠️ NOT verified — closed by override |
+| Kill criterion (subprocess adapter fits a real second agent) | ⚠️ NOT verified — closed by override |
+
+**Gate 4 is closed, by explicit override, not by evidence.**
+
 The actual handoff (the friend running this sequence unassisted) has not happened yet.
 
 ---
