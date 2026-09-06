@@ -297,6 +297,28 @@ def build_replay_server(
 
     async def on_list_tools(ctx, params):
         _ensure_bootstrapped(ctx)
+        # F-19 (docs/SPEC.md §10, "verified requirement C8") calls for every
+        # tools/list response to set ttlMs/cacheScope. Investigated directly
+        # against the real, currently-negotiated MCP protocol before adding
+        # them here (not assumed from the SDK's newest type definitions
+        # alone): those fields exist ONLY on `mcp_types._v2026_07_28.
+        # ListToolsResult`, a draft, not-yet-real protocol version. Every
+        # currently-negotiable version (2024-11-05 through 2025-11-25 --
+        # everything any real MCP client speaks today) validates server
+        # results through the OLDER surface model
+        # (`mcp_types._v2025_11_25.ListToolsResult`, fields: meta,
+        # next_cursor, tools only), with `extra="ignore"` silently
+        # stripping anything else before it reaches the wire — confirmed
+        # by a real wire capture showing a bare `{"tools": [...]}` even
+        # after explicitly passing ttl_ms/cache_scope here. Setting them
+        # is therefore not a no-op exactly, but it IS wire-invisible
+        # against every real client that exists today; deliberately not
+        # set, to avoid code implying a guarantee that isn't real. See
+        # docs/SPEC.md §15 limitation 15 for the full account and the
+        # currently-real MCP mechanism (`notifications/tools/list_changed`)
+        # this doesn't map cleanly onto either, since Drifter's baseline/
+        # mutated arms are always separate fresh connections, not one
+        # connection whose manifest changes mid-session.
         return types.ListToolsResult(tools=tools)
 
     async def on_call_tool(ctx, params: types.CallToolRequestParams):

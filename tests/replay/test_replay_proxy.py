@@ -149,6 +149,123 @@ async def test_miss_error_code_is_distinct_from_fault_error_code():
     assert REPLAY_MISS_CODE != REPLAY_FAULT_CODE
 
 
+# --- F-19: cache-busting on tools/list responses ----------------------------
+#
+# A raw-wire-level check, not golden_session.list_tools()'s own PARSED
+# result: the MCP SDK's ListToolsResult has real ttl_ms/cache_scope
+# fields with defaults (0 / "private"), so a client-side parse would
+# report those defaults regardless of whether the SERVER actually sent
+# them -- confirmed empirically before writing this test (a raw capture
+# of the real wire bytes showed a bare {"tools": [...]}, no ttlMs/
+# cacheScope at all, because on_list_tools's return value never set
+# them and the SDK's own wire serialization uses exclude_unset=True).
+# Only tapping the literal JSON on the wire can tell "explicitly sent"
+# apart from "client-side default."
+
+
+async def _tap_tools_list_response_json(store: ReplayStore, tools_served) -> str:
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        client_read, client_write = client_streams
+        send, recv = anyio.create_memory_object_stream(0)
+        raw_log: list[str] = []
+
+        async def _tap():
+            async with client_read:
+                async for msg in client_read:
+                    if not isinstance(msg, Exception):
+                        raw_log.append(msg.message.model_dump_json(by_alias=True, exclude_unset=True))
+                    await send.send(msg)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_replay_proxy, *server_streams, store, GOLDEN_SERVER, tools_served)
+            tg.start_soon(_tap)
+            async with ClientSession(recv, client_write) as session:
+                await session.initialize()
+                await session.list_tools()
+            tg.cancel_scope.cancel()
+
+    # "tools":[ (the array) distinguishes the actual tools/list response
+    # from the earlier initialize response, which also happens to
+    # contain the substring "tools" as part of its capabilities object
+    # ("tools":{"listChanged":false}) -- found the hard way, a first
+    # version of this helper matched the wrong line.
+    return next(line for line in raw_log if '"tools":[' in line)
+
+
+@pytest.mark.anyio
+async def test_tools_list_response_has_no_ttlms_or_cachescope_a_confirmed_gap():
+    """docs/SPEC.md's original C8 claim (and the now-corrected F-19 entry in
+    docs/FEATURES.md) called for every tools/list response to set ttlMs: 0
+    and a private cacheScope. Investigated directly against the real,
+    currently-negotiated MCP protocol rather than assumed from the SDK's
+    newest type definitions: those fields exist ONLY on
+    `mcp_types._v2026_07_28.ListToolsResult`, a draft, not-yet-real
+    protocol version. Every currently-negotiable version (2024-11-05
+    through 2025-11-25 -- everything any real MCP client speaks today)
+    validates server results through the older surface model, which has
+    `extra="ignore"` and silently strips anything else before it reaches
+    the wire -- confirmed here by a real wire capture, not by inspecting
+    a client-parsed result object (whose own ttl_ms/cache_scope fields
+    carry non-None defaults regardless of what the server actually sent).
+
+    This test locks in the current, honest behavior -- a bare
+    {"tools": [...]} with neither field present -- as a documented,
+    permanent-for-now limitation (docs/SPEC.md §15), not something to
+    force green by setting fields that a real client will never see.
+    See replay_proxy.py's on_list_tools for the full account and the
+    real MCP mechanism (`notifications/tools/list_changed`) this doesn't
+    map cleanly onto, since Drifter's baseline/mutated arms are always
+    separate fresh connections, not one connection whose manifest
+    changes mid-session."""
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+
+    wire_json = await _tap_tools_list_response_json(store, tools_served)
+    assert '"ttlMs"' not in wire_json, wire_json
+    assert '"cacheScope"' not in wire_json, wire_json
+
+
+# --- F-20: mutated calls structurally cannot forward live -------------------
+
+
+def test_replay_proxy_module_imports_nothing_capable_of_a_live_forward():
+    """CLAUDE.md's own non-negotiable invariant: mutation testing never
+    forwards a live call under a mutated schema, verified structurally, not
+    just true by default configuration. `replay_proxy.py`'s own module
+    docstring already claims this ("this module never imports
+    `mcp.client.stdio` or anything else that spawns a subprocess or opens
+    an outbound connection... confirmed by inspection, not by a flag
+    defaulting the 'right' way") -- found while auditing F-20 that nothing
+    actually locks that claim in: nothing would fail loudly if a future
+    edit added a live-forwarding import to this file. This test makes the
+    inspection itself the regression check, at the same layer the
+    guarantee lives (imports), rather than trusting the docstring's word
+    or a behavioral test that could pass by accident (e.g. a fixture that
+    never happens to exercise a newly-added live path).
+    """
+    import ast
+    import inspect
+
+    import replay.replay_proxy as module
+
+    source = inspect.getsource(module)
+    tree = ast.parse(source)
+
+    imported_names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported_names.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported_names.add(node.module)
+
+    # Anything under mcp.client (the SDK's own outbound-connection
+    # machinery) or the stdlib's subprocess module would be capable of
+    # reaching a live server -- neither may ever appear here.
+    live_capable = {name for name in imported_names if name == "subprocess" or name.startswith("mcp.client")}
+    assert live_capable == set(), f"replay_proxy.py imports live-forward-capable modules: {live_capable}"
+
+
 def test_replay_error_codes_never_collide_with_any_mcp_types_defined_code():
     """Regression test for a real bug: REPLAY_MISS_CODE originally sat at
     -32001, which is REQUEST_TIMEOUT (mcp_types' own reserved-range

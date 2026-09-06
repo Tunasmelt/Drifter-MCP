@@ -33,8 +33,8 @@ table and docs/PHASES.md for gate-level narrative.
 | F-16 | `description_update` | ⚠️ Built, two known gaps | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it. Also: case preservation is title-case-only — an ALL-CAPS source word ("GET") comes out "Obtain," not "OBTAIN" (narrow, confirmed, not fixed — real tool descriptions rarely use ALL-CAPS words) |
 | F-17 | `tool_addition` | ✅ Built | Gate 3, safety-reviewed |
 | F-18 | Mutation audit log | ⚠️ Minimal shared shape, deliberate | Not F-18's own eventual general log format — see `description_update.py`'s docstring |
-| F-19 | Cache-busting on mutated responses | ✅ Built | Gate 3 |
-| F-20 | Header integrity on live forwards | ✅ Built | Gate 1 (`record/proxy.py`'s live passthrough) |
+| F-19 | Cache-busting on mutated responses | ❌ Not built — real-protocol gap | §15 limitation 15 — `ttlMs`/`cacheScope` exist only in a draft, not-yet-real MCP protocol version; no real client speaks it |
+| F-20 | Header integrity on live forwards | ✅ Built | Gate 3 — stronger than planned: the originally-designed `Mcp-Method`/`Mcp-Name` header-stripping was never implemented in `src/`, but `replay/replay_proxy.py` structurally has no live-forwarding code path at all, now locked in by an import-inspection regression test |
 | F-21 | Baseline calibration | ✅ Built | Gate 2 |
 | F-22 | Baseline fidelity gating | ✅ Built | Gate 2 |
 | F-23 | Behavior effect-size scoring | ✅ Built | Gate 2, zero-spread edge case is a stated design decision |
@@ -320,27 +320,54 @@ log alone, without needing the mutation code itself.
 
 ### F-19 Cache-busting on mutated responses
 
-**Technical:** Every mutated `tools/list` response sets `ttlMs: 0` and a private
-`cacheScope`, per SPEC.md §10 and verified requirement C8.
+**Technical:** Originally: every mutated `tools/list` response sets `ttlMs: 0` and a
+private `cacheScope`, per SPEC.md §10 and verified requirement C8. **Corrected,
+docs/SPEC.md §15 limitation 15:** those fields exist only on the MCP SDK's draft
+`2026-07-28` protocol type — every currently-negotiable real protocol version
+(2024-11-05 through 2025-11-25) strips them from the wire via its own
+version-specific surface model (`extra="ignore"`), confirmed by a real wire
+capture. Not implementable against any real client today. The real protocol's
+only tool-list invalidation mechanism, `notifications/tools/list_changed`, is
+built for a manifest changing mid-connection, not for defending a cache reused
+across connections — and doesn't map cleanly onto Drifter's baseline/mutated
+arms, which are always separate, fresh subprocess connections in the first
+place (which independently narrows how much of the original threat model even
+applies). `replay/replay_proxy.py`'s `on_list_tools` deliberately does not set
+these fields; see its own comment for the full account.
 
-**Simple:** Tells the agent's client "don't remember this menu" — otherwise it might
-reuse a mutated menu across different tests and corrupt every result after the first.
+**Simple:** The original idea was to tell the agent's client "don't remember this
+menu" — the real MCP protocol has no field to say that on a per-response basis, so
+this doesn't do anything today. Drifter's fresh-process-per-arm design already
+avoids most of the actual risk this was meant to guard against.
 
 **Depends on:** F-01 (proxy response path).
-**Done when:** a caching-capable test client never reuses a mutated tool list across
-two different mutation arms in a fixture.
+**Done when:** ~~a caching-capable test client never reuses a mutated tool list
+across two different mutation arms in a fixture~~ — superseded; see docs/SPEC.md
+§15 limitation 15. Current done-criterion: a wire-level test confirms `ttlMs`/
+`cacheScope` are honestly absent, not silently defaulted-in by a client parse.
 
 ### F-20 Header integrity on live forwards
 
-**Technical:** Strips inbound `Mcp-Method`/`Mcp-Name` headers on any call touched by an
-active mutation; never forwards a mutated call live, by design (SPEC.md §10).
+**Technical:** Originally planned: strip inbound `Mcp-Method`/`Mcp-Name` headers on any
+call touched by an active mutation; never forward a mutated call live, by design
+(SPEC.md §10). **As actually built (F-20 audit, confirmed by grep — zero header-
+stripping code exists in `src/`):** the primary defense turned out stronger than the
+header-stripping plan — `replay/replay_proxy.py`, the module that serves the mutated
+arm, has no code path capable of forwarding to a live server at all (no
+`mcp.client`/`subprocess` import anywhere in the file), so header stripping as
+"defense in depth" was never needed and was never built. The invariant holds by
+construction, not by a runtime check.
 
 **Simple:** Prevents a scenario where Drifter's fake tool name would get sent to a real
-server and rejected — mutated calls simply never go live at all.
+server and rejected — mutated calls simply never go live at all, because the code that
+serves them doesn't know how to reach a live server in the first place.
 
 **Depends on:** F-16, F-17.
 **Done when:** no fixture produces a live forward for any call whose tool was touched
-by an active mutation.
+by an active mutation — locked in by
+`test_replay_proxy_module_imports_nothing_capable_of_a_live_forward`
+(`tests/replay/test_replay_proxy.py`), which inspects the module's own imports rather
+than relying on a fixture never happening to exercise a future live path.
 
 ---
 

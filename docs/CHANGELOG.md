@@ -6,7 +6,82 @@ not just a diff.
 
 ---
 
-## F-11–F-16 edge-case pass: no new bugs, real coverage gaps closed
+## F-19 audit: build-status table was wrong, the "fix" was real-protocol-ineffective, documented instead
+
+Continuing the edge-case pass onto F-17 through F-24, F-19 (cache-busting on mutated
+`tools/list` responses) was the first stop and turned into a full investigation rather
+than a quick audit. docs/FEATURES.md's build-status table claimed "✅ Built | Gate 3" for
+it; a whole-tree grep for `ttlMs`/`cacheScope` returned zero matches in `src/` or
+`tests/` — confirmed unimplemented before touching anything.
+
+The obvious fix — `types.ListToolsResult(tools=tools, ttl_ms=0, cache_scope="private")`
+in `replay/replay_proxy.py`'s `on_list_tools`, using the MCP Python SDK's own real
+field names — was implemented and looked correct. A new wire-level regression test
+(tapping the literal JSON bytes on the wire, not a client-parsed result object, since
+`ListToolsResult`'s own `ttl_ms`/`cache_scope` fields carry non-None client-side
+defaults regardless of what the server actually sent) still failed identically to
+before the fix. Ruled out `exclude_unset` client-side stripping (confirmed empirically
+that passing a field's own default still marks it "set" in `model_fields_set`) and a
+stale-file issue before tracing the SDK's real dispatch chain:
+`mcp/server/runner.py`'s `_dump_result` → `mcp_types.methods.serialize_server_result`,
+which re-validates a handler's result dict against a **version-specific surface
+model** keyed by the session's negotiated protocol version, with `extra="ignore"`
+silently stripping anything that version's model doesn't define. `ttl_ms`/
+`cache_scope` exist only on `mcp_types._v2026_07_28.ListToolsResult` — a draft,
+not-yet-real protocol version — never on 2024-11-05 through 2025-11-25, i.e. never on
+any protocol version any real MCP client can currently negotiate.
+
+A direct fetch of the real, current MCP spec (2025-11-25) confirmed no per-response
+cache-control mechanism exists in the real protocol at all; the only real
+invalidation path is `capabilities.tools.listChanged` + `notifications/
+tools/list_changed`, built for "the list changed mid-session," not for defending a
+cache reused across connections — and it doesn't map cleanly onto Drifter anyway,
+since `run_mutation_comparison`'s baseline and mutated arms are always separate,
+fresh subprocess connections, which independently narrows how much of the original
+threat model (C8) even applies here.
+
+Given a real, currently-standardized alternative existed (varying `serverInfo.version`
+between arms) but wasn't yet reviewed or built, the choice was: document the gap and
+revert the ineffective fields, rather than ship code that implies a guarantee the real
+protocol doesn't carry, or build a new mechanism as a byproduct of an edge-case audit.
+Reverted `on_list_tools` to its original `types.ListToolsResult(tools=tools)`, with a
+comment recording the full chain. docs/SPEC.md gets a new §15 limitation 15 with the
+complete investigation. docs/FEATURES.md's F-19 row and feature entry are corrected to
+"❌ Not built — real-protocol gap" with a pointer to limitation 15.
+`tests/replay/test_replay_proxy.py`'s regression test now asserts the confirmed
+ABSENCE of `ttlMs`/`cacheScope` on the real wire — an honest lock on current behavior,
+not a forced-green assertion of something that doesn't work.
+
+---
+
+## F-20 audit: the planned mechanism was never built, but the real invariant holds — now locked in
+
+Continuing straight from the F-19 finding, F-20 (header integrity on live forwards)
+showed the same symptom on inspection: a whole-tree grep for the originally-planned
+`Mcp-Method`/`Mcp-Name` header-stripping (docs/SPEC.md §10, SEP-2243) returned zero
+matches in `src/`. Unlike F-19, this did not turn into a real-protocol dead end —
+`replay/replay_proxy.py`'s own module docstring already documents the actual, stronger
+mechanism: the module has no code path capable of forwarding to a live server at all
+(no `mcp.client`/`subprocess` import anywhere in the file), so a mutated call
+structurally cannot reach a live server, which is what F-20's invariant actually
+requires — header stripping was only ever "defense in depth" for a path that turns out
+not to exist.
+
+The gap was that nothing enforced this structurally: the docstring's claim
+("confirmed by inspection, not by a flag defaulting the 'right' way") had no test
+behind it, so a future edit that added a live-connection import to this file would
+regress the invariant silently. Added
+`test_replay_proxy_module_imports_nothing_capable_of_a_live_forward`
+(`tests/replay/test_replay_proxy.py`), which parses the module's own AST and asserts
+no `mcp.client.*` or `subprocess` import is present — checking the guarantee at the
+same layer it actually lives (imports), the way CLAUDE.md's own instruction for this
+class of invariant asks for ("verify this is still structurally true, not just true by
+default configuration"). docs/FEATURES.md's F-20 row and feature entry are corrected to
+describe the real, as-built mechanism rather than the original header-stripping plan.
+
+---
+
+## F-19 audit: build-status table was wrong, the "fix" was real-protocol-ineffective, documented instead
 
 Continuing the edge-case pass onto F-11 through F-16. F-12 (inverse-mutation key
 resolution) and F-13 (semantic key resolution) have no code at all — confirmed directly

@@ -561,3 +561,44 @@ when*.
     `test_tools_list_arriving_after_the_first_tools_call_is_too_late_to_help`,
     confirming this is genuinely about ORDER, not about whether `tools/list` ever
     happens at all) — `record/writer.py` had no dedicated unit-test file before this.
+15. F-19's "every mutated `tools/list` response sets `ttlMs: 0` and a private
+    `cacheScope`" claim (originally recorded here as verified requirement C8, and
+    marked "✅ Built" in docs/FEATURES.md) was found completely unimplemented while
+    auditing F-17–F-24 for edge cases: a whole-tree grep for `ttlMs`/`cacheScope`
+    returned zero matches. Implementing it looked straightforward — the MCP Python
+    SDK's `types.ListToolsResult` really does have `ttl_ms`/`cache_scope` fields —
+    but a wire-level regression test (`tests/replay/test_replay_proxy.py`, tapping
+    the literal JSON on the wire rather than trusting a client-parsed result, since
+    the SDK's own `ListToolsResult` has non-None client-side defaults for both
+    fields regardless of what the server sent) still failed after passing them
+    explicitly. Root-caused through the SDK's real dispatch chain
+    (`mcp/server/runner.py`'s `_dump_result` → `mcp_types.methods.
+    serialize_server_result`), which re-validates a handler's result against a
+    **version-specific surface model** selected by the session's negotiated
+    protocol version, with `extra="ignore"` silently stripping anything that
+    model doesn't define — and `ttl_ms`/`cache_scope` exist ONLY on
+    `mcp_types._v2026_07_28.ListToolsResult`, a draft, not-yet-real protocol
+    version, never on any currently-negotiable version (2024-11-05 through
+    2025-11-25 — everything any real MCP client speaks today). A direct read of
+    the real, current MCP spec (2025-11-25) confirmed no per-response
+    cache-control mechanism exists in the real protocol at all: the only actual
+    tool-list invalidation mechanism is `capabilities.tools.listChanged: true`
+    paired with a `notifications/tools/list_changed` server-to-client
+    notification, designed for "the list changed mid-session for an
+    already-connected client," not for defending against a cache reused across
+    separate/fresh connections. This also narrows how much the original C8 threat
+    model even applies here: `run_mutation_comparison`'s baseline and mutated arms
+    each spawn a completely fresh subprocess/connection, so an in-memory,
+    per-connection client cache reusing a manifest across arms is largely already
+    defeated by process freshness alone — the only residual real risk is a
+    hypothetical client persisting a disk-based cache keyed by server identity
+    across process restarts, which neither `ttlMs`/`cacheScope` nor
+    `listChanged` addresses. A real, currently-standardized alternative exists
+    (varying `serverInfo.version` between arms in the synthesized `initialize`
+    response) but was not built this round — decided, not defaulted: document the
+    gap and revert the ineffective fields rather than ship code implying a
+    guarantee the real protocol doesn't carry. `replay/replay_proxy.py`'s
+    `on_list_tools` deliberately does not set `ttl_ms`/`cache_scope` today; locked
+    in by `tests/replay/test_replay_proxy.py`'s
+    `test_tools_list_response_has_no_ttlms_or_cachescope_a_confirmed_gap`, which
+    asserts their absence on the real wire rather than forcing the test green.
