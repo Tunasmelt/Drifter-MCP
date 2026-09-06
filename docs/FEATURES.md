@@ -491,7 +491,61 @@ model, the real thing, however you'd normally run it from a terminal.
 
 **Depends on:** none (only touches process boundaries).
 **Done when:** a real CLI agent script runs correctly under the adapter with its
-tool calls correctly captured and correlated to a trajectory.
+tool calls correctly captured and correlated to a trajectory. **Met, for this
+narrower scope, in Gate 2.** The eventual full scope this entry originally
+described is now F-38, below — a separate, later feature, not a rewrite of what F-34
+already shipped and passed.
+
+### F-38 HTTP agent adapter (`agent.mode: http`)
+
+**Technical:** The widened F-34 this entry's own text always pointed at, built now
+that a real HTTP transport exists to build it against (SPEC.md §5.1). Drifter serves
+`run_replay_proxy` over real Streamable HTTP (`mcp.server.streamable_http_manager.
+StreamableHTTPSessionManager`, bound to `127.0.0.1` only, `Origin` validated on every
+request per the MCP spec's own security requirements — never `0.0.0.0`, never
+unauthenticated-by-oversight vs. unauthenticated-by-documented-decision) instead of
+piping the agent's own stdin/stdout. The listening URL is injected into the spawned
+process's environment (a configurable variable name, default `DRIFTER_PROXY_URL`) —
+Drifter still launches the agent process (this is a widened MODE of the existing
+adapter, not a new "point Drifter at an already-running service" capability; that's
+explicitly out of scope here, see this entry's own Kill criterion in PHASES.md). Once
+stdout is no longer occupied by the wire protocol, it becomes available to capture as
+a separate final-answer string — restoring the capability F-34's own docstring noted
+as dropped, though scoring that string against a task is still F-24/F-30 territory,
+not this feature's job.
+
+**Simple:** Lets Drifter test agents that can't have their stdin/stdout hijacked
+directly — anything that expects to reach its tools over a URL, which is how most
+real agent frameworks outside a bare CLI script actually work.
+
+**Depends on:** F-34 (this widens it, doesn't replace it).
+**Done when:** a real agent that talks to its tools via an HTTP-configured MCP client
+(not a piped-stdio script) runs correctly under `agent.mode: http`, with its tool
+calls correctly captured — the same bar F-34 met for stdio, met again for HTTP. This
+is v1's first priority specifically because it's the direct retirement of Gate 4's
+own unresolved kill criterion (docs/PHASES.md, docs/CHANGELOG.md).
+
+### F-39 HTTP real-server connection (`servers[].url`)
+
+**Technical:** The separate half of "+HTTP in v1" (SPEC.md §5.1): `record/proxy.py`'s
+real-server connection swaps `mcp.client.stdio.stdio_client(params)` for
+`mcp.client.streamable_http.streamable_http_client(url)` when a `servers[]` entry
+declares `url` instead of `command` — both are async context managers yielding the
+identical `(read_stream, write_stream)` shape, confirmed against the installed SDK
+before scoping this as low-risk, so `_pump`'s forwarding logic needs no change at
+all, only the connection setup. This is what makes SPEC.md §2's "change one config
+line" onboarding pitch literally true for the first time: a user with an existing
+remote MCP server swaps `command: [...]` for `url: "..."` and `drifter observe`
+works unchanged.
+
+**Simple:** Lets Drifter record and replay against a real server that lives on the
+network, not just one it spawns locally — most production MCP servers, as opposed to
+local dev tools, are exactly this shape.
+
+**Depends on:** none (mirrors F-01's own stdio connection, doesn't depend on F-38).
+**Done when:** `drifter observe` against a real, network-reachable HTTP MCP server
+records an identical-shaped session to an equivalent stdio server, and `drifter run`
+replays it with no code path caring which transport originally recorded it.
 
 ### F-35 `drifter run`
 
@@ -534,8 +588,10 @@ task assertions, unclassified destructive tool) produces a specific, actionable 
 
 ## Deliberately excluded from this feature set
 
-Response mutation, state mutation, HTTP adapter, plan-only mode, delta debugging,
-workflow graph mining, LLM judge oracle, hosted mode, dashboard, accounts. Each is a
-real, previously-discussed idea. None is required to prove the core loop (F-01
-through F-37) works, and each adds cost, safety risk, or setup burden that would delay
-Gate 1. See PHASES.md for where they resurface.
+Response mutation, state mutation, ~~HTTP adapter~~ (now in progress as F-38/F-39,
+v1 — struck through here rather than removed, so this list stays an honest record of
+what was excluded from F-01–F-37 and when each exclusion ended, not silently edited),
+plan-only mode, delta debugging, workflow graph mining, LLM judge oracle, hosted mode,
+dashboard, accounts. Each is a real, previously-discussed idea. None was required to
+prove the core loop (F-01 through F-37) works, and each added cost, safety risk, or
+setup burden that would have delayed Gate 1. See PHASES.md for where each resurfaces.

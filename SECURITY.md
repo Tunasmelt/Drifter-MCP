@@ -50,15 +50,57 @@ first-party support at build time) runs in CI from the first commit with a depen
 tree, failing the build on high/critical CVEs. Added to Gate 1's task list and exit
 test in docs/PHASES.md.
 
+### 3. (2026-09-04, pre-code, F-38) An HTTP agent adapter opens Drifter's first-ever
+   network listener
+
+**The problem.** Everything above assumes "no server" (docs/SPEC.md §3 principle 10) —
+true through Gate 4, false the moment F-38 (`docs/FEATURES.md`, `docs/PHASES.md`'s v1
+section) serves `run_replay_proxy` over real Streamable HTTP so a spawned agent can
+reach it by URL instead of piped stdio. Even loopback-bound and single-user, this is a
+real, new attack-surface class this project has never had: any other local process, or
+a malicious webpage open in a browser on the same machine, can attempt to reach a
+listening localhost port. The MCP spec's own Streamable HTTP security section names
+the exact risk (DNS rebinding) and the exact mitigations — this section exists so
+those mitigations are a design decision made now, not a gap discovered after F-38
+ships.
+
+**The fix, decided now, before F-38's code exists:**
+- Bind to `127.0.0.1` explicitly, never `0.0.0.0` — no config option to widen this in
+  v1; a real remote-access use case is out of scope, not a follow-up flag.
+- Validate the `Origin` header on every request per the spec's own requirement — a
+  request whose `Origin` isn't absent-or-loopback is rejected, closing the DNS-
+  rebinding path the spec names explicitly.
+- No authentication token for v1, and this is a stated, reviewed trade-off, not an
+  oversight: the listener's lifetime is bounded to one `drifter run` invocation, it
+  serves only replayed/synthetic data (never live tool execution — the mutation-under-
+  replay invariant, docs/SPEC.md §3, is completely unaffected by this feature), and
+  the process holding the port is killed the same way the agent subprocess itself
+  already is (F-38's task list, `cli/subprocess_adapter.py`'s existing terminate/kill
+  discipline). Revisit if F-38 ever grows a longer-lived or multi-agent server mode —
+  that would be a different threat model, matching this file's own standing
+  instruction to revisit itself, not just the checklist, when the model changes.
+- Port selection: ephemeral (OS-assigned), never a fixed, predictable port — nothing
+  about this feature should make it easier for another local process to guess where
+  to connect.
+
+**What this doesn't cover.** F-39 (the *other* HTTP feature — Drifter connecting OUT
+to a real, remote HTTP MCP server) is a client, not a listener, and has no equivalent
+new attack surface of its own; standard TLS/cert validation via the SDK's own HTTP
+client is assumed sufficient and not re-litigated here.
+
 ## What's deliberately not addressed yet
 
 Everything in the *manual-review* half of the standard `/security-check` skill —
 authorization boundaries, record-level access control, rate limiting — doesn't apply
-to a single-user local CLI tool with no accounts and no server (docs/SPEC.md §3, principle
-10; DEC-003 in earlier drafts). These become relevant only if a hosted mode is ever
-built, which is explicitly out of scope through v2+ (docs/FEATURES.md, "Deliberately
-excluded"). Revisit this document itself, not just the checklist, if that changes —
-a hosted mode changes the threat model, not just the feature list.
+to a single-user local CLI tool with no accounts and no *hosted* server
+(docs/SPEC.md §3, principle 10; DEC-003 in earlier drafts). This is narrower than
+"no server" as of F-38 (gap 3 above) — a loopback-only, single-user, single-invocation
+listener is not a hosted mode and doesn't change this section's conclusion, but it's
+also not literally "no server" anymore, which is why gap 3 above exists as its own
+entry rather than being silently folded into this paragraph's original framing. A
+genuine hosted mode (multi-user, persistent, network-exposed) remains explicitly out
+of scope through v2+ (docs/FEATURES.md, "Deliberately excluded") and would still
+require revisiting this document itself, not just the checklist.
 
 ## Ownership going forward
 

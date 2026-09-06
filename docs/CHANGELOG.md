@@ -6,6 +6,51 @@ not just a diff.
 
 ---
 
+## v1 scoped: HTTP agent adapter (F-38) pulled forward, F-39 split out, no code yet
+
+Gate 4 closed by explicit override (previous entry) with its kill criterion —
+whether F-34's subprocess adapter fits a real second agent's invocation pattern —
+unconfirmed rather than resolved. Rather than build v1 features on top of that
+unknown, F-38 (the HTTP agent adapter) is deliberately pulled forward to start v1,
+exactly matching the condition `docs/PHASES.md`'s own pre-existing v1.5 text named
+("HTTP agent adapter, unless pulled forward by a Gate 4 kill criterion") — struck
+through there, not silently deleted.
+
+This entry is planning only — grounded in real research before any code was written,
+not assumed from memory of an older transport revision:
+
+- Fetched the current MCP spec (2025-06-18) directly: the HTTP+SSE transport from
+  2024-11-05 is deprecated, replaced by **Streamable HTTP** — a single endpoint
+  handling both POST and GET, session tracking via `Mcp-Session-Id`, and explicit
+  security requirements (`Origin` validation, loopback-only binding for local
+  servers) that are now load-bearing design constraints, not options.
+- Inspected the installed SDK (`mcp==2.0.0`) directly rather than assuming API shape:
+  `mcp.client.streamable_http.streamable_http_client` is a drop-in-shaped replacement
+  for `mcp.client.stdio.stdio_client` (identical `(read_stream, write_stream)` yield),
+  and `starlette`/`uvicorn`/`sse-starlette` are already present as transitive
+  dependencies of `mcp` — no new top-level dependency needed to build either
+  direction.
+- Split "+HTTP in v1" into two genuinely separate features sharing no code path: F-38
+  (agent-facing — widens F-34, the thing Gate 4's kill criterion is actually about)
+  and F-39 (server-facing — the "change one config line" onboarding story for a
+  user's real remote server). Kept apart deliberately, matching this project's own
+  precedent (F-16/F-17's Schema Immunity boundary) for not letting two features
+  sharing infrastructure blur into one.
+- `docs/SPEC.md` §5.1 (new) carries the technical grounding; `docs/FEATURES.md` gains
+  F-38/F-39 and marks F-34's original "Done when" as met for its own, narrower,
+  already-shipped scope (not rewritten); `docs/PHASES.md`'s v1 section gains F-38 a
+  full gate-shaped Tasks/Exit-test/Kill-criterion structure, matching every prior
+  gate's rigor even though "v1" itself isn't gate-numbered; `SECURITY.md` gains a new
+  dated, pre-code entry (gap 3) for the new local network listener F-38 introduces —
+  Drifter's first ever, even though loopback-bound and single-invocation — with the
+  mitigations (loopback-only binding, `Origin` validation, ephemeral port, no
+  auth-by-reviewed-decision) decided now, before the code exists, matching this
+  file's own stated Gate-0 precedent for security design.
+
+No implementation exists yet. This is the plan; building it is separate, later work.
+
+---
+
 ## Gate 4 closed by explicit override — exit test and kill criterion NOT verified
 
 Every prior gate in this project closed on real, empirical evidence — a passing exit

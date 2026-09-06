@@ -119,6 +119,60 @@ Everything citable in docs/marketing must trace to this table. Nothing else is c
 The dashed boundary is the core architectural bet: agent execution is the only expensive,
 risky operation. Everything below it reads stored records and reruns at zero cost.
 
+### 5.1 HTTP transport (v1 scope, planned — F-38/F-39)
+
+Two independent transport axes exist in this diagram, and v0 is stdio-only on both:
+
+1. **Agent ↔ Drifter** (the top arrow). Today (F-34) the only way to run a real CLI
+   agent under test is `cli/subprocess_adapter.py` spawning it and wiring its own
+   stdin/stdout directly to an in-process `run_replay_proxy` — chosen explicitly over
+   a URL-addressed proxy specifically because no HTTP transport existed anywhere in
+   this codebase (see that module's own docstring, point 2). This is Gate 4's own
+   named most-likely hard blocker: an agent invoked any other way (an HTTP-based
+   framework, a long-running service rather than a short-lived CLI subprocess) cannot
+   be tested at all under F-34's current contract.
+2. **Drifter ↔ real MCP server** (the bottom-right arrow, live/record mode only).
+   Today (`record/proxy.py`) the real server is always `mcp.client.stdio.stdio_client`
+   spawning a local subprocess — a server that's actually a remote HTTP endpoint
+   (SPEC.md's own "change one config line" onboarding pitch, §2) cannot be recorded
+   or replayed against at all.
+
+**The transport itself, confirmed against the current spec (2025-06-18) before
+planning around it, not assumed from an older revision:** MCP defines exactly two
+standard transports, stdio and **Streamable HTTP** — the HTTP+SSE transport from
+2024-11-05 is deprecated. Streamable HTTP is a single endpoint (e.g. `/mcp`) accepting
+both POST (client→server messages; the server responds either as one JSON object or by
+opening an SSE stream) and GET (an optional server-initiated SSE stream). Sessions are
+tracked via an `Mcp-Session-Id` response header from `initialize`, echoed by the client
+on every subsequent request; a `MCP-Protocol-Version` header is required on every
+request once negotiated. The spec's own security requirements are non-negotiable for
+any implementation here: **validate `Origin` on every request** (DNS-rebinding
+defense), **bind to loopback (127.0.0.1) only** when running locally, never `0.0.0.0`,
+and treat "no auth" as an accepted, stated trade-off for a single-user local tool
+(SECURITY.md's own "single-user local CLI, no accounts" framing already applies) —
+not a silent gap.
+
+**Confirmed against the actual installed SDK (`mcp==2.0.0`), not assumed available:**
+`mcp.client.streamable_http.streamable_http_client(url, ...)` is a drop-in-shaped
+replacement for `mcp.client.stdio.stdio_client(params, ...)` — both are async context
+managers yielding the identical `(read_stream, write_stream)` pair every existing
+proxy/pump function in this codebase (`record/proxy.py`, `cli/doctor.py`) already
+consumes without caring which transport produced them. Server-side,
+`mcp.server.streamable_http_manager.StreamableHTTPSessionManager` wraps an MCP
+`Server` app for ASGI hosting. `starlette`, `uvicorn`, and `sse-starlette` are already
+present as transitive dependencies of `mcp>=2.0.0` (verified via `uv pip list`) — no
+new top-level dependency is needed in `pyproject.toml` to build either direction,
+though declaring them explicitly (rather than relying on `mcp`'s own transitive pin)
+is a real decision for whoever implements this, not a foregone one.
+
+See `docs/FEATURES.md` F-38 (agent-facing, the widened subprocess adapter — v1's
+first priority, since it directly retires Gate 4's unresolved kill criterion) and
+F-39 (server-facing, the separate "change one config line" story) for the actual
+task-level scope, and `docs/PHASES.md`'s v1 section for tasks/exit test/kill
+criterion. These are two separable features sharing infrastructure, not one feature —
+keep them scoped apart the way F-16/F-17's own "Schema Immunity" boundary was kept
+apart from tool_addition's synthesis concerns.
+
 ## 6. Record schema
 
 One JSONL file per session, `schema_version` on every line, raw JSON-RPC frames mirrored
@@ -288,16 +342,28 @@ version: 1
 servers:
   - name: crm
     command: ["npx", "-y", "@mcp/server-crm"]
+  - name: remote-crm            # v1 (F-39) — a real server reached over HTTP instead
+    url: "https://mcp.example.com/mcp"   # of a spawned local subprocess; mutually
+                                          # exclusive with `command` on the same entry
 
 # everything below optional, sane defaults
 record: {dir: .drifter/runs, redact: shape}
 agent: {mode: subprocess, command: "python agent.py --task '{task.prompt}'"}
+# v1 (F-38) — the other agent.mode value: no `command` is spawned by Drifter at all;
+# Drifter instead serves the replay proxy over HTTP (loopback-bound) and injects its
+# URL into the environment the caller's own process-launch mechanism uses.
+# agent: {mode: http, env_var: DRIFTER_PROXY_URL}
 execution: {mode: replay, fidelity_floor: 0.70, budget_calls: 500}
 baseline: {repeats: 10, max_calls: 200, cache: true}
 mutations: {profile: quick, seed: 42, exclude_tools: []}
 policy: {destructive: [], confirmation_required: []}
 tasks: [...]
 ```
+
+`agent.mode` was deliberately left unimplemented through Gate 3 (`cli/config.py`'s own
+docstring: "adding an unused field now would be exactly the kind of speculative
+surface CLAUDE.md's simplicity principle warns against") — F-38 is the point at which
+a second real mode exists and the field earns its place, not before.
 
 ## 12. CLI
 

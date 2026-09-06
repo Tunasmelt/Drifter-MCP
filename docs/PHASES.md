@@ -394,10 +394,69 @@ The actual handoff (the friend running this sequence unassisted) has not happene
 
 ## v1 — After Gate 4 only
 
-Not started until Gate 4 exits successfully. Scope, unchanged from SPEC.md:
+Gate 4 closed by explicit override, not by a passing exit test (see its own Status
+section above) — its kill criterion (whether F-34's subprocess adapter fits a real
+second agent's invocation pattern) is exactly what v1.5's own original text
+anticipated as the trigger to "pull forward" the HTTP agent adapter ahead of
+schedule. That's what's happening below: F-38 starts v1 first, deliberately, not
+because it was next in the original list, but because it's the direct retirement of
+the one risk Gate 4 left open. Struck from v1.5's list further down, not silently
+removed.
 
-- HTTP transport + URL-swap onboarding (the "change one config line" story, which
-  only applies once HTTP exists)
+### v1 — HTTP Agent Adapter (F-38)
+
+**Depends on:** F-34 (widens it). See `docs/SPEC.md` §5.1 for the transport research
+(current MCP spec confirmed: Streamable HTTP, not the deprecated HTTP+SSE transport;
+security requirements — `Origin` validation, loopback-only binding) and
+`docs/FEATURES.md`'s F-38 entry for the full technical/simple breakdown.
+
+#### Tasks
+
+- [ ] `cli/config.py`: add `AgentConfig.mode: Literal["subprocess", "http"] = "subprocess"`
+  (backward-compatible default) and `AgentConfig.env_var: str = "DRIFTER_PROXY_URL"`
+- [ ] `replay/replay_proxy.py` or a new `replay/replay_http.py`: serve `run_replay_proxy`
+  over `mcp.server.streamable_http_manager.StreamableHTTPSessionManager`, bound to
+  `127.0.0.1` on an ephemeral port, `Origin` validated per the MCP spec's own security
+  requirement — not optional, not a follow-up
+- [ ] `cli/subprocess_adapter.py`: new `run_agent_subprocess_http` (or a mode branch in
+  the existing function) — starts the HTTP proxy server, injects its URL into the
+  spawned process's environment under `AgentConfig.env_var`, spawns the agent, captures
+  its stdout as a plain string (no longer wire protocol — the final-answer capture
+  F-34's own docstring noted as dropped)
+- [ ] Reuse the exact shutdown discipline `run_agent_subprocess` already has (never
+  trust cooperative exit; terminate → kill fallback; bounded `timeout_s`) — this
+  project's own three-times-confirmed async-shutdown-hang pattern (CLAUDE.md) applies
+  identically to an HTTP server task as to a stdio pump, and needs its own TIMED test,
+  not just a passing one, per that same standard
+- [ ] `cli/doctor.py`: an `agent.mode: http` config must still be diagnosable —
+  actionable failure if the port can't bind, if the environment variable name collides
+  with something the agent already sets, etc.
+- [ ] A real reference agent (extend `tests/fixtures/scripted_agent.py` or add a
+  sibling) that connects via `streamable_http_client(env["DRIFTER_PROXY_URL"])`
+  instead of using its own stdin/stdout as the wire — the concrete thing F-38's
+  "Done when" bar is checked against
+- [ ] `SECURITY.md`: a new dated entry for the new local network listener (even
+  loopback-bound) — the first time this project has opened a socket at all
+
+#### Exit test
+
+A real agent that talks MCP over an HTTP-configured client (not a piped-stdio script)
+runs correctly under `agent.mode: http`, with its tool calls correctly captured and
+correlated to a trajectory — the same bar F-34 met for stdio, met again for HTTP.
+
+#### Kill criterion
+
+If a real agent framework's own HTTP MCP client can't be pointed at an
+environment-variable-supplied URL at all (e.g. it only accepts a URL via its own
+config file format, with no environment-variable override path), the "inject via
+env var" mechanism itself is too narrow — a config-file-templating mechanism
+becomes the next thing to build, not a variant of this one.
+
+### v1 — remaining scope (unchanged from SPEC.md, F-38 above pulled to the front)
+
+- F-39: HTTP real-server connection — the *other* half of "+HTTP in v1" (the "change
+  one config line" story for a user's real server, not the agent under test). Separate
+  from F-38, shares no code path with it, does not depend on F-38 landing first.
 - Synthetic replay provenance surfaced fully in reports
 - Remaining Level 0–1 mutation operators beyond the two shipped in Gate 3
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
@@ -410,9 +469,10 @@ Not started until Gate 4 exits successfully. Scope, unchanged from SPEC.md:
 
 ## v1.5
 
-Plan-only screening mode, HTTP agent adapter (unless pulled forward by a Gate 4 kill
-criterion), delta debugging (ddmin) for root-cause isolation, live read-only fallback
-with explicit per-tool authorization.
+Plan-only screening mode, ~~HTTP agent adapter (unless pulled forward by a Gate 4 kill
+criterion)~~ — pulled forward, see v1 above (Gate 4's kill criterion was left
+unresolved, exactly the condition this line named), delta debugging (ddmin) for
+root-cause isolation, live read-only fallback with explicit per-tool authorization.
 
 ## v2+
 
