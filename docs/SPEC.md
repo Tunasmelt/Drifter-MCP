@@ -552,5 +552,12 @@ when*.
     write until end-of-session (contradicting the recorder's own stated invariant that
     it's always the first record written) or accepting the hash may need a separate,
     later-arriving home in the schema — a real design decision, not a reflexive patch,
-    matching limitation 12's own precedent. Locked in by
-    `test_user_6_a_tool_call_before_the_first_list_tools_permanently_nulls_the_hash`.
+    matching limitation 12's own precedent. Locked in originally by
+    `tests/cli/gate4_dry_run/test_user_6.py`'s real-subprocess integration test
+    (`test_user_6_a_tool_call_before_the_first_list_tools_permanently_nulls_the_hash`),
+    and now also by a fast, direct unit test at the actual layer the bug lives in —
+    `tests/record/test_writer.py`'s
+    `test_tools_call_before_any_tools_list_permanently_nulls_the_hash` (plus
+    `test_tools_list_arriving_after_the_first_tools_call_is_too_late_to_help`,
+    confirming this is genuinely about ORDER, not about whether `tools/list` ever
+    happens at all) — `record/writer.py` had no dedicated unit-test file before this.

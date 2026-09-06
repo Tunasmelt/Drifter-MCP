@@ -33,6 +33,7 @@ from record.reader import read_session
 from record.schema import SessionStart, ToolCall, ToolsList
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
+CRASHING_SERVER = str(Path(__file__).parent.parent / "fixtures" / "crashing_server.py")
 
 # Drifter itself, invoked exactly as an MCP client config would invoke it:
 # `python -m record <real command> <real args...>`. See record/__main__.py.
@@ -161,6 +162,35 @@ async def test_run_passthrough_proxy_terminates_within_a_bounded_timeout(tmp_pat
 
     teardown_elapsed = anyio.current_time() - teardown_start
     assert teardown_elapsed < 1.0, f"shutdown took {teardown_elapsed:.2f}s — may be hanging"
+
+
+@pytest.mark.anyio
+async def test_proxy_shuts_down_promptly_when_the_real_server_crashes(tmp_path):
+    """Every other shutdown test in this module covers the AGENT
+    disconnecting cleanly. This is the other real direction: the actual
+    spawned server (not the agent) dying abruptly mid-session -- a real
+    crash (`os._exit(1)`, tests/fixtures/crashing_server.py), not a
+    cooperative exit a signal handler could smooth over. Timed, per
+    CLAUDE.md's own standard for this codebase's three-times-confirmed
+    shutdown-hang bug shape: a passing result alone isn't sufficient
+    evidence, the bound itself is the actual assertion."""
+    proxy_command = [sys.executable, "-m", "record", sys.executable, CRASHING_SERVER]
+    env = {"DRIFTER_RUNS_DIR": str(tmp_path / "runs"), "DRIFTER_RAW_DIR": str(tmp_path / "raw")}
+    proxied_params = StdioServerParameters(command=proxy_command[0], args=proxy_command[1:], env=env)
+
+    started = anyio.current_time()
+    with anyio.fail_after(10):
+        async with stdio_client(proxied_params) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                # The real server has already crashed by now (it exits
+                # right after answering initialize) -- the proxy must
+                # notice the dead child and tear down cleanly rather than
+                # hang waiting for a process that will never respond
+                # again.
+    elapsed = anyio.current_time() - started
+    assert elapsed < 10.0
+    assert elapsed < 5.0, f"proxy shutdown took {elapsed:.2f}s after the real server crashed -- investigate a hang"
 
 
 @pytest.mark.anyio

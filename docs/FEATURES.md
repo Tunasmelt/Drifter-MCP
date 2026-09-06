@@ -19,7 +19,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-02 | Structured recording (JSONL) | ✅ Built | Gate 1 |
 | F-03 | Raw frame mirroring | ✅ Built | Gate 1 |
 | F-04 | Secret redaction | ✅ Built | Gate 1, red-test-first |
-| F-05 | Environment fingerprinting | ⚠️ Built, real gap left | §15 limitation 14 — permanently null `tool_manifest_hash` if `list_tools()` isn't called first |
+| F-05 | Environment fingerprinting | ⚠️ Built, real gap left | §15 limitation 14 — permanently null `tool_manifest_hash` if `list_tools()` isn't called first; now covered by a direct `tests/record/test_writer.py` unit test (test-only, not fixed — see docs/CHANGELOG.md) |
 | F-06 | Trace-context segmentation | ✅ Built | Gate 1 |
 | F-07 | Heuristic segmentation (fallback) | ⚠️ Built, known gap | §15 limitation 8 — no signal for two unrelated calls with no idle gap |
 | F-08 | Data-flow reference tracking | ✅ Built | Gate 1 |

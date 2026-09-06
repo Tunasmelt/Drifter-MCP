@@ -6,6 +6,59 @@ not just a diff.
 
 ---
 
+## F-01–F-05 edge-case pass: `record/writer.py` gets its first dedicated unit-test file
+
+Asked directly to test F-01 through F-05 for edge cases and give F-05's real, known gap
+(SPEC.md §15 limitation 14) proper coverage. Confirmed explicitly with the user first
+that "cover it" meant test-only, not a fix — a real fix means either deferring
+`SessionStart`'s write until end-of-session (contradicting the recorder's own
+"always-first-record" invariant) or giving the hash a separate, later-arriving home in
+the schema, a genuine design decision this pass deliberately does not make.
+
+**`tests/record/test_writer.py` (new)** — `record/writer.py` (437 lines, the largest
+module in `record/`) had no dedicated unit-test file before this; it was only exercised
+indirectly through real-subprocess integration tests (`test_proxy.py`) and fixture-based
+read tests, neither of which can deterministically control exact message ORDERING —
+exactly what limitation 14 is about. 11 new tests, driven directly via `observe()` with
+hand-built JSON-RPC messages (no subprocess, sub-second total runtime):
+- `SessionStart` always `seq=0`; `seq` monotonic and never reused; `close()` idempotent.
+- A parse-error message increments `error_count` and writes nothing; a response with an
+  untracked request id is silently ignored, not crashed — both previously only implied
+  by the source, never directly tested.
+- Raw frame offsets stay correct and distinct across multiple sequential calls (the
+  existing integration test only ever checked one call).
+- Two `_meta.traceparent`-tagged trajectories are correctly kept separate, never merged.
+- **The real F-05 gap**, given its proper home: `tools/call` before any `tools/list`
+  permanently nulls `tool_manifest_hash`, confirmed directly at the layer the bug lives
+  in, plus a sharper version — `tools/list` arriving LATER in the same session is still
+  too late, confirming this is genuinely about order, not about whether `tools/list`
+  ever happens.
+- A purely empty session (bare `initialize`, no calls at all) still gets a `SessionStart`
+  flushed at `close()`, with a null hash — the documented "safety net," confirmed.
+
+**`tests/record/test_redact_unit.py`** — 7 new tests. Non-string/non-container values
+(int, bool, None, float) pass through `redact_secrets` completely unchanged; a secret
+embedded in surrounding text is substring-replaced, not whole-string-nuked (exact
+expected output, not just "the secret is gone"); empty strings/dicts/lists don't crash.
+`redact_rpc_payload` — the function specifically scoping redaction to `params`/`result`/
+`error.data` on the RAW FRAME MIRROR path, the exact place SECURITY.md calls out as easy
+to leave a gap in — had zero direct test coverage before this: now confirmed the
+envelope fields (`jsonrpc`/`id`/`method`, structural `error.code`/`message`) survive
+untouched, the payload fields get redacted, the input isn't mutated, and a bare
+notification with none of the optional fields doesn't raise `KeyError`.
+
+**`tests/record/test_proxy.py`** — 1 new test, `tests/fixtures/crashing_server.py`
+(new): a real, immediate crash (`os._exit(1)`, not a cooperative exit) in the spawned
+server, right after `initialize` — confirms the proxy notices the dead child and tears
+down promptly (timed, per this project's own standard for shutdown-path code) rather
+than hanging waiting for a process that will never respond again. Every existing
+shutdown test in this file covered the AGENT disconnecting; this is the other real
+direction. No bug found here — this test locks in correct existing behavior.
+
+Full suite: 61/61 in `tests/record/` (36 pre-existing + 25 new).
+
+---
+
 ## FEATURES.md gains a build-status table — 24/39 built, audited for creep vs. deliberate scope
 
 FEATURES.md was written pre-code (Gate 0) and, unlike PHASES.md (which gets dated

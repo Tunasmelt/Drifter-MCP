@@ -7,7 +7,7 @@ an over-eager catch-all would make Drifter's recordings useless (every tool
 name and identifier redacted) in the name of a guarantee nothing needed.
 """
 
-from record.redact import REDACTED, redact_secrets, redact_string
+from record.redact import REDACTED, redact_rpc_payload, redact_secrets, redact_string
 
 PLANTED_OPENAI_KEY = "sk-" + "abcd1234EFGH5678ijkl9012MNOP3456qrst7890UVWX"
 PLANTED_BEARER_TOKEN = "Bearer xT9fL2mQ8vC4nR7pW1sD6hK3jY5bE0gA"
@@ -58,3 +58,80 @@ def test_redact_secrets_does_not_mutate_input():
     original = {"api_key": PLANTED_OPENAI_KEY}
     redact_secrets(original)
     assert original["api_key"] == PLANTED_OPENAI_KEY
+
+
+def test_non_string_non_container_values_pass_through_unchanged():
+    """redact_secrets recurses into dict/list and redacts str -- every
+    other type (int, bool, None, float) has no string to match against
+    and must survive completely untouched, not be stringified or
+    dropped."""
+    for value in (42, True, False, None, 3.14):
+        assert redact_secrets(value) == value
+        assert redact_secrets({"k": value})["k"] == value
+
+
+def test_a_secret_embedded_in_surrounding_text_preserves_the_rest():
+    """redact_string does a substring substitution (pattern.sub), not a
+    whole-string replace-if-matched -- confirmed here with exact expected
+    output, not just "the secret is gone" (already covered) but "the
+    surrounding benign text survives," which matters for keeping redacted
+    recordings actually useful to read."""
+    text = f"Please use this key: {PLANTED_OPENAI_KEY} when calling the API."
+    result = redact_string(text)
+    assert result == f"Please use this key: {REDACTED} when calling the API."
+
+
+def test_empty_string_and_empty_containers_do_not_crash():
+    assert redact_string("") == ""
+    assert redact_secrets({}) == {}
+    assert redact_secrets([]) == []
+    assert redact_secrets({"nested": {"empty_list": []}}) == {"nested": {"empty_list": []}}
+
+
+# --- redact_rpc_payload: structural scoping (F-03's raw-mirror path) --------
+# Previously untested directly -- only exercised indirectly through
+# test_redaction.py's end-to-end planted-secret check, which never
+# confirmed the ENVELOPE fields (jsonrpc/id/method) survive untouched
+# specifically because they're structurally exempt, not because no
+# secret-shaped string happened to land there.
+
+
+def test_redact_rpc_payload_only_touches_params_result_and_error_data():
+    raw = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {"api_key": PLANTED_OPENAI_KEY},
+        "result": {"token": PLANTED_JWT},
+    }
+    redacted = redact_rpc_payload(raw)
+    assert redacted["jsonrpc"] == "2.0"  # envelope fields untouched
+    assert redacted["id"] == 7
+    assert redacted["method"] == "tools/call"
+    assert redacted["params"]["api_key"] == REDACTED
+    assert redacted["result"]["token"] == REDACTED
+
+
+def test_redact_rpc_payload_redacts_error_data_specifically():
+    raw = {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "error": {"code": -32000, "message": "failed", "data": {"leaked": PLANTED_BEARER_TOKEN}},
+    }
+    redacted = redact_rpc_payload(raw)
+    assert redacted["error"]["code"] == -32000  # structural error fields untouched
+    assert redacted["error"]["message"] == "failed"
+    assert redacted["error"]["data"]["leaked"] == REDACTED
+
+
+def test_redact_rpc_payload_does_not_mutate_the_input_dict():
+    raw = {"jsonrpc": "2.0", "id": 1, "params": {"api_key": PLANTED_OPENAI_KEY}}
+    redact_rpc_payload(raw)
+    assert raw["params"]["api_key"] == PLANTED_OPENAI_KEY
+
+
+def test_redact_rpc_payload_handles_a_message_with_none_of_the_optional_fields():
+    """A bare request/response with no params, result, or error at all
+    (e.g. a notification) must pass through without KeyError."""
+    raw = {"jsonrpc": "2.0", "method": "notifications/initialized"}
+    assert redact_rpc_payload(raw) == raw
