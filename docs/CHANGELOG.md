@@ -6,6 +6,43 @@ not just a diff.
 
 ---
 
+## FEATURES.md gains a build-status table — 24/39 built, audited for creep vs. deliberate scope
+
+FEATURES.md was written pre-code (Gate 0) and, unlike PHASES.md (which gets dated
+Status sections per gate) or SPEC.md (which gets numbered limitations), never gained a
+per-feature record of what's actually built versus still aspirational. Asked directly
+to audit the 24 features already marked done and classify what's left, what was
+deliberately scoped down with a documented reason, and what (if anything) crept beyond
+what was actually asked — a real accounting, not assumed from memory:
+
+- **Left out** (a real gap found empirically, after the fact, in a feature already
+  built): F-05/F-09 (limitation 14, null `tool_manifest_hash` on call-order), F-07
+  (limitation 8), F-09 (limitation 9), F-16 (limitation 13), F-11 (the still-open
+  tier-3 finding). None of these were planned narrowings — each was found by actually
+  running the thing against something real and locked in with a regression test.
+- **Deliberately scoped narrower, documented at build time**: F-16/F-17's closed-set
+  mechanism, F-18's minimal shared audit-log shape, F-23's zero-spread edge case, F-33's
+  missing F-26 classification, F-34's original stdio-only scope, F-35's Gate-3-minimal
+  orchestration, F-38's Kill-criterion-bounded widening. Every one has a doc trail
+  (a module docstring, a FEATURES.md note, or a CHANGELOG entry) written before or
+  during the narrower version shipping, not after being questioned.
+- **Scope creep**: one real, mild case — F-38's final-answer stdout capture (a
+  `.stdout.txt` sidecar file) wasn't strictly required by "widen the subprocess
+  adapter," added because F-34's own docstring had noted the capability as dropped and
+  restoring it became free once stdout stopped being the wire protocol. Narrowly scoped
+  (no consumer wired) and documented, but a judgment call beyond the literal ask, not
+  an instruction followed.
+
+The new table (top of FEATURES.md, before the per-module breakdown) records all of
+this plus every not-yet-built feature's status, and ends with a priority order for
+what to build next that's a restatement of docs/PHASES.md's own v1/v1.5/v2 dependency
+chain in one place, not a new ranking: F-39 first (scoped, lower-risk than F-38 was),
+then F-13 (the tier-3 gap, now "possibly blocking" rather than "nice to have"), then
+`policy/` (F-26 → F-25 → F-31/F-32), then `mine/` (F-28 → F-29 → F-30 → F-24's real
+authoring UX), then F-27/F-36's `drifter report` last.
+
+---
+
 ## F-38 re-audit: a fourth real bug found, 8 new edge-case tests
 
 A deliberate second pass over F-38's just-committed implementation, not new feature

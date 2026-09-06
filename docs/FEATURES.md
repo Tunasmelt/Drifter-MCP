@@ -5,6 +5,73 @@ Organized by module. Cross-reference SPEC.md for the invariants each feature mus
 
 ---
 
+## Build status (as of 2026-09-06, `.drifter/GATE_STATUS`: `gate: v1`)
+
+This table is the living answer to "what's actually built, what needs building, and
+what's left in something already built" — updated in place as gates close and features
+land, per this project's own discipline of fixing the locked planning surface rather
+than letting it drift from reality. See docs/CHANGELOG.md for the entry that added this
+table and docs/PHASES.md for gate-level narrative.
+
+| # | Feature | Status | Note |
+|---|---|---|---|
+| F-01 | Proxy passthrough (stdio) | ✅ Built | Gate 1 |
+| F-02 | Structured recording (JSONL) | ✅ Built | Gate 1 |
+| F-03 | Raw frame mirroring | ✅ Built | Gate 1 |
+| F-04 | Secret redaction | ✅ Built | Gate 1, red-test-first |
+| F-05 | Environment fingerprinting | ⚠️ Built, real gap left | §15 limitation 14 — permanently null `tool_manifest_hash` if `list_tools()` isn't called first |
+| F-06 | Trace-context segmentation | ✅ Built | Gate 1 |
+| F-07 | Heuristic segmentation (fallback) | ⚠️ Built, known gap | §15 limitation 8 — no signal for two unrelated calls with no idle gap |
+| F-08 | Data-flow reference tracking | ✅ Built | Gate 1 |
+| F-09 | `drifter observe` | ⚠️ Built, known gap | §15 limitation 9 — Ctrl+C doesn't wait for/terminate the real spawned server |
+| F-10 | `drifter stats` | ✅ Built | Gate 1 |
+| F-11 | Replay store | ⚠️ Built, exact-key only | Tier-3 finding (PHASES.md Gate 3) — may not be viable against any real agent alone |
+| F-12 | Inverse-mutation key resolution | ⚠️ Stub only | Never implemented past the Gate 2 stub — **needs building** if tier 2 replay is ever exercised for real |
+| F-13 | Semantic key resolution | ❌ Not built | **Needs building** — the tier-3 gap F-11's own limitation points at; no longer "nice-to-have," possibly blocking |
+| F-14 | Synthetic response generation | ⚠️ Scoped to `tool_addition` only | General schema-inference synthesis explicitly out of scope; deliberate |
+| F-15 | Fidelity computation and gating | ✅ Built | Gate 2 |
+| F-16 | `description_update` | ⚠️ Built, known gap | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it |
+| F-17 | `tool_addition` | ✅ Built | Gate 3, safety-reviewed |
+| F-18 | Mutation audit log | ⚠️ Minimal shared shape, deliberate | Not F-18's own eventual general log format — see `description_update.py`'s docstring |
+| F-19 | Cache-busting on mutated responses | ✅ Built | Gate 3 |
+| F-20 | Header integrity on live forwards | ✅ Built | Gate 1 (`record/proxy.py`'s live passthrough) |
+| F-21 | Baseline calibration | ✅ Built | Gate 2 |
+| F-22 | Baseline fidelity gating | ✅ Built | Gate 2 |
+| F-23 | Behavior effect-size scoring | ✅ Built | Gate 2, zero-spread edge case is a stated design decision |
+| F-24 | Task assertion engine | ⚠️ UNKNOWN-default only | No real assertion authoring exists — **needs building** for v1 (depends on F-30) |
+| F-25 | Safety verdict engine | ❌ Not built | **Needs building** — v1 scope, depends on F-26 |
+| F-26 | Tool risk classification | ❌ Not built | **Needs building** — `policy/` is empty; blocks F-25, F-33's full scope, F-37's classification checks |
+| F-27 | Adaptive repeat scheduling | ❌ Not built | **Needs building** — v1 scope |
+| F-28 | Signature grouping | ❌ Not built | **Needs building** — `mine/` is empty; deferred past Gate 3 deliberately (no real multi-week corpus yet) |
+| F-29 | Frequent subsequence mining (PrefixSpan) | ❌ Not built | **Needs building** — depends on F-28 |
+| F-30 | Task candidate generation + approval | ❌ Not built | **Needs building** — depends on F-29; blocks F-24's real authoring UX |
+| F-31 | Blast-radius preview | ❌ Not built | **Needs building** — v1 scope, live-mode safety |
+| F-32 | Budget and hard limits | ❌ Not built | **Needs building** — v1 scope (`drifter run`'s `--budget`/`--dry-run`) |
+| F-33 | `drifter init` | ⚠️ Built narrower than spec, deliberate | No F-26 classification (doesn't exist yet) — done-when bar still met |
+| F-34 | Subprocess agent adapter (stdio) | ✅ Built | Gate 2 scope, deliberately narrower than original spec text (now widened by F-38, not replaced) |
+| F-35 | `drifter run` | ✅ Built | Gate 3 minimal scope, deliberate (no `--budget`, no adaptive scheduling, no full report format) |
+| F-36 | `drifter score` / `drifter report` | ⚠️ `score` built, `report` not separate | `drifter report` (render from stored records without re-scoring) not built as its own command |
+| F-37 | `drifter doctor` | ⚠️ Gate 1 scope + F-38's http check | Classification-sanity checks explicitly deferred — need F-26 first |
+| F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
+| F-39 | HTTP real-server connection | ❌ Not built | **Needs building next** — the other half of "+HTTP in v1", lower risk than F-38 (confirmed drop-in stream shape against the SDK) |
+
+**Priority order for what to build next**, per docs/PHASES.md's own v1 ordering and the
+dependency chain above (not a re-ranking, just made explicit in one place):
+1. **F-39** — HTTP real-server connection. Scoped already, no code yet, lower risk than
+   F-38 was.
+2. **F-13** (semantic key resolution) — the tier-3 gap. No longer purely "nice to have":
+   F-11's own limitation says exact-tier-only replay may not be viable against any real
+   agent at all.
+3. **F-26 → F-25 → F-31/F-32** — the `policy/` module, in that dependency order (risk
+   classification unblocks the safety verdict engine and blast-radius preview).
+4. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
+   multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
+   first place, still true).
+5. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
+   no blocking dependents.
+
+---
+
 ## Module: `record/`
 
 ### F-01 Proxy passthrough (stdio)
