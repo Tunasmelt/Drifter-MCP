@@ -37,13 +37,21 @@ Four scope decisions, stated explicitly rather than discovered mid-review:
 
 3. No live server reachable, structurally: this module imports only
    `anyio` (for process spawning) and this project's own `replay_proxy`/
-   `record.writer`/`record.proxy` modules — never `mcp.client.stdio` or
-   anything else that could dial a real, network- or subprocess-spawned
-   MCP *server*. The spawned agent's only route to any tool response is
-   its own stdio, which this module wires to `run_replay_proxy` and
-   nothing else. Spawning the agent itself is F-34's whole purpose, not
-   a violation of that guarantee — the guarantee is about not reaching a
-   live *tool* server, not about not running the thing under test.
+   `record.writer`/`record.proxy`/`cli.http_proxy` modules — never
+   `mcp.client.stdio`, `mcp.client.streamable_http`, or anything else
+   that could dial OUT to a real, network- or subprocess-spawned MCP
+   *server*. `cli.http_proxy` (F-38, added for `mode: http` below) is a
+   SERVER Drifter itself hosts for the spawned agent to connect back to
+   — it never makes an outbound client connection of its own, so
+   importing it doesn't weaken this guarantee; it's the same "resolve
+   stage never reaches a live tool server" property, just served over a
+   different transport than stdio. The spawned agent's only route to any
+   tool response is either its own stdio (`mode: subprocess`) or the
+   loopback-only URL this module hands it via environment variable
+   (`mode: http`) — never a real server either way. Spawning the agent
+   itself is F-34's whole purpose, not a violation of that guarantee —
+   the guarantee is about not reaching a live *tool* server, not about
+   not running the thing under test.
 
 4. Process lifecycle: this project has been bitten twice by cooperative-
    shutdown hangs (`record/proxy.py`'s Prompt 6 fix, `cli/observe.py`'s
@@ -85,6 +93,7 @@ Four scope decisions, stated explicitly rather than discovered mid-review:
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -94,6 +103,7 @@ from anyio.abc import Process
 from anyio.streams.text import TextReceiveStream
 from mcp.shared.message import SessionMessage
 
+from cli.http_proxy import serve_replay_over_http
 from record.schema import ToolDescriptor
 from record.writer import SessionRecorder
 from replay.replay_proxy import run_replay_proxy
@@ -113,12 +123,17 @@ def make_run_once(
     cwd: Path | None = None,
     timeout_s: float | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
+    agent_mode: str = "subprocess",
+    env_var: str = "DRIFTER_PROXY_URL",
 ):
-    """Binds `run_agent_subprocess`'s fixed parameters once and returns a
-    zero-arg, synchronous callable matching
+    """Binds `run_agent_subprocess`'s (or, for `agent_mode="http"`,
+    `run_agent_subprocess_http`'s — F-38) fixed parameters once and
+    returns a zero-arg, synchronous callable matching
     `evaluate.baseline.run_baseline`'s `run_once: Callable[[], Path]`
     contract exactly — each call spawns a fresh agent subprocess and
-    returns its session JSONL path.
+    returns its session JSONL path. `agent_mode`/`env_var` mirror
+    `cli.config.AgentConfig`'s own fields; this function still takes
+    already-resolved values, not a config object (see point 1 below).
 
     Module placement: docs/FEATURES.md names neither this function nor a
     dedicated composition step. F-34 (this module) is the adapter in
@@ -165,7 +180,25 @@ def make_run_once(
     trips over.
     """
 
+    if agent_mode not in ("subprocess", "http"):
+        raise ValueError(f"unknown agent_mode {agent_mode!r} — must be 'subprocess' or 'http'")
+
     def run_once() -> Path:
+        if agent_mode == "http":
+            return anyio.run(
+                run_agent_subprocess_http,
+                command,
+                replay_store,
+                server_name,
+                tools_served,
+                session_dir,
+                raw_dir,
+                env,
+                cwd,
+                timeout_s,
+                synthetic_tool_names,
+                env_var,
+            )
         return anyio.run(
             run_agent_subprocess,
             command,
@@ -298,6 +331,96 @@ async def run_agent_subprocess(
     # make_run_once for the caller this matters for.
     if not recorder.jsonl_path.exists():
         raise RuntimeError(f"agent subprocess produced no session JSONL at {recorder.jsonl_path}")
+    return recorder.jsonl_path
+
+
+async def _capture_stdout_as_text(process: Process, chunks: list[str]) -> None:
+    """Under `mode: http` the agent's stdout is no longer occupied by the
+    wire protocol (that's now the HTTP connection) — captured as plain
+    text instead of parsed as JSON-RPC, restoring the "final answer"
+    string this module's own docstring (point 2) noted as dropped when
+    `mode: subprocess` was the only mode. Written to a sidecar file next
+    to the session JSONL (below), not threaded through `run_once`'s
+    return value: no consumer for it exists yet (F-24/F-30 territory, not
+    this feature's job — see docs/FEATURES.md's F-38 entry), and adding an
+    unused return-value shape now would be exactly the kind of
+    speculative surface CLAUDE.md's simplicity principle warns against.
+    """
+    assert process.stdout is not None
+    async for chunk in TextReceiveStream(process.stdout, encoding="utf-8", errors="replace"):
+        chunks.append(chunk)
+
+
+async def run_agent_subprocess_http(
+    command: Sequence[str],
+    replay_store: ReplayStore,
+    server_name: str,
+    tools_served: list[ToolDescriptor],
+    session_dir: Path,
+    raw_dir: Path,
+    env: dict[str, str] | None = None,
+    cwd: Path | None = None,
+    timeout_s: float | None = None,
+    synthetic_tool_names: frozenset[str] = frozenset(),
+    env_var: str = "DRIFTER_PROXY_URL",
+) -> Path:
+    """The `mode: http` sibling of `run_agent_subprocess` (F-38, docs/SPEC.md
+    §5.1): instead of wiring the spawned agent's own stdin/stdout to an
+    in-process replay proxy, serves the proxy over real, loopback-bound
+    Streamable HTTP (`cli.http_proxy.serve_replay_over_http`) and injects
+    its URL into the agent's environment under `env_var`. The agent is
+    still spawned by Drifter, same as `mode: subprocess` — this widens
+    HOW it reaches the proxy, not who launches it (docs/FEATURES.md's
+    F-38 entry, and its own Kill criterion in docs/PHASES.md, are explicit
+    that "point at an already-running service" is a different, out-of-
+    scope capability).
+
+    Same process-lifecycle discipline as `run_agent_subprocess` (module
+    docstring point 4): `_ensure_process_stopped` always runs from a
+    `finally`, so the agent is never left running. The HTTP server's own
+    shutdown (`serve_replay_over_http`'s context manager) is likewise
+    never forcibly cancelled — see that module's own docstring for the
+    real, empirically-found reason (a raw `WinError 995` from cancelling
+    mid-`accept()` on Windows) `should_exit` plus a graceful task-group
+    exit is used instead of `cancel_scope.cancel()`.
+    """
+    recorder = SessionRecorder(session_dir=session_dir, raw_dir=raw_dir, server_name=server_name)
+    stdout_chunks: list[str] = []
+
+    async with serve_replay_over_http(
+        replay_store, server_name, tools_served, recorder.observe, synthetic_tool_names
+    ) as url:
+        # Found empirically, not assumed: passing env=None straight
+        # through to anyio.open_process (as run_agent_subprocess's own
+        # stdio mode does) inherits the real parent environment --
+        # standard subprocess.Popen semantics. Building a NEW dict here
+        # (even one that starts from `env or {}`) instead REPLACES the
+        # child's environment entirely, silently dropping PATH/SYSTEMROOT/
+        # everything else a real interpreter and its networking stack
+        # need — confirmed as the actual cause of a real agent failing
+        # to connect at all (zero recorded calls, not a clean miss) before
+        # this fix. `os.environ` is the real inherited base; `env` and
+        # `env_var` are overlaid on top of it, never a replacement for it.
+        process_env = {**os.environ, **(env or {}), env_var: url}
+        process = await anyio.open_process(list(command), env=process_env, cwd=cwd)
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(_capture_stdout_as_text, process, stdout_chunks)
+                with anyio.move_on_after(timeout_s):
+                    await process.wait()
+                tg.cancel_scope.cancel()
+        finally:
+            await _ensure_process_stopped(process)
+
+    recorder.close()
+
+    if not recorder.jsonl_path.exists():
+        raise RuntimeError(f"agent subprocess produced no session JSONL at {recorder.jsonl_path}")
+
+    final_answer = "".join(stdout_chunks)
+    if final_answer:
+        recorder.jsonl_path.with_suffix(".stdout.txt").write_text(final_answer, encoding="utf-8")
+
     return recorder.jsonl_path
 
 

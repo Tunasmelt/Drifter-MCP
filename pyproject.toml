@@ -9,6 +9,17 @@ dependencies = [
     "mcp>=2.0.0",
     "pydantic>=2.0",
     "pyyaml>=6.0.3",
+    # F-38 (docs/SPEC.md §5.1): cli/http_proxy.py imports uvicorn directly to
+    # host the HTTP agent adapter's ASGI app. Already present transitively via
+    # `mcp` (confirmed via `uv pip list` before this feature was built), but
+    # declared explicitly now that this project's own code imports it
+    # directly -- relying on a transitive pin for a direct import is fragile
+    # to a future `mcp` release dropping or reshaping it.
+    "uvicorn>=0.34",
+    # cli/http_proxy.py also imports sse_starlette.sse.AppStatus directly, to
+    # work around a real, confirmed cross-invocation bug in that library (see
+    # http_proxy.py's own docstring) -- same reasoning as uvicorn above.
+    "sse-starlette>=2.0",
 ]
 
 [project.scripts]

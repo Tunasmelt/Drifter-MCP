@@ -93,6 +93,8 @@ def run_mutation_comparison(
     repeats: int | None = None,
     calibration: Calibration | None = None,
     timeout_s: float | None = DEFAULT_TIMEOUT_S,
+    agent_mode: str = "subprocess",
+    agent_env_var: str = "DRIFTER_PROXY_URL",
 ) -> RunResult:
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
@@ -119,6 +121,8 @@ def run_mutation_comparison(
         session_dir=session_dir / "baseline",
         raw_dir=raw_dir / "baseline",
         timeout_s=timeout_s,
+        agent_mode=agent_mode,
+        env_var=agent_env_var,
     )
     baseline_result = run_baseline(task_id, baseline_run_once, repeats=repeats, calibration=calibration)
 
@@ -140,6 +144,8 @@ def run_mutation_comparison(
         raw_dir=raw_dir / "mutated",
         timeout_s=timeout_s,
         synthetic_tool_names=synthetic_tool_names,
+        agent_mode=agent_mode,
+        env_var=agent_env_var,
     )
     mutated_result = run_baseline(f"{task_id}__mutated_{operator}", mutated_run_once, repeats=repeats, calibration=calibration)
 
@@ -240,5 +246,7 @@ def run_run(
         seed=seed,
         repeats=repeats,
         timeout_s=timeout_s,
+        agent_mode=config.agent.mode,
+        agent_env_var=config.agent.env_var,
     )
     output_stream.write(render_run_result(result))

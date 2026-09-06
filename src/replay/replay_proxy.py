@@ -228,71 +228,22 @@ def _synthesize_call_tool_result(hit: RecordedResponse) -> types.CallToolResult:
     return types.CallToolResult(content=[placeholder] * content_length, is_error=bool(hit.is_error))
 
 
-async def run_replay_proxy(
-    read_stream,
-    write_stream,
+def build_replay_server(
     replay_store: ReplayStore,
     server_name: str,
     tools_served: list[ToolDescriptor],
     on_message: MessageObserver | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
-) -> None:
-    """Serves one MCP session over `read_stream`/`write_stream` entirely
-    from `replay_store` and `tools_served`. Stream-parameterized (matching
-    `Server.run()`'s own shape) rather than hardcoding
-    `mcp.server.stdio.stdio_server()` internally: real stdio use and
-    in-memory test use both just pass different streams in — how this
-    gets pointed at a real agent (a stdio-wrapping entry point, the
-    subprocess adapter that would launch it) is explicitly a separate,
-    later task, not decided here.
-
-    `tools/list` is served from `tools_served` as given — this function
-    doesn't read the manifest itself; see `tools_served_from_session` for
-    the "read it from the same session file" path.
-
-    `tools/call` resolves via `replay_store.lookup(server_name, ...)`:
-    HIT (not a fault) -> a synthesized `CallToolResult` carrying the
-    recorded `is_error`. HIT (fault=True) -> `MCPError(REPLAY_FAULT_CODE)`
-    — replaying a recorded protocol-level failure faithfully means
-    responding with a protocol-level error, not a fake tool result. MISS
-    -> `MCPError(REPLAY_MISS_CODE)`. Both are raised from the handler and
-    propagate through `mcp.server.lowlevel.Server`'s dispatch as genuine
-    wire-level JSON-RPC errors (verified directly against this SDK's
-    dispatch code, not assumed: raising a plain exception from a
-    lowlevel `Server` handler is not caught and converted to
-    `is_error=True` the way `mcp.server.mcpserver.MCPServer`'s
-    convenience wrapper does — that swallowing lives in `MCPServer`'s own
-    `_handle_call_tool`, not in the lower-level dispatch this module
-    uses).
-
-    `synthetic_tool_names`, if given, names tools that resolve via
-    F-14-scoped-to-tool_addition synthesis on a `replay_store` MISS
-    instead of `MCPError(REPLAY_MISS_CODE)` — the injected tool a
-    `mutate.tool_addition` mutation added to `tools_served`, which by
-    definition (docs/SPEC.md §7) never has a prior recording, so an ordinary
-    MISS would be indistinguishable from "an existing tool's call was
-    never recorded," losing exactly the "reported separately, excluded
-    from the fidelity denominator" distinction docs/SPEC.md §7 requires.
-    The wire response the agent actually receives is a clean, generic
-    placeholder (`_synthesize_added_tool_result`); a *separate* dict,
-    carrying `SYNTHETIC_RESULT_MARKER_KEY`, is what reaches `on_message`
-    for recording — never sent to the agent (see `record/schema.py`'s
-    marker-key docstring). A name in `synthetic_tool_names` that's also
-    a real `ReplayStore` HIT still resolves as an ordinary HIT — this
-    only applies on MISS, so a recorded, exact-tier-matched call to a
-    once-synthetic tool (impossible today, since nothing ever calls a
-    tool before it's added, but not structurally prevented) is never
-    silently downgraded to synthetic.
-
-    `on_message`, if given, receives synthesized `JSONRPCRequest`/
-    `JSONRPCResponse`/`JSONRPCError` objects matching exactly what
-    `record/writer.py`'s `SessionRecorder.observe()` already expects —
-    see this module's docstring for why synthesis is necessary here
-    (the framework negotiates `initialize` and pre-parses dispatch, so
-    there are no raw frames to tap) and for the two documented,
-    deliberate departures from live recording (eager one-time
-    `initialize`+`tools/list` synthesis; MISS and replayed-fault both
-    recorded as `fault=True`).
+) -> Server:
+    """Builds the `mcp.server.lowlevel.Server` app that answers a session
+    entirely from `replay_store`/`tools_served` — extracted out of
+    `run_replay_proxy` (F-38, docs/SPEC.md §5.1) so an HTTP-serving caller
+    (`cli/subprocess_adapter.py`'s `mode: http` path) can host the SAME
+    app via `Server.streamable_http_app()`/`StreamableHTTPSessionManager`
+    across many connections, instead of the one-shot `server.run(read,
+    write, ...)` a single stdio session uses. Pure extraction, zero
+    behavior change for the existing stdio/in-memory callers below —
+    `run_replay_proxy` is now a two-line wrapper over this function.
     """
     tools = [_to_wire_tool(t) for t in tools_served]
     request_ids = count(1)
@@ -380,5 +331,79 @@ async def run_replay_proxy(
         )
         return result
 
-    server = Server(name=f"drifter-replay-{server_name}", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+    return Server(name=f"drifter-replay-{server_name}", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+
+
+async def run_replay_proxy(
+    read_stream,
+    write_stream,
+    replay_store: ReplayStore,
+    server_name: str,
+    tools_served: list[ToolDescriptor],
+    on_message: MessageObserver | None = None,
+    synthetic_tool_names: frozenset[str] = frozenset(),
+) -> None:
+    """Serves one MCP session over `read_stream`/`write_stream` entirely
+    from `replay_store` and `tools_served`. Stream-parameterized (matching
+    `Server.run()`'s own shape) rather than hardcoding
+    `mcp.server.stdio.stdio_server()` internally: real stdio use and
+    in-memory test use both just pass different streams in — how this
+    gets pointed at a real agent (a stdio-wrapping entry point, the
+    subprocess adapter that would launch it) is explicitly a separate,
+    later task, not decided here.
+
+    `tools/list` is served from `tools_served` as given — this function
+    doesn't read the manifest itself; see `tools_served_from_session` for
+    the "read it from the same session file" path.
+
+    `tools/call` resolves via `replay_store.lookup(server_name, ...)`:
+    HIT (not a fault) -> a synthesized `CallToolResult` carrying the
+    recorded `is_error`. HIT (fault=True) -> `MCPError(REPLAY_FAULT_CODE)`
+    — replaying a recorded protocol-level failure faithfully means
+    responding with a protocol-level error, not a fake tool result. MISS
+    -> `MCPError(REPLAY_MISS_CODE)`. Both are raised from the handler and
+    propagate through `mcp.server.lowlevel.Server`'s dispatch as genuine
+    wire-level JSON-RPC errors (verified directly against this SDK's
+    dispatch code, not assumed: raising a plain exception from a
+    lowlevel `Server` handler is not caught and converted to
+    `is_error=True` the way `mcp.server.mcpserver.MCPServer`'s
+    convenience wrapper does — that swallowing lives in `MCPServer`'s own
+    `_handle_call_tool`, not in the lower-level dispatch this module
+    uses).
+
+    `synthetic_tool_names`, if given, names tools that resolve via
+    F-14-scoped-to-tool_addition synthesis on a `replay_store` MISS
+    instead of `MCPError(REPLAY_MISS_CODE)` — the injected tool a
+    `mutate.tool_addition` mutation added to `tools_served`, which by
+    definition (docs/SPEC.md §7) never has a prior recording, so an ordinary
+    MISS would be indistinguishable from "an existing tool's call was
+    never recorded," losing exactly the "reported separately, excluded
+    from the fidelity denominator" distinction docs/SPEC.md §7 requires.
+    The wire response the agent actually receives is a clean, generic
+    placeholder (`_synthesize_added_tool_result`); a *separate* dict,
+    carrying `SYNTHETIC_RESULT_MARKER_KEY`, is what reaches `on_message`
+    for recording — never sent to the agent (see `record/schema.py`'s
+    marker-key docstring). A name in `synthetic_tool_names` that's also
+    a real `ReplayStore` HIT still resolves as an ordinary HIT — this
+    only applies on MISS, so a recorded, exact-tier-matched call to a
+    once-synthetic tool (impossible today, since nothing ever calls a
+    tool before it's added, but not structurally prevented) is never
+    silently downgraded to synthetic.
+
+    `on_message`, if given, receives synthesized `JSONRPCRequest`/
+    `JSONRPCResponse`/`JSONRPCError` objects matching exactly what
+    `record/writer.py`'s `SessionRecorder.observe()` already expects —
+    see this module's docstring for why synthesis is necessary here
+    (the framework negotiates `initialize` and pre-parses dispatch, so
+    there are no raw frames to tap) and for the two documented,
+    deliberate departures from live recording (eager one-time
+    `initialize`+`tools/list` synthesis; MISS and replayed-fault both
+    recorded as `fault=True`).
+
+    A thin wrapper as of F-38: all the actual response logic lives in
+    `build_replay_server`, above, so an HTTP-serving caller can host the
+    same app across many connections instead of one `server.run()` per
+    stream pair.
+    """
+    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names)
     await server.run(read_stream, write_stream, server.create_initialization_options())

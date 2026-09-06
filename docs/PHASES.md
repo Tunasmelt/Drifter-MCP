@@ -412,37 +412,66 @@ security requirements — `Origin` validation, loopback-only binding) and
 
 #### Tasks
 
-- [ ] `cli/config.py`: add `AgentConfig.mode: Literal["subprocess", "http"] = "subprocess"`
-  (backward-compatible default) and `AgentConfig.env_var: str = "DRIFTER_PROXY_URL"`
-- [ ] `replay/replay_proxy.py` or a new `replay/replay_http.py`: serve `run_replay_proxy`
-  over `mcp.server.streamable_http_manager.StreamableHTTPSessionManager`, bound to
-  `127.0.0.1` on an ephemeral port, `Origin` validated per the MCP spec's own security
-  requirement — not optional, not a follow-up
-- [ ] `cli/subprocess_adapter.py`: new `run_agent_subprocess_http` (or a mode branch in
-  the existing function) — starts the HTTP proxy server, injects its URL into the
-  spawned process's environment under `AgentConfig.env_var`, spawns the agent, captures
-  its stdout as a plain string (no longer wire protocol — the final-answer capture
-  F-34's own docstring noted as dropped)
-- [ ] Reuse the exact shutdown discipline `run_agent_subprocess` already has (never
-  trust cooperative exit; terminate → kill fallback; bounded `timeout_s`) — this
-  project's own three-times-confirmed async-shutdown-hang pattern (CLAUDE.md) applies
-  identically to an HTTP server task as to a stdio pump, and needs its own TIMED test,
-  not just a passing one, per that same standard
-- [ ] `cli/doctor.py`: an `agent.mode: http` config must still be diagnosable —
-  actionable failure if the port can't bind, if the environment variable name collides
-  with something the agent already sets, etc.
-- [ ] A real reference agent (extend `tests/fixtures/scripted_agent.py` or add a
-  sibling) that connects via `streamable_http_client(env["DRIFTER_PROXY_URL"])`
-  instead of using its own stdin/stdout as the wire — the concrete thing F-38's
-  "Done when" bar is checked against
-- [ ] `SECURITY.md`: a new dated entry for the new local network listener (even
-  loopback-bound) — the first time this project has opened a socket at all
+- [x] `cli/config.py`: `AgentConfig.mode: Literal["subprocess", "http"] = "subprocess"`
+  and `AgentConfig.env_var: str = "DRIFTER_PROXY_URL"`, both backward-compatible
+  defaults (17 tests, `tests/cli/test_config.py`)
+- [x] `replay/replay_proxy.py`: extracted `build_replay_server()` (pure refactor, zero
+  behavior change — the existing 34-test replay/run/replay-serve/kill-criterion suite
+  passed unchanged) so `cli/http_proxy.py`'s new `serve_replay_over_http()` can host
+  the same app via `Server.streamable_http_app()` across many HTTP connections,
+  loopback-bound, `Origin`-validated via `TransportSecuritySettings` (confirmed against
+  the SDK's actual validation source, not the settings model alone — an absent Origin
+  header always passes, matching real non-browser MCP clients; a foreign browser Origin
+  is rejected, confirmed against a real request in `tests/cli/test_http_proxy.py`)
+- [x] `cli/subprocess_adapter.py`: `run_agent_subprocess_http` + a `mode` branch in
+  `make_run_once`. Real bug found and fixed while building this: the first version
+  REPLACED the child's environment (`{**(env or {}), env_var: url}`) instead of
+  inheriting it, silently dropping PATH/SYSTEMROOT and causing the agent to fail to
+  connect with zero recorded calls — fixed to `{**os.environ, **(env or {}), env_var:
+  url}`, confirmed via `test_agent_subprocess_http_produces_a_real_parseable_session...`
+  going from failing to passing. Final-answer stdout captured to a `.stdout.txt`
+  sidecar next to the session JSONL (F-34's dropped capability, restored, but not
+  wired to any consumer yet per F-38's own scope note)
+- [x] Shutdown discipline reused (`_ensure_process_stopped`), plus its own TIMED tests:
+  `test_shuts_down_promptly_after_a_real_client_connects_and_disconnects`
+  (`cli/http_proxy.py`) and `test_agent_that_never_connects_times_out_and_leaves_no_
+  process_running` (`cli/subprocess_adapter.py`). A second real bug found here too:
+  the first implementation forcibly cancelled uvicorn's serve task
+  (`tg.cancel_scope.cancel()`), which raised a raw `WinError 995` while mid-`accept()`
+  on Windows — fixed by using `uv_server.should_exit = True` and a graceful task-group
+  exit instead (see `cli/http_proxy.py`'s own docstring for the full account)
+- [x] `cli/doctor.py`: an `agent.mode: http` config now gets a real check — a loopback
+  ephemeral bind probe (actionable failure if it can't bind), plus a non-fatal warning
+  if `env_var`'s name is already set in the environment (13 tests,
+  `tests/cli/test_doctor.py`)
+- [x] `tests/fixtures/scripted_agent.py` extended with a real HTTP mode
+  (`_main_http`/`_main_stdio`, sharing one `_run_specs` loop) — connects via
+  `streamable_http_client` when `DRIFTER_PROXY_URL` (or a configurable-by-env-var-name
+  override) is set, otherwise falls back to its original stdio behavior unchanged (25
+  pre-existing stdio-mode tests re-run and passed after this refactor)
+- [x] `SECURITY.md` gap 3 — written during planning, before this code existed
+- [x] `cli/run.py`: `run_mutation_comparison`/`run_run` wired to pass `agent.mode`/
+  `agent.env_var` through end to end — `test_run_run_end_to_end_via_config_with_agent_
+  mode_http` runs the real config-driven `drifter run` path, not just the lower-level
+  functions directly
+- [x] `pyproject.toml`: `uvicorn` added as an explicit direct dependency (was already
+  present transitively via `mcp`, but this project's own code now imports it directly)
+
+Full new-test count: 6 (`test_http_proxy.py`) + 6 (`test_subprocess_adapter_http.py`)
++ 4 (`test_config.py` mode/env_var) + 4 (`test_doctor.py` http checks) + 1
+(`test_run.py` config-driven http end-to-end) = 21, plus the `replay_proxy.py`
+extraction verified against the existing 34-test suite unchanged.
 
 #### Exit test
 
 A real agent that talks MCP over an HTTP-configured client (not a piped-stdio script)
 runs correctly under `agent.mode: http`, with its tool calls correctly captured and
 correlated to a trajectory — the same bar F-34 met for stdio, met again for HTTP.
+**Met**: `tests/cli/test_subprocess_adapter_http.py`'s
+`test_agent_subprocess_http_produces_a_real_parseable_session_with_replayed_hits` and
+`tests/cli/test_run.py`'s `test_run_run_end_to_end_via_config_with_agent_mode_http`
+both confirm this against the real scripted-agent HTTP reference implementation
+through the real config-driven `drifter run` entry point.
 
 #### Kill criterion
 

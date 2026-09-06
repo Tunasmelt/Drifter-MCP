@@ -85,6 +85,42 @@ def test_server_with_empty_command_raises_config_error(tmp_path):
         load_config(_write(tmp_path, text))
 
 
+# --- agent.mode / agent.env_var (F-38) --------------------------------------
+
+
+def test_agent_mode_defaults_to_subprocess_for_backward_compatibility(tmp_path):
+    """Every drifter.yaml written before F-38 has no `mode` key at all --
+    it must keep behaving exactly as it always did, not start requiring
+    a new field."""
+    text = VALID_YAML + '\nagent:\n  command: ["python", "agent.py"]\n'
+    config = load_config(_write(tmp_path, text))
+    assert config.agent.mode == "subprocess"
+
+
+def test_agent_env_var_defaults_to_drifter_proxy_url(tmp_path):
+    text = VALID_YAML + '\nagent:\n  command: ["python", "agent.py"]\n'
+    config = load_config(_write(tmp_path, text))
+    assert config.agent.env_var == "DRIFTER_PROXY_URL"
+
+
+def test_agent_mode_http_is_honored(tmp_path):
+    text = VALID_YAML + '\nagent:\n  command: ["python", "agent.py"]\n  mode: http\n'
+    config = load_config(_write(tmp_path, text))
+    assert config.agent.mode == "http"
+
+
+def test_agent_env_var_is_honored_when_specified(tmp_path):
+    text = VALID_YAML + '\nagent:\n  command: ["python", "agent.py"]\n  mode: http\n  env_var: MY_CUSTOM_URL\n'
+    config = load_config(_write(tmp_path, text))
+    assert config.agent.env_var == "MY_CUSTOM_URL"
+
+
+def test_agent_mode_rejects_unknown_values(tmp_path):
+    text = VALID_YAML + '\nagent:\n  command: ["python", "agent.py"]\n  mode: carrier_pigeon\n'
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, text))
+
+
 def test_unknown_top_level_keys_do_not_break_loading(tmp_path):
     # Later-gate blocks (baseline, mutations, tasks, policy) already
     # present in a hand-written drifter.yaml must not be rejected —

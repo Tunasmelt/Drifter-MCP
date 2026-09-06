@@ -197,6 +197,38 @@ def test_run_mutation_comparison_description_update_end_to_end(tmp_path):
     assert "desc_update_task" in output
 
 
+# --- real end-to-end: agent.mode: http (F-38) --------------------------------
+
+
+def test_run_run_end_to_end_via_config_with_agent_mode_http(tmp_path):
+    """The actual public entry point, agent.mode: http this time -- the
+    real config-driven path a user's drifter.yaml would exercise, not
+    run_mutation_comparison's agent_mode parameter called directly."""
+    calls = _golden_calls()[:2]
+    command_json = json.dumps([sys.executable, str(SCRIPTED_AGENT), *(_spec(c.tool_name, c.arguments) for c in calls)])
+    text = (
+        VALID_YAML_NO_AGENT
+        + f"\nagent:\n  command: {command_json}\n  mode: http\n"
+    )
+    config_path = _write_config(tmp_path, text)
+
+    out = io.StringIO()
+    run_run(
+        config_path=config_path,
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        task_id="http_mode_task",
+        operator="description_update",
+        runs_dir=tmp_path / "runs",
+        repeats=1,
+        timeout_s=30.0,
+        output_stream=out,
+    )
+    output = out.getvalue()
+    assert "http_mode_task" in output
+    assert "NO_REGRESSION" in output
+
+
 # --- real end-to-end: tool_addition ------------------------------------------
 
 

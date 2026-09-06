@@ -175,6 +175,54 @@ def test_run_doctor_against_the_real_repo_drifter_yaml():
     assert "[ OK ] config" in out.getvalue()
 
 
+# --- agent.mode: http diagnosability (F-38) ---------------------------------
+
+
+def _drifter_yaml_with_http_agent(tmp_path: Path, env_var: str = "DRIFTER_PROXY_URL") -> Path:
+    config_path = _drifter_yaml(tmp_path, [("fake", [sys.executable, FIXTURE_SERVER])])
+    text = config_path.read_text(encoding="utf-8")
+    text += f"\nagent:\n  command: ['python', 'agent.py']\n  mode: http\n  env_var: {env_var}\n"
+    config_path.write_text(text, encoding="utf-8")
+    return config_path
+
+
+def test_run_doctor_passes_an_http_agent_mode_when_loopback_binding_works(tmp_path):
+    config_path = _drifter_yaml_with_http_agent(tmp_path)
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    assert ok is True
+    assert "[ OK ] agent (mode: http)" in out.getvalue()
+
+
+def test_run_doctor_warns_when_env_var_collides_with_an_existing_variable(tmp_path, monkeypatch):
+    """Not fatal (the real run overlays it on top anyway -- see
+    cli/subprocess_adapter.py's run_agent_subprocess_http), but worth
+    surfacing: a user who already has DRIFTER_PROXY_URL set in their own
+    shell for an unrelated reason should be told, not silently
+    surprised."""
+    monkeypatch.setenv("DRIFTER_PROXY_URL", "http://something-else:1234/mcp")
+    config_path = _drifter_yaml_with_http_agent(tmp_path)
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    text = out.getvalue()
+    assert ok is True  # a warning, not a failure
+    assert "DRIFTER_PROXY_URL" in text
+    assert "already set" in text
+
+
+def test_run_doctor_subprocess_mode_agent_is_not_checked_for_http_binding(tmp_path):
+    """mode: subprocess (the default, and every pre-F-38 config) must not
+    suddenly grow a new doctor check it never needed."""
+    config_path = _drifter_yaml(tmp_path, [("fake", [sys.executable, FIXTURE_SERVER])])
+    text = config_path.read_text(encoding="utf-8") + "\nagent:\n  command: ['python', 'agent.py']\n"
+    config_path.write_text(text, encoding="utf-8")
+
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    assert ok is True
+    assert "agent (mode:" not in out.getvalue()
+
+
 def test_calibration_doctor_timeout_has_a_default():
     assert Calibration().doctor.connectivity_timeout_seconds == 10
 

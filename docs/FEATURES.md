@@ -523,7 +523,26 @@ real agent frameworks outside a bare CLI script actually work.
 (not a piped-stdio script) runs correctly under `agent.mode: http`, with its tool
 calls correctly captured — the same bar F-34 met for stdio, met again for HTTP. This
 is v1's first priority specifically because it's the direct retirement of Gate 4's
-own unresolved kill criterion (docs/PHASES.md, docs/CHANGELOG.md).
+own unresolved kill criterion (docs/PHASES.md, docs/CHANGELOG.md). **Met.**
+
+**Built, docs/PHASES.md's v1 task list has the full account.** Three real bugs found and
+fixed during implementation, not just the happy path getting a passing test on the
+first try:
+1. `run_agent_subprocess_http` initially REPLACED the spawned agent's environment
+   instead of inheriting it, silently dropping `PATH`/`SYSTEMROOT` and causing every
+   real agent to fail to connect (zero recorded calls, no exception).
+2. Forcibly cancelling uvicorn's serve task on shutdown raised a raw `WinError 995`
+   mid-`accept()` on Windows — fixed with `should_exit` + a graceful task-group exit.
+3. The severe one: `sse_starlette.sse.AppStatus.should_exit` is a bare class
+   attribute shared across every server this process ever starts — the FIRST
+   `agent.mode: http` run in a process always worked, and every subsequent one
+   silently failed its first real request. This would have made the feature
+   completely non-functional for its actual real use case
+   (`evaluate.baseline.run_baseline`'s `repeats` loop runs the same process's server
+   multiple times, 10 by default) had it shipped — a single passing test was not
+   sufficient evidence, which is exactly why
+   `test_several_sequential_http_mode_runs_in_the_same_process_all_succeed` exists as
+   a permanent regression test, not just the original single-run test.
 
 ### F-39 HTTP real-server connection (`servers[].url`)
 

@@ -6,6 +6,62 @@ not just a diff.
 
 ---
 
+## F-38 (HTTP agent adapter) built and tested — three real bugs found and fixed
+
+Implements the plan from the previous entry. `cli/config.py` gains `AgentConfig.mode`/
+`env_var`; `replay/replay_proxy.py`'s `build_replay_server` is extracted (pure
+refactor, zero behavior change — the existing 34-test suite passed unchanged) so the
+new `cli/http_proxy.py` can host it over real Streamable HTTP via
+`Server.streamable_http_app()`, loopback-bound and `Origin`-validated against the
+SDK's actual validation source (confirmed by reading it, not the settings model's
+field names alone); `cli/subprocess_adapter.py` gains `run_agent_subprocess_http`;
+`cli/doctor.py` gains an `agent.mode: http` diagnosability check;
+`tests/fixtures/scripted_agent.py` gains a real HTTP reference-agent mode sharing its
+existing per-spec loop; `cli/run.py` wires `agent.mode`/`agent.env_var` end to end
+through the real config-driven `drifter run` path. 21 new tests, plus the extraction
+verified against the existing suite.
+
+Three real bugs found and fixed during implementation, not assumed away by a passing
+happy-path test:
+
+1. **Environment replacement.** The first version of `run_agent_subprocess_http` built
+   the spawned agent's environment as `{**(env or {}), env_var: url}` — this REPLACES
+   the child's entire environment rather than inheriting it (unlike passing `env=None`
+   straight through, which inherits — standard `subprocess.Popen` semantics). Silently
+   dropped `PATH`/`SYSTEMROOT`/everything else a real interpreter and its networking
+   stack need, causing the agent to fail to connect with zero recorded calls and no
+   exception. Fixed to `{**os.environ, **(env or {}), env_var: url}`.
+2. **Windows shutdown.** Forcibly cancelling uvicorn's serve task
+   (`tg.cancel_scope.cancel()`) while it may be mid-`accept()` on our own raw socket
+   raised a raw `WinError 995` ("I/O operation aborted") on Windows' ProactorEventLoop
+   — not cooperative shutdown at all. Fixed by using `uv_server.should_exit = True`
+   and a graceful task-group exit instead, matching this project's own three-times-
+   confirmed async-shutdown-hang discipline (CLAUDE.md) cutting both ways: cancelling
+   too aggressively can be exactly as broken as not cancelling at all.
+3. **The severe one.** Running `agent.mode: http` twice in the same process — even
+   within a single event loop, ruling out any Windows-event-loop-lifecycle theory —
+   made the SECOND (and every subsequent) run fail its first real request with
+   uvicorn's "ASGI callable returned without completing response." Root-caused by
+   direct reproduction outside pytest entirely, then reading the actual library
+   source: `sse_starlette.sse.AppStatus.should_exit` is a bare CLASS attribute, not
+   per-instance and not per-server, shared across every Streamable HTTP server this
+   process ever starts. This would have made the feature completely non-functional
+   for its real use case — `evaluate.baseline.run_baseline`'s `repeats` loop runs the
+   same process's server multiple times (10, by `calibration.yaml`'s default) — while
+   every single-run test kept passing, since the FIRST run in any process always
+   worked. Fixed using the library's own documented API
+   (`AppStatus.disable_automatic_graceful_drain()`, with this module's own shutdown
+   path explicitly setting `AppStatus.should_exit = True` per that API's documented
+   contract), verified with a 20-iteration stress test before trusting it, and locked
+   in permanently by
+   `test_several_sequential_http_mode_runs_in_the_same_process_all_succeed`.
+
+`uvicorn` and `sse-starlette` added as explicit direct dependencies in `pyproject.toml`
+(both already present transitively via `mcp`, but this project's own code now imports
+both directly).
+
+---
+
 ## v1 scoped: HTTP agent adapter (F-38) pulled forward, F-39 split out, no code yet
 
 Gate 4 closed by explicit override (previous entry) with its kill criterion —

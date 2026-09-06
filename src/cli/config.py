@@ -13,15 +13,25 @@ shell string (`"python agent.py --task '{task.prompt}'"`) — matching
 inventing shell-parsing (shlex) for one field and not the other. A
 deliberate, small deviation from the example syntax, not a new format:
 `{task.prompt}` still templates per-token (`cli/run.py`), just without
-a shell-quoting step in between. No `mode` field — F-34's subprocess
-adapter is the only agent adapter that exists; nothing branches on it
-yet, and adding an unused field now would be exactly the kind of
-speculative surface CLAUDE.md's simplicity principle warns against.
+a shell-quoting step in between.
+
+`agent.mode` (F-38, docs/SPEC.md §5.1/§11): added now that a second real
+mode exists to distinguish (`subprocess`, the only one through Gate 3,
+vs. `http`) — CLAUDE.md's simplicity principle blocked this field until
+there was a genuine second value for it, not before. Defaults to
+`"subprocess"` so every drifter.yaml written before this field existed
+keeps behaving identically, with no migration needed. `agent.env_var`
+(default `"DRIFTER_PROXY_URL"`) names the environment variable
+`cli/subprocess_adapter.py`'s `mode: http` path injects the replay
+proxy's real, loopback-bound URL into — only meaningful when
+`mode: http`, but always present (with its default) so a caller doesn't
+need to branch on `mode` just to read it.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
@@ -52,6 +62,8 @@ class AgentConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     command: list[str]
+    mode: Literal["subprocess", "http"] = "subprocess"
+    env_var: str = "DRIFTER_PROXY_URL"
 
     @field_validator("command")
     @classmethod

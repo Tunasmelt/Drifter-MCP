@@ -49,18 +49,33 @@ calls the wrong (newly-injected) tool once that operator is active --
 a real, planted regression this operator can cause, distinct from and
 never exercised by the SELECT mode above (which only tests
 description_update).
+
+Transport mode, added for F-38 (docs/SPEC.md §5.1): this script checks
+its own environment for the variable named `DRIFTER_PROXY_URL_ENV_VAR`
+(so a test can point it at a custom `AgentConfig.env_var` name — see
+`_DEFAULT_ENV_VAR_NAME` below for the fallback), then looks up THAT
+variable name and, if set, connects OUT to its value via
+`mcp.client.streamable_http.streamable_http_client` instead of treating
+its own stdin/stdout as the wire at all. Same argv-driven spec loop
+either way (`_run_specs`, shared): the point of this mode split is
+proving the transport swap doesn't change anything about how a real
+agent's tool-selection logic is written, only how it connects.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import anyio
 import anyio.to_thread
 import mcp_types as types
 from mcp import ClientSession
+from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.message import SessionMessage
+
+_DEFAULT_ENV_VAR_NAME = "DRIFTER_PROXY_URL"
 
 
 async def _stdin_reader(write_to) -> None:
@@ -101,7 +116,73 @@ async def _stdout_writer(read_from) -> None:
             sys.stdout.flush()
 
 
-async def main() -> None:
+async def _run_specs(session: ClientSession) -> None:
+    """The shared per-argv-spec loop -- identical regardless of which
+    transport got `session` connected (stdio pump vs. real HTTP), which
+    is the whole point of factoring this out for F-38: a real agent's
+    tool-selection logic doesn't need to know or care which transport
+    it's running over."""
+    for spec in sys.argv[1:]:
+        if spec.startswith("SELECT:"):
+            substring, _, args_json = spec[len("SELECT:"):].partition("|")
+            arguments = json.loads(args_json) if args_json else {}
+            tools_result = await session.list_tools()
+            matches = [t for t in tools_result.tools if substring in (t.description or "")]
+            if not matches:
+                # The planted failure mode: silently find nothing and
+                # call nothing, rather than error or guess -- see this
+                # module's own docstring for why.
+                outcome = {"select": substring, "ok": False, "error": "no tool description matched"}
+                print(json.dumps(outcome), file=sys.stderr, flush=True)
+                continue
+            tool_name = matches[0].name
+            try:
+                result = await session.call_tool(tool_name, arguments)
+                outcome = {"select": substring, "matched_tool": tool_name, "ok": True, "is_error": result.is_error}
+            except Exception as exc:
+                outcome = {"select": substring, "matched_tool": tool_name, "ok": False, "error": str(exc)}
+            print(json.dumps(outcome), file=sys.stderr, flush=True)
+            continue
+
+        if spec.startswith("LAST_TOOL|") or spec == "LAST_TOOL":
+            _, _, args_json = spec.partition("|")
+            arguments = json.loads(args_json) if args_json else {}
+            tools_result = await session.list_tools()
+            if not tools_result.tools:
+                outcome = {"last_tool": True, "ok": False, "error": "server reported zero tools"}
+                print(json.dumps(outcome), file=sys.stderr, flush=True)
+                continue
+            tool_name = tools_result.tools[-1].name
+            try:
+                result = await session.call_tool(tool_name, arguments)
+                outcome = {"last_tool": True, "matched_tool": tool_name, "ok": True, "is_error": result.is_error}
+            except Exception as exc:
+                outcome = {"last_tool": True, "matched_tool": tool_name, "ok": False, "error": str(exc)}
+            print(json.dumps(outcome), file=sys.stderr, flush=True)
+            continue
+
+        tool_name, _, args_json = spec.partition("|")
+        arguments = json.loads(args_json) if args_json else {}
+        try:
+            result = await session.call_tool(tool_name, arguments)
+            outcome = {"tool": tool_name, "ok": True, "is_error": result.is_error}
+        except Exception as exc:
+            outcome = {"tool": tool_name, "ok": False, "error": str(exc)}
+        print(json.dumps(outcome), file=sys.stderr, flush=True)
+
+
+async def _main_http(url: str) -> None:
+    async with streamable_http_client(url) as (read_stream, write_stream):
+        async with ClientSession(read_stream, write_stream) as session:
+            await session.initialize()
+            await _run_specs(session)
+    # A real "final answer" -- captured by cli/subprocess_adapter.py's
+    # run_agent_subprocess_http as plain stdout text now that stdout
+    # isn't the wire protocol under this mode.
+    print("done", flush=True)
+
+
+async def _main_stdio() -> None:
     read_stream_writer, read_stream = anyio.create_memory_object_stream(0)
     write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
 
@@ -111,55 +192,18 @@ async def main() -> None:
 
         async with ClientSession(read_stream, write_stream) as session:
             await session.initialize()
-            for spec in sys.argv[1:]:
-                if spec.startswith("SELECT:"):
-                    substring, _, args_json = spec[len("SELECT:"):].partition("|")
-                    arguments = json.loads(args_json) if args_json else {}
-                    tools_result = await session.list_tools()
-                    matches = [t for t in tools_result.tools if substring in (t.description or "")]
-                    if not matches:
-                        # The planted failure mode: silently find nothing
-                        # and call nothing, rather than error or guess --
-                        # see this module's own docstring for why.
-                        outcome = {"select": substring, "ok": False, "error": "no tool description matched"}
-                        print(json.dumps(outcome), file=sys.stderr, flush=True)
-                        continue
-                    tool_name = matches[0].name
-                    try:
-                        result = await session.call_tool(tool_name, arguments)
-                        outcome = {"select": substring, "matched_tool": tool_name, "ok": True, "is_error": result.is_error}
-                    except Exception as exc:
-                        outcome = {"select": substring, "matched_tool": tool_name, "ok": False, "error": str(exc)}
-                    print(json.dumps(outcome), file=sys.stderr, flush=True)
-                    continue
-
-                if spec.startswith("LAST_TOOL|") or spec == "LAST_TOOL":
-                    _, _, args_json = spec.partition("|")
-                    arguments = json.loads(args_json) if args_json else {}
-                    tools_result = await session.list_tools()
-                    if not tools_result.tools:
-                        outcome = {"last_tool": True, "ok": False, "error": "server reported zero tools"}
-                        print(json.dumps(outcome), file=sys.stderr, flush=True)
-                        continue
-                    tool_name = tools_result.tools[-1].name
-                    try:
-                        result = await session.call_tool(tool_name, arguments)
-                        outcome = {"last_tool": True, "matched_tool": tool_name, "ok": True, "is_error": result.is_error}
-                    except Exception as exc:
-                        outcome = {"last_tool": True, "matched_tool": tool_name, "ok": False, "error": str(exc)}
-                    print(json.dumps(outcome), file=sys.stderr, flush=True)
-                    continue
-
-                tool_name, _, args_json = spec.partition("|")
-                arguments = json.loads(args_json) if args_json else {}
-                try:
-                    result = await session.call_tool(tool_name, arguments)
-                    outcome = {"tool": tool_name, "ok": True, "is_error": result.is_error}
-                except Exception as exc:
-                    outcome = {"tool": tool_name, "ok": False, "error": str(exc)}
-                print(json.dumps(outcome), file=sys.stderr, flush=True)
+            await _run_specs(session)
 
         tg.cancel_scope.cancel()
+
+
+async def main() -> None:
+    env_var_name = os.environ.get("DRIFTER_PROXY_URL_ENV_VAR", _DEFAULT_ENV_VAR_NAME)
+    url = os.environ.get(env_var_name)
+    if url:
+        await _main_http(url)
+    else:
+        await _main_stdio()
 
 
 if __name__ == "__main__":
