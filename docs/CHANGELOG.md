@@ -6,6 +6,55 @@ not just a diff.
 
 ---
 
+## F-06–F-10 edge-case pass: a real `drifter observe` bug found and fixed
+
+Continuing the F-01–F-05 edge-case pass onto the next five features.
+
+**`tests/record/test_segment_unit.py` (new)** — `record/segment.py`'s `TrajectoryTracker`/
+`Trajectory` (F-06/F-07/F-08) was previously only exercised through 3 real-subprocess
+integration tests (`test_segment.py`, still in place, unchanged), each covering exactly
+one documented top-level scenario. 14 new fast, direct tests cover pieces of the actual
+logic never touched directly: `extract_trace_id`'s malformed-input fallback (5 shapes:
+truncated, wrong-length trace id, missing segment, empty, non-hex version — all fall
+back to `None`/heuristic, none crash) and case-insensitive hex; two distinct trace IDs
+in one session correctly kept separate (the existing integration test only ever uses
+one); a trace-tagged call interleaved between two heuristic calls never resets the
+heuristic idle timer (confirms the two mechanisms genuinely don't cross-contaminate);
+`close_all()` clears state; the JSON-string-unwrapping branch of `_iter_leaf_paths`
+(text-wrapped structured results, a non-JSON-looking string treated as an opaque leaf,
+a malformed-JSON-looking string that doesn't crash); "last writer wins" when two prior
+calls produce an identical value; and the module's own documented falsy-value
+spurious-reference tradeoff, now actually confirmed rather than only claimed in a
+comment.
+
+**A real bug found and FIXED in `cli/observe.py` (F-09)**, not just documented: `drifter
+observe` against a bad server command crashed with a raw ~40-line Python traceback
+(`FileNotFoundError` from deep inside `anyio`/`asyncio`/`subprocess`), while `drifter
+doctor`'s `_check_server` already handles the IDENTICAL failure actionably. Confirmed
+empirically before fixing (a real `drifter observe` invocation against a nonexistent
+executable, not assumed from reading the source). Unlike F-05's gap, this wasn't a
+genuine architecture dilemma — asked explicitly, and confirmed a straightforward fix
+with clear precedent already in the codebase: `run_observe` now wraps the same `OSError`
+in the same `ConfigError` every other subcommand's config/connectivity failure already
+surfaces as, so `cli/app.py`'s existing `except ConfigError` handling (exit code 4,
+docs/SPEC.md §12) picks it up for free — no dispatch change needed. Verified against the
+real CLI after the fix: clean one-line message, exit code 4, no traceback.
+Red-test-first: `test_run_observe_raises_actionable_config_error_for_a_bad_server_command`
+failed against the original code before the fix, confirmed passing after.
+
+**`tests/cli/test_stats.py`** — 1 new test confirming a real, previously untested
+interaction between F-04 (redaction) and F-10 (retry detection): `record/writer.py`'s
+`_write_tool_call` redacts `arguments` BEFORE write, so `drifter stats`'s retry
+comparison only ever sees the post-redaction values. Two calls carrying two DIFFERENT
+real secrets that both redact to the same `[REDACTED]` marker are therefore genuinely
+indistinguishable by the time stats runs, and get counted as a retry even though they
+weren't one — confirmed with two real, distinct planted secret values, not fixed (same
+class of accepted literal-matching tradeoff as F-08's spurious-reference case).
+
+Full suite re-run after all of the above (F-01–F-10 combined).
+
+---
+
 ## F-01–F-05 edge-case pass: `record/writer.py` gets its first dedicated unit-test file
 
 Asked directly to test F-01 through F-05 for edge cases and give F-05's real, known gap

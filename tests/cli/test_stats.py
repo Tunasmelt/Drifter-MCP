@@ -403,6 +403,48 @@ def test_collect_stats_exact_values_on_a_small_known_session(tmp_path):
     assert stats.total_retries == 1
 
 
+def test_two_different_secrets_that_both_redact_identically_are_misdetected_as_a_retry(tmp_path):
+    """A real, confirmed interaction between F-04 (redaction) and F-10
+    (retry detection), not previously tested anywhere: retry_rate
+    compares the STORED (already-redacted) `arguments`, per
+    record/writer.py's own `_write_tool_call` (`arguments=
+    redact_secrets(arguments)`) -- redaction happens before write, not
+    after read. Two calls with two DIFFERENT real secret values that
+    both happen to redact to the same "[REDACTED]" marker are therefore
+    genuinely indistinguishable by the time `drifter stats` ever sees
+    them, and get counted as a retry even though they weren't one. This
+    locks in that real, confirmed false-positive risk as documented
+    behavior, not a silently-relied-upon assumption.
+    """
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name="fake", session_id="sess_secret_collision")
+
+    secret_a = "sk-" + "a" * 40  # a real, distinct OpenAI-shaped key
+    secret_b = "sk-" + "b" * 40  # a DIFFERENT real key, same shape
+
+    req_id = 0
+    for secret in (secret_a, secret_b):
+        req_id += 1
+        request = JSONRPCRequest(
+            jsonrpc="2.0", id=req_id, method="tools/call", params={"name": "add", "arguments": {"api_key": secret}}
+        )
+        response = JSONRPCResponse(jsonrpc="2.0", id=req_id, result={"content": []})
+        recorder.observe(Direction.AGENT_TO_SERVER, SessionMessage(request))
+        recorder.observe(Direction.SERVER_TO_AGENT, SessionMessage(response))
+    recorder.close()
+
+    records = list(read_session(recorder.jsonl_path))
+    calls = [r for r in records if isinstance(r, ToolCall)]
+    # Confirmed precondition: the two real, distinct secrets really did
+    # redact to byte-identical stored arguments -- the false positive
+    # below isn't a test-construction artifact.
+    assert calls[0].arguments == calls[1].arguments == {"api_key": "[REDACTED]"}
+
+    stats = collect_stats(runs_dir)
+    add_stats = stats.per_tool[("fake", "add")]
+    assert add_stats.retries == 1  # misdetected -- these were two genuinely different calls
+
+
 def test_percentiles_well_defined_for_a_single_call(tmp_path):
     """The user explicitly wants this to work against a very small corpus —
     a tool called exactly once must still produce p50/p90/p99 (all equal

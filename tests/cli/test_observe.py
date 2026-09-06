@@ -21,7 +21,7 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 from cli.config import ConfigError
-from cli.observe import LiveStatus, handle_sigint, select_server
+from cli.observe import LiveStatus, handle_sigint, run_observe, select_server
 from record.reader import read_session
 from record.schema import ToolCall, TrajectoryEnd
 
@@ -260,6 +260,26 @@ async def test_observe_env_override_keeps_the_real_dot_drifter_untouched(tmp_pat
     # disturbed.
     assert _snapshot(real_runs_dir) == before_runs
     assert _snapshot(real_raw_dir) == before_raw
+
+
+def test_run_observe_raises_actionable_config_error_for_a_bad_server_command(tmp_path):
+    """Found empirically, not assumed: `drifter observe` against a bad
+    server command previously crashed with a raw ~40-line Python
+    traceback (FileNotFoundError from deep inside anyio/asyncio/
+    subprocess), while `drifter doctor` already handles the identical
+    failure actionably. Confirmed as a real inconsistency before fixing
+    it -- `run_observe` now wraps the same OSError `_check_server` in
+    cli/doctor.py already catches, into the same `ConfigError` every
+    other subcommand's config/connectivity failure already surfaces as
+    (cli/app.py's existing `except ConfigError` handling picks this up
+    for free, no dispatch change needed)."""
+    config_path = tmp_path / "drifter.yaml"
+    config_path.write_text(
+        "version: 1\nservers:\n  - name: bad\n    command: ['this-executable-does-not-exist-anywhere-xyz']\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="this-executable-does-not-exist-anywhere-xyz"):
+        run_observe(config_path=config_path, server_name="bad", status_stream=io.StringIO())
 
 
 @pytest.fixture

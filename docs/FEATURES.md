@@ -22,9 +22,9 @@ table and docs/PHASES.md for gate-level narrative.
 | F-05 | Environment fingerprinting | ⚠️ Built, real gap left | §15 limitation 14 — permanently null `tool_manifest_hash` if `list_tools()` isn't called first; now covered by a direct `tests/record/test_writer.py` unit test (test-only, not fixed — see docs/CHANGELOG.md) |
 | F-06 | Trace-context segmentation | ✅ Built | Gate 1 |
 | F-07 | Heuristic segmentation (fallback) | ⚠️ Built, known gap | §15 limitation 8 — no signal for two unrelated calls with no idle gap |
-| F-08 | Data-flow reference tracking | ✅ Built | Gate 1 |
-| F-09 | `drifter observe` | ⚠️ Built, known gap | §15 limitation 9 — Ctrl+C doesn't wait for/terminate the real spawned server |
-| F-10 | `drifter stats` | ✅ Built | Gate 1 |
+| F-08 | Data-flow reference tracking | ✅ Built | Gate 1. Literal-equality matching can produce a spurious reference on a common falsy value (True/0/"") — an accepted, documented tradeoff (`segment.py`'s own docstring), now also locked in by a direct unit test |
+| F-09 | `drifter observe` | ⚠️ Built, known gap | §15 limitation 9 — Ctrl+C doesn't wait for/terminate the real spawned server. A second gap (a bad server command crashed with a raw traceback instead of an actionable error, unlike `drifter doctor`) was found and FIXED during the same edge-case pass — see docs/CHANGELOG.md |
+| F-10 | `drifter stats` | ⚠️ Built, real interaction confirmed | Retry detection compares stored (already-redacted) arguments — two different real secrets that redact identically are misdetected as a retry. Confirmed and locked in by a test, not fixed (same class of accepted tradeoff as F-08's spurious-reference case) |
 | F-11 | Replay store | ⚠️ Built, exact-key only | Tier-3 finding (PHASES.md Gate 3) — may not be viable against any real agent alone |
 | F-12 | Inverse-mutation key resolution | ⚠️ Stub only | Never implemented past the Gate 2 stub — **needs building** if tier 2 replay is ever exercised for real |
 | F-13 | Semantic key resolution | ❌ Not built | **Needs building** — the tier-3 gap F-11's own limitation points at; no longer "nice-to-have," possibly blocking |

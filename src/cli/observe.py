@@ -212,7 +212,19 @@ def run_observe(
     try:
         status_stream.write(f"drifter observe — proxying {server.name!r} ({' '.join(server.command)})\n")
         status_stream.flush()
-        anyio.run(run_passthrough_proxy, server_params, on_message)
+        try:
+            anyio.run(run_passthrough_proxy, server_params, on_message)
+        except OSError as e:
+            # Found empirically, not assumed: a bad server command
+            # previously crashed here with a raw ~40-line Python
+            # traceback from deep inside anyio/asyncio/subprocess
+            # (stdio_client's own OSError-on-spawn-failure contract),
+            # while cli/doctor.py's _check_server already handles the
+            # IDENTICAL failure actionably. Wrapped the same way every
+            # other subcommand's config/connectivity failure already is
+            # (cli/app.py's existing `except ConfigError` picks this up
+            # for free, exit code 4 per docs/SPEC.md §12).
+            raise ConfigError(f"could not start command {' '.join(server.command)!r}: {e}") from e
     finally:
         signal.signal(signal.SIGINT, previous_handler)
         # Only reached on normal completion (agent disconnected) — the
