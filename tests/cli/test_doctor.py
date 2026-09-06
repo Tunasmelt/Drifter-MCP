@@ -210,6 +210,51 @@ def test_run_doctor_warns_when_env_var_collides_with_an_existing_variable(tmp_pa
     assert "already set" in text
 
 
+def test_run_doctor_reports_failure_when_loopback_binding_is_unavailable(tmp_path, monkeypatch):
+    """The one failure branch _check_http_agent_mode has that no other
+    test exercises -- simulated (a real environment where this happens,
+    e.g. a locked-down sandbox or no loopback interface, is not
+    reliably reproducible on demand), but the ONLY way to confirm the
+    actual failure path -- catching OSError and reporting it actionably,
+    not crashing doctor itself -- rather than trusting it by reading the
+    source alone."""
+    import types
+
+    import cli.doctor as doctor_module
+
+    class _FakeSocket:
+        def bind(self, *args, **kwargs):
+            raise OSError("simulated: no permission to bind a loopback socket")
+
+        def close(self):
+            pass
+
+    # Replaces the NAME `socket` inside cli.doctor's own namespace with a
+    # fake stand-in module -- NOT `doctor_module.socket.socket`, which
+    # would mutate the real, shared stdlib `socket` module object itself
+    # (import socket always binds the same module object everywhere), and
+    # did exactly that in this test's first version: asyncio's own
+    # Windows event-loop setup uses socket.socketpair(), which calls
+    # .bind() as a fallback, so a global patch broke anyio.run() itself
+    # rather than exercising doctor's own error handling. This scopes the
+    # fake to cli.doctor's own call site only.
+    fake_socket_module = types.SimpleNamespace(
+        socket=lambda *a, **kw: _FakeSocket(),
+        AF_INET=doctor_module.socket.AF_INET,
+        SOCK_STREAM=doctor_module.socket.SOCK_STREAM,
+    )
+    monkeypatch.setattr(doctor_module, "socket", fake_socket_module)
+
+    config_path = _drifter_yaml_with_http_agent(tmp_path)
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    text = out.getvalue()
+
+    assert ok is False
+    assert "[FAIL] agent (mode: http)" in text
+    assert "could not bind" in text
+
+
 def test_run_doctor_subprocess_mode_agent_is_not_checked_for_http_binding(tmp_path):
     """mode: subprocess (the default, and every pre-F-38 config) must not
     suddenly grow a new doctor check it never needed."""

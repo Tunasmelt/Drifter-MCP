@@ -116,6 +116,15 @@ async def serve_replay_over_http(
     `0.0.0.0` by a caller — this is a per-run, per-agent listener for
     Drifter's own spawned subprocess, not a shared service (docs/SECURITY.md
     gap 3).
+
+    An exception raised inside the `async with` block using this context
+    manager (or from `_wait_until_actually_answering` itself timing out)
+    comes back wrapped in an `ExceptionGroup` (PEP 654), not bare — a real
+    consequence of the internal `anyio.create_task_group()` this function
+    uses, confirmed by a dedicated test
+    (`test_an_exception_inside_the_context_manager_still_shuts_down_gracefully`),
+    not incidental. A caller that needs to catch a specific exception type
+    around this context manager needs `except*`, not a plain `except`.
     """
     # A confirmed, known sse-starlette gotcha, root-caused empirically
     # (not guessed) after this exact symptom reproduced deterministically:
@@ -160,40 +169,59 @@ async def serve_replay_over_http(
 
     config = uvicorn.Config(app, log_level="warning")
     uv_server = uvicorn.Server(config)
+    serve_done = anyio.Event()
+
+    async def _serve_and_signal() -> None:
+        try:
+            await uv_server.serve([sock])
+        finally:
+            serve_done.set()
+
+    async def _graceful_shutdown() -> None:
+        # Setting should_exit and WAITING for uv_server.serve() to notice
+        # and return on its own (uvicorn's main_loop polls this flag,
+        # typically within one tick) -- NOT tg.cancel_scope.cancel() or
+        # letting an exception propagate straight out of the task group,
+        # which forcibly cancels every task in it, including this one.
+        # Found empirically, not assumed: forcibly cancelling while
+        # uvicorn's asyncio server may be mid-accept() on our own raw
+        # socket raised a raw OSError (WinError 995, "I/O operation
+        # aborted") on Windows' ProactorEventLoop -- not cooperative
+        # shutdown at all. Explicitly awaiting `serve_done` (bounded, so a
+        # genuinely stuck server still can't hang this forever) closes the
+        # gap this module's FIRST fix for that bug left open: setting the
+        # flag alone doesn't stop the task group's own `__aexit__` from
+        # forcibly cancelling if an exception (e.g. from
+        # `_wait_until_actually_answering` timing out) is what triggered
+        # this shutdown in the first place -- found on re-audit, not by a
+        # failing test.
+        uv_server.should_exit = True
+        # Required by disable_automatic_graceful_drain()'s own documented
+        # contract (below): with automatic drain off, WE are responsible
+        # for flipping this, or every SSE stream sse_starlette opens
+        # would simply never close.
+        AppStatus.should_exit = True
+        with anyio.move_on_after(5.0):
+            await serve_done.wait()
 
     try:
         async with anyio.create_task_group() as tg:
-            tg.start_soon(uv_server.serve, [sock])
-            # uvicorn.Server.startup() completes (setting .started = True)
-            # before its main_loop begins accepting real traffic -- waited
-            # on explicitly rather than assumed instantaneous, so a caller
-            # never gets a URL back before the server can actually answer
-            # it. Startup here does no real I/O (the socket is already
-            # bound/listening; this only registers the asyncio protocol
-            # factory), so this loop is expected to run at most once or
-            # twice, never a real wait.
-            while not uv_server.started:
-                await anyio.sleep(0.01)
-            await _wait_until_actually_answering(url)
+            tg.start_soon(_serve_and_signal)
             try:
+                # uvicorn.Server.startup() completes (setting .started =
+                # True) before its main_loop begins accepting real
+                # traffic -- waited on explicitly rather than assumed
+                # instantaneous, so a caller never gets a URL back before
+                # the server can actually answer it. Startup here does no
+                # real I/O (the socket is already bound/listening; this
+                # only registers the asyncio protocol factory), so this
+                # loop is expected to run at most once or twice, never a
+                # real wait.
+                while not uv_server.started:
+                    await anyio.sleep(0.01)
+                await _wait_until_actually_answering(url)
                 yield url
             finally:
-                # Setting should_exit and letting uv_server.serve() notice
-                # it and return on its own (uvicorn's main_loop polls this
-                # flag) -- NOT tg.cancel_scope.cancel(). Found empirically,
-                # not assumed: forcibly cancelling while uvicorn's asyncio
-                # server may be mid-accept() on our own raw socket raised
-                # a raw OSError (WinError 995, "I/O operation aborted") on
-                # Windows' ProactorEventLoop, which isn't cooperative
-                # shutdown at all -- this project's own three-times-
-                # confirmed async-shutdown-hang pattern (CLAUDE.md) cuts
-                # both ways: cancelling too aggressively can be just as
-                # broken as not cancelling at all.
-                uv_server.should_exit = True
-                # Required by disable_automatic_graceful_drain()'s own
-                # documented contract (above): with automatic drain off,
-                # WE are responsible for flipping this, or every SSE
-                # stream sse_starlette opens would simply never close.
-                AppStatus.should_exit = True
+                await _graceful_shutdown()
     finally:
         sock.close()

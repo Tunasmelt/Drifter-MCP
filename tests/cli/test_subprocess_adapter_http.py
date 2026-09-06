@@ -68,6 +68,88 @@ async def test_agent_subprocess_http_produces_a_real_parseable_session_with_repl
 
 
 @pytest.mark.anyio
+async def test_unrecorded_call_surfaces_as_a_distinguishable_miss_over_http_too(tmp_path):
+    """Parity check with test_subprocess_adapter.py's own stdio-mode
+    equivalent -- MISS handling is replay_proxy.py's own logic
+    (build_replay_server, shared by both transports), but this confirms
+    it survives the HTTP transport hop for real rather than assuming
+    transport-agnosticism from the shared-code argument alone."""
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    calls = _golden_calls()[:2]
+    miss_args = {"path": "C:\\nowhere\\never\\recorded\\by\\this\\test"}
+
+    session_path = await run_agent_subprocess_http(
+        command=[
+            sys.executable,
+            str(SCRIPTED_AGENT),
+            *(_spec(c.tool_name, c.arguments) for c in calls),
+            _spec("list_directory", miss_args),
+        ],
+        replay_store=store,
+        server_name=GOLDEN_SERVER,
+        tools_served=tools_served,
+        session_dir=tmp_path / "runs",
+        raw_dir=tmp_path / "raw",
+        timeout_s=30.0,
+    )
+
+    records = list(read_session(session_path))
+    recorded_calls = [r for r in records if isinstance(r, ToolCall)]
+    assert len(recorded_calls) == 3  # 2 real hits + 1 miss, all recorded
+    for original, recorded in zip(calls, recorded_calls[:2]):
+        assert recorded.tool_name == original.tool_name
+        assert recorded.fault is False
+    assert recorded_calls[2].fault is True  # the miss
+
+
+@pytest.mark.anyio
+async def test_explicit_env_override_is_preserved_alongside_inherited_environment(tmp_path):
+    """Regression test for the real bug found while building this
+    feature (docs/CHANGELOG.md): the fix was to inherit os.environ AND
+    still honor a caller-supplied override, not just one or the other --
+    confirmed here by actually reading back a custom variable the
+    scripted agent doesn't touch, proving `env=` isn't silently dropped
+    now that os.environ is merged in underneath it."""
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    calls = _golden_calls()[:1]
+
+    # A tiny `-c` wrapper that fails loudly (AssertionError, non-zero
+    # exit) if the explicit env override was lost, then runs the real
+    # reference agent's own __main__ block via runpy IN THE SAME PROCESS
+    # -- deliberately not os.execv (tried first): on Windows, execv has
+    # no true POSIX process-image-replacement semantics, it spawns an
+    # entirely NEW process and exits the original, which orphans
+    # anyio.open_process's own pipe/handle tracking for the process it
+    # thinks it's still watching. runpy avoids a second process schema
+    # entirely, so there's nothing for Windows' lack of real exec() to
+    # break.
+    specs = [f"{c.tool_name}|{json.dumps(c.arguments)}" for c in calls]
+    wrapper = (
+        "import os, runpy, sys; "
+        "assert os.environ.get('DRIFTER_TEST_MARKER') == 'present', 'explicit env override was lost'; "
+        f"sys.argv = [sys.argv[0], *{specs!r}]; "
+        f"runpy.run_path({str(SCRIPTED_AGENT)!r}, run_name='__main__')"
+    )
+
+    session_path = await run_agent_subprocess_http(
+        command=[sys.executable, "-c", wrapper],
+        replay_store=store,
+        server_name=GOLDEN_SERVER,
+        tools_served=tools_served,
+        session_dir=tmp_path / "runs",
+        raw_dir=tmp_path / "raw",
+        env={"DRIFTER_TEST_MARKER": "present"},
+        timeout_s=30.0,
+    )
+    records = list(read_session(session_path))
+    assert any(isinstance(r, ToolCall) for r in records)  # the assert in the script didn't fail silently
+
+
+@pytest.mark.anyio
 async def test_final_answer_stdout_is_captured_to_a_sidecar_file(tmp_path):
     """Stdout is no longer the wire protocol under mode: http -- the
     reference agent (scripted_agent.py's _main_http) prints "done" as

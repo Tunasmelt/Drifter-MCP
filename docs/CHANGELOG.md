@@ -6,6 +6,52 @@ not just a diff.
 
 ---
 
+## F-38 re-audit: a fourth real bug found, 8 new edge-case tests
+
+A deliberate second pass over F-38's just-committed implementation, not new feature
+work — re-reading `cli/http_proxy.py`/`cli/subprocess_adapter.py` fresh, the way a
+reviewer would, rather than trusting the previous round's passing tests as the last
+word.
+
+**A fourth real bug, found on re-read, not by a failing test:** the shutdown-safety
+fix from the previous round (`should_exit` + graceful task-group exit, avoiding the
+`WinError 995` bug) only ran when the `yield url` block exited normally. If
+`_wait_until_actually_answering` itself timed out and raised — or if the caller's own
+code inside the `async with serve_replay_over_http(...)` block raised — that exception
+would unwind the task group directly, triggering anyio's own cancel-everything-on-
+exception behavior BEFORE `should_exit` had a chance to be noticed: the exact unsafe
+path the previous fix was meant to close. Fixed by tracking the serve task's own
+completion explicitly (`serve_done: anyio.Event`) and awaiting it (bounded) inside a
+`_graceful_shutdown()` helper that runs regardless of how the block exits, so no exit
+path — normal or abnormal — can reach the task group's own forced-cancellation
+behavior. Locked in by `test_an_exception_inside_the_context_manager_still_shuts_down_
+gracefully`, which also documents a real, non-obvious consequence of this design worth
+knowing about: an exception raised inside the context manager now comes back wrapped
+in an `ExceptionGroup` (PEP 654), not bare — a caller catching a specific exception
+type around it needs `except*`.
+
+8 new edge-case tests added across the F-38 surface, covering real gaps the original
+round's tests didn't reach:
+- `tool_addition` and a real REGRESSION verdict, both previously only exercised over
+  stdio, now confirmed over HTTP too (`test_run.py`) — using the same real planted
+  substring and recorded arguments as Gate 3's own kill-criterion test.
+- A MISS/fault recorded correctly over HTTP (parity with the existing stdio test).
+- The Origin-validation boundary made explicit: a loopback-*looking* Origin is still
+  rejected (not just a foreign one), since `allowed_origins` is deliberately empty.
+- `env=` overrides are preserved alongside the inherited environment, not just one or
+  the other (a direct regression test for the third round's env-replacement bug).
+- `drifter doctor`'s one previously-untested failure branch: an unbindable loopback
+  port reported actionably, not a doctor crash. Needed a properly SCOPED monkeypatch
+  (replacing the `socket` name inside `cli.doctor`'s own namespace, not mutating the
+  real, process-wide `socket.socket` class) — the first attempt patched the real
+  class and broke `asyncio`'s own Windows event-loop setup, which uses
+  `socket.socketpair()` internally.
+
+Full suite re-run after all of the above: previously 275 passed, now +8 (this round's
+new tests) + the http_proxy exception-handling fix.
+
+---
+
 ## F-38 (HTTP agent adapter) built and tested — three real bugs found and fixed
 
 Implements the plan from the previous entry. `cli/config.py` gains `AgentConfig.mode`/

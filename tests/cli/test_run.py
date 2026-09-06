@@ -229,6 +229,82 @@ def test_run_run_end_to_end_via_config_with_agent_mode_http(tmp_path):
     assert "NO_REGRESSION" in output
 
 
+def test_run_mutation_comparison_tool_addition_end_to_end_over_http(tmp_path):
+    """tool_addition's own end-to-end test (below) only exercises
+    agent_mode's default (subprocess) -- this confirms the OTHER
+    operator also composes correctly over the HTTP transport, not just
+    description_update (already covered above). Synthetic-tool
+    resolution (F-14-scoped) is replay_proxy.py's own logic, shared by
+    both transports, but "shared code" is an assumption worth confirming
+    for real, not trusting by construction."""
+    siblings = tools_served_from_session(GOLDEN_FIXTURE)
+    added_tool, _ = add_tool(siblings, seed=42)  # same seed run_mutation_comparison uses by default
+
+    # 3 real hits + 1 (baseline-only) miss on the not-yet-existing tool =
+    # 3/4 = 0.75 fidelity, above the 0.70 floor -- matching
+    # test_run_mutation_comparison_tool_addition_end_to_end's own stdio
+    # version exactly, since fidelity gating is calibration.yaml/
+    # evaluate.baseline.py logic, not transport-specific.
+    calls = _golden_calls()[:3]
+    command = [
+        sys.executable,
+        str(SCRIPTED_AGENT),
+        *(_spec(c.tool_name, c.arguments) for c in calls),
+        _spec(added_tool.name, {}),
+    ]
+
+    result = run_mutation_comparison(
+        task_id="tool_addition_http_task",
+        prompt="",
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        agent_command=command,
+        operator="tool_addition",
+        session_dir=tmp_path / "runs",
+        raw_dir=tmp_path / "raw",
+        seed=42,
+        repeats=1,
+        timeout_s=30.0,
+        agent_mode="http",
+    )
+
+    assert result.mutated.baseline_fidelity == 1.0  # synthetic call excluded from the denominator, same as stdio
+    expected_path = (*[c.tool_name for c in calls], added_tool.name)
+    assert result.baseline.dominant_path == expected_path
+    assert result.mutated.dominant_path == expected_path
+    assert result.effect.verdict == "NO_REGRESSION"
+
+
+def test_run_mutation_comparison_reports_a_real_regression_over_http(tmp_path):
+    """Every other HTTP-mode test in this file (and test_subprocess_
+    adapter_http.py) only exercises NO_REGRESSION -- this confirms the
+    comparison logic's OTHER real outcome also survives the transport
+    swap, using the same brittle SELECT-mode agent, real planted
+    substring, and real recorded arguments Gate 3's own kill-criterion
+    test built (tests/cli/test_kill_criterion_brittle_agent.py), just run
+    over HTTP instead of stdio."""
+    real_list_directory_call = next(c for c in _golden_calls() if c.tool_name == "list_directory")
+    select_spec = f"SELECT:detailed listing|{json.dumps(real_list_directory_call.arguments)}"
+
+    result = run_mutation_comparison(
+        task_id="regression_over_http",
+        prompt="",
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        agent_command=[sys.executable, str(SCRIPTED_AGENT), select_spec],
+        operator="description_update",
+        session_dir=tmp_path / "runs",
+        raw_dir=tmp_path / "raw",
+        seed=42,
+        repeats=1,
+        timeout_s=30.0,
+        agent_mode="http",
+    )
+    assert result.baseline.dominant_path == ("list_directory",)
+    assert result.mutated.dominant_path == ()
+    assert result.effect.verdict == "REGRESSION"
+
+
 # --- real end-to-end: tool_addition ------------------------------------------
 
 

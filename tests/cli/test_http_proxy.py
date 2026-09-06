@@ -92,6 +92,33 @@ async def test_a_foreign_browser_style_origin_is_rejected():
 
 
 @pytest.mark.anyio
+async def test_a_loopback_looking_origin_is_still_rejected():
+    """The exact boundary, not just "foreign origins are blocked": since
+    `allowed_origins` is deliberately kept empty (no legitimate browser
+    origin exists for this listener -- see this module's own docstring),
+    ANY present Origin header is rejected, including one that looks
+    like it belongs to this very server. A weaker implementation might
+    special-case "looks like loopback" as automatically trusted, which
+    would be wrong here -- a real MCP client never sends Origin at all,
+    so a request that does is either a browser (the actual threat) or
+    something spoofing one, and neither should be waved through just
+    because the string matches."""
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    async with serve_replay_over_http(_replay_store(), GOLDEN_SERVER, tools_served) as url:
+        async with httpx2.AsyncClient() as client:
+            response = await client.post(
+                url,
+                headers={
+                    "Origin": "http://127.0.0.1:9999",  # loopback-shaped, still not on the allow-list
+                    "Accept": "application/json, text/event-stream",
+                    "Content-Type": "application/json",
+                },
+                json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+            )
+    assert response.status_code == 403
+
+
+@pytest.mark.anyio
 async def test_a_request_with_no_origin_header_is_not_rejected_by_origin_check():
     """Real, non-browser MCP clients (this project's own agents included)
     don't send an Origin header at all -- confirmed this must still work,
@@ -138,6 +165,52 @@ async def test_shuts_down_promptly_after_a_real_client_connects_and_disconnects(
     elapsed = time.monotonic() - started
 
     assert elapsed < 5.0, f"HTTP proxy shutdown took {elapsed:.2f}s after a real client disconnect -- investigate a hang"
+
+
+@pytest.mark.anyio
+async def test_an_exception_inside_the_context_manager_still_shuts_down_gracefully():
+    """Regression test for a gap found on re-audit, not by a failing
+    test: the original shutdown fix (should_exit + graceful task-group
+    exit) only ran when the `yield url` block exited NORMALLY. If the
+    caller's own code raises INSIDE the `async with serve_replay_over_http(...)`
+    block (a crashed agent, a broken consumer, or -- the actual case this
+    was found from -- `_wait_until_actually_answering` itself timing out
+    and raising), that exception would unwind the task group directly,
+    triggering anyio's own cancel-everything-on-exception behavior before
+    `should_exit` had a chance to be noticed -- the exact unsafe path
+    that caused the original WinError 995 bug. Confirmed here two ways:
+    the exception propagates correctly (not swallowed), AND a fresh
+    invocation right afterward in the same process still works (proving
+    no corrupted AppStatus/should_exit state was left behind by the
+    abnormal exit)."""
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+
+    class _DeliberateFailure(Exception):
+        pass
+
+    # Wrapped in an ExceptionGroup, not raised bare -- a real, non-obvious
+    # consequence of `serve_replay_over_http`'s internal anyio task group
+    # (PEP 654 behavior: an exception raised through a task group's body
+    # comes back wrapped). A future caller catching a SPECIFIC exception
+    # type around this context manager needs `except*`, not a plain
+    # `except` -- worth this test asserting explicitly, not just working
+    # around, since it's exactly the kind of thing that's easy to get
+    # wrong silently.
+    with pytest.raises(ExceptionGroup) as exc_info:
+        async with serve_replay_over_http(_replay_store(), GOLDEN_SERVER, tools_served) as url:
+            assert url  # the server did start correctly before the failure
+            raise _DeliberateFailure("simulating a crashed consumer")
+    assert exc_info.group_contains(_DeliberateFailure)
+
+    # A completely fresh invocation right after an ABNORMAL exit must
+    # still work -- this is what would have caught a should_exit/
+    # AppStatus leak from the exception path specifically.
+    async with serve_replay_over_http(_replay_store(), GOLDEN_SERVER, tools_served) as url:
+        async with streamable_http_client(url) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                tools = await session.list_tools()
+                assert {t.name for t in tools.tools} == {t.name for t in tools_served}
 
 
 @pytest.fixture
