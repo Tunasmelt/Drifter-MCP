@@ -7,18 +7,68 @@ the mirror gets the SAME redaction, not a weaker pass, since it's a common
 place to accidentally leave a gap by treating it as "just a backup copy."
 
 Structural, not free-text: this only ever replaces matched substrings with
-a fixed marker. It never generates or alters non-secret content — that
-distinction matters for the same reason docs/SPEC.md §10 forbids free-text
-mutation of tool descriptions elsewhere in this project.
+a marker derived from the matched value. It never generates or alters
+non-secret content — that distinction matters for the same reason docs/SPEC.md
+§10 forbids free-text mutation of tool descriptions elsewhere in this project.
+
+Marker is a deterministic hash, not a fixed placeholder (F-10 fix,
+docs/CHANGELOG.md): a bare fixed marker made two DIFFERENT secrets that both
+matched the same pattern indistinguishable on disk, which `drifter stats`'
+retry-rate heuristic (identical-consecutive-arguments) read as a false retry.
+
+Deliberately NOT salted, despite that being the more private option in
+isolation: `replay/replay_store.py`'s tier-1 exact-key replay redacts a
+LIVE call's raw arguments at lookup time and must land on the exact same
+marker the ORIGINAL recording session already wrote for that same secret —
+a per-session-random salt would make every secret-shaped argument miss on
+replay, permanently and silently, since replay-serve runs in a completely
+different process from the one that recorded the fixture and has no way to
+recover that session's salt. Determinism here is not a missed hardening
+opportunity, it's a hard requirement of an existing feature (F-11) — see
+`replay_store.py`'s `replay_key` docstring, which already states this
+constraint. What this DOES still guarantee, matching F-04's actual promise
+(never write the payload value): the marker is a one-way hash of a
+high-entropy input (by construction — every pattern this function's callers
+route through it is either a structured credential format or already passed
+the entropy/character-class gate in `_redact_high_entropy`), so recovering
+the original value from the marker is infeasible even without a salt. What
+it does NOT guarantee, and never claimed to: that the SAME secret used in
+two different recordings can't be confirmed as the same secret by an
+attacker who already holds a candidate guess and both recordings — an
+accepted, documented tradeoff in exchange for tier-1 replay continuing to
+work at all.
 """
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 from typing import Any
 
-REDACTED = "[REDACTED]"
+_MARKER_HASH_HEX_LEN = 12  # 48 bits -- collision-negligible at this
+# project's scale; the input being hashed is always high-entropy by
+# construction (see module docstring), so this stays infeasible to invert
+# even without a salt.
+_MARKER_RE = re.compile(r"^\[REDACTED:[0-9a-f]{" + str(_MARKER_HASH_HEX_LEN) + r"}\]$")
+
+
+def _redaction_marker(matched: str) -> str:
+    digest = hashlib.sha256(matched.encode("utf-8", errors="surrogatepass")).hexdigest()
+    return f"[REDACTED:{digest[:_MARKER_HASH_HEX_LEN]}]"
+
+
+def is_redaction_marker(value: Any) -> bool:
+    """True iff `value` is exactly one redaction marker and nothing else --
+    the replacement for comparing against a fixed `REDACTED` constant, which
+    no longer exists now that the marker is value-derived (see module
+    docstring). Whole-string match only, matching how callers throughout
+    this project use it (asserting a specific field's value WAS redacted),
+    not a substring search — use this over hand-rolling a regex at each call
+    site so the marker SHAPE stays defined in exactly one place.
+    """
+    return isinstance(value, str) and bool(_MARKER_RE.match(value))
+
 
 # Order matters: more specific/structured patterns first, so a JWT embedded
 # in a "Bearer <token>" string is fully consumed by the JWT pattern before
@@ -70,7 +120,7 @@ def _redact_high_entropy(text: str) -> str:
     def _maybe_redact(match: re.Match[str]) -> str:
         candidate = match.group(0)
         if _has_mixed_character_classes(candidate) and _shannon_entropy(candidate) >= _HIGH_ENTROPY_THRESHOLD_BITS_PER_CHAR:
-            return REDACTED
+            return _redaction_marker(candidate)
         return candidate
 
     return _HIGH_ENTROPY_CANDIDATE_RE.sub(_maybe_redact, text)
@@ -79,7 +129,7 @@ def _redact_high_entropy(text: str) -> str:
 def redact_string(text: str) -> str:
     """Redacts every known secret pattern, then sweeps for high-entropy leftovers."""
     for pattern in _KNOWN_SECRET_PATTERNS:
-        text = pattern.sub(REDACTED, text)
+        text = pattern.sub(lambda m: _redaction_marker(m.group(0)), text)
     return _redact_high_entropy(text)
 
 

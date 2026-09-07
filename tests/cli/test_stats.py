@@ -21,6 +21,7 @@ from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 from cli.stats import collect_stats, render_stats, run_stats
 from record.proxy import Direction
 from record.reader import read_session
+from record.redact import is_redaction_marker
 from record.schema import ToolCall
 from record.writer import SessionRecorder
 
@@ -403,18 +404,19 @@ def test_collect_stats_exact_values_on_a_small_known_session(tmp_path):
     assert stats.total_retries == 1
 
 
-def test_two_different_secrets_that_both_redact_identically_are_misdetected_as_a_retry(tmp_path):
-    """A real, confirmed interaction between F-04 (redaction) and F-10
-    (retry detection), not previously tested anywhere: retry_rate
-    compares the STORED (already-redacted) `arguments`, per
-    record/writer.py's own `_write_tool_call` (`arguments=
-    redact_secrets(arguments)`) -- redaction happens before write, not
-    after read. Two calls with two DIFFERENT real secret values that
-    both happen to redact to the same "[REDACTED]" marker are therefore
-    genuinely indistinguishable by the time `drifter stats` ever sees
-    them, and get counted as a retry even though they weren't one. This
-    locks in that real, confirmed false-positive risk as documented
-    behavior, not a silently-relied-upon assumption.
+def test_two_different_secrets_are_no_longer_misdetected_as_a_retry(tmp_path):
+    """Previously a real, confirmed false-positive (FEATURES.md F-10, fixed
+    this round, see docs/CHANGELOG.md): retry_rate compares the STORED
+    (already-redacted) `arguments`, per record/writer.py's own
+    `_write_tool_call` (`arguments=redact_secrets(arguments)`) -- redaction
+    happens before write, not after read. Two calls with two DIFFERENT real
+    secret values used to both redact to the same fixed "[REDACTED]" marker,
+    making them indistinguishable and misdetected as a retry. Fixed by
+    making the marker a deterministic hash of the matched value
+    (record/redact.py) -- confirmed here end-to-end, not just at the
+    redact.py unit level: two distinct secrets through the real
+    SessionRecorder now produce two distinct stored `arguments`, and
+    `drifter stats` correctly reports zero retries for them.
     """
     runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
     recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name="fake", session_id="sess_secret_collision")
@@ -435,14 +437,15 @@ def test_two_different_secrets_that_both_redact_identically_are_misdetected_as_a
 
     records = list(read_session(recorder.jsonl_path))
     calls = [r for r in records if isinstance(r, ToolCall)]
-    # Confirmed precondition: the two real, distinct secrets really did
-    # redact to byte-identical stored arguments -- the false positive
-    # below isn't a test-construction artifact.
-    assert calls[0].arguments == calls[1].arguments == {"api_key": "[REDACTED]"}
+    # The two real, distinct secrets now redact to two DIFFERENT stored
+    # markers -- confirmed here, not assumed, before checking retries below.
+    assert calls[0].arguments != calls[1].arguments
+    assert is_redaction_marker(calls[0].arguments["api_key"])
+    assert is_redaction_marker(calls[1].arguments["api_key"])
 
     stats = collect_stats(runs_dir)
     add_stats = stats.per_tool[("fake", "add")]
-    assert add_stats.retries == 1  # misdetected -- these were two genuinely different calls
+    assert add_stats.retries == 0  # correctly NOT a retry -- two genuinely different calls
 
 
 def test_percentiles_well_defined_for_a_single_call(tmp_path):

@@ -243,7 +243,16 @@ def _substitute_synonyms(text: str) -> tuple[str, tuple[tuple[str, str], ...]]:
     def _replace(match: re.Match) -> str:
         matched_word = match.group(0)
         synonym = _SYNONYMS[matched_word.lower()]
-        if matched_word[0].isupper():
+        # Case CLASS, not just first letter: an ALL-CAPS source word ("GET")
+        # must come out ALL-CAPS ("OBTAIN"), not merely title-cased
+        # ("Obtain") -- found and fixed this round (was previously a
+        # documented limitation, FEATURES.md F-16). len > 1 guards single-
+        # letter matches, though no _SYNONYMS key is length 1, so isupper()
+        # alone would already be safe -- kept explicit rather than relying
+        # on that fact holding forever.
+        if len(matched_word) > 1 and matched_word.isupper():
+            synonym = synonym.upper()
+        elif matched_word[0].isupper():
             synonym = synonym[0].upper() + synonym[1:]
         substitutions.append((matched_word, synonym))
         return synonym

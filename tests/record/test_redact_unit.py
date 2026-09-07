@@ -7,7 +7,7 @@ an over-eager catch-all would make Drifter's recordings useless (every tool
 name and identifier redacted) in the name of a guarantee nothing needed.
 """
 
-from record.redact import REDACTED, redact_rpc_payload, redact_secrets, redact_string
+from record.redact import is_redaction_marker, redact_rpc_payload, redact_secrets, redact_string
 
 PLANTED_OPENAI_KEY = "sk-" + "abcd1234EFGH5678ijkl9012MNOP3456qrst7890UVWX"
 PLANTED_BEARER_TOKEN = "Bearer xT9fL2mQ8vC4nR7pW1sD6hK3jY5bE0gA"
@@ -33,7 +33,32 @@ def test_jwt_redacted():
 def test_high_entropy_catch_all_redacts_random_token_of_unknown_shape():
     # 32 random-looking chars, no recognizable prefix/structure.
     random_token = "aQ7xM2pL9zR4vN8kT1wC6hB3jY5fD0gS"
-    assert redact_string(random_token) == REDACTED
+    assert is_redaction_marker(redact_string(random_token))
+
+
+# --- F-10 fix: the marker distinguishes different secrets ------------------
+# Previously a real, documented limitation (FEATURES.md F-10, fixed this
+# round): every secret redacted to the SAME fixed "[REDACTED]" placeholder,
+# so `drifter stats`' retry-rate heuristic (identical-consecutive-arguments)
+# misdetected two calls using two DIFFERENT real secrets as a retry. Fixed by
+# making the marker a deterministic hash of the matched value instead of a
+# constant -- these tests pin down the two properties that actually matter:
+# different secrets must produce different markers (the fix), and the SAME
+# secret must always produce the SAME marker (required for `drifter stats`'
+# retry detection AND `replay/replay_store.py`'s tier-1 exact-key replay to
+# keep working at all -- see redact.py's own module docstring for why this
+# can't be salted).
+
+
+def test_two_different_secrets_redact_to_different_markers():
+    key_a = "sk-" + "a" * 30
+    key_b = "sk-" + "b" * 30
+    assert redact_string(key_a) != redact_string(key_b)
+
+
+def test_the_same_secret_always_redacts_to_the_same_marker():
+    assert redact_string(PLANTED_OPENAI_KEY) == redact_string(PLANTED_OPENAI_KEY)
+    assert redact_secrets({"k": PLANTED_JWT}) == redact_secrets({"k": PLANTED_JWT})
 
 
 def test_ordinary_identifiers_survive_untouched():
@@ -50,8 +75,8 @@ def test_ordinary_identifiers_survive_untouched():
 def test_redact_secrets_recurses_through_nested_structures():
     nested = {"outer": {"inner": [PLANTED_OPENAI_KEY, {"deep": PLANTED_JWT}]}}
     result = redact_secrets(nested)
-    assert result["outer"]["inner"][0] == REDACTED
-    assert result["outer"]["inner"][1]["deep"] == REDACTED
+    assert is_redaction_marker(result["outer"]["inner"][0])
+    assert is_redaction_marker(result["outer"]["inner"][1]["deep"])
 
 
 def test_redact_secrets_does_not_mutate_input():
@@ -78,7 +103,9 @@ def test_a_secret_embedded_in_surrounding_text_preserves_the_rest():
     recordings actually useful to read."""
     text = f"Please use this key: {PLANTED_OPENAI_KEY} when calling the API."
     result = redact_string(text)
-    assert result == f"Please use this key: {REDACTED} when calling the API."
+    assert result.startswith("Please use this key: [REDACTED:")
+    assert result.endswith("] when calling the API.")
+    assert PLANTED_OPENAI_KEY not in result
 
 
 def test_empty_string_and_empty_containers_do_not_crash():
@@ -108,8 +135,8 @@ def test_redact_rpc_payload_only_touches_params_result_and_error_data():
     assert redacted["jsonrpc"] == "2.0"  # envelope fields untouched
     assert redacted["id"] == 7
     assert redacted["method"] == "tools/call"
-    assert redacted["params"]["api_key"] == REDACTED
-    assert redacted["result"]["token"] == REDACTED
+    assert is_redaction_marker(redacted["params"]["api_key"])
+    assert is_redaction_marker(redacted["result"]["token"])
 
 
 def test_redact_rpc_payload_redacts_error_data_specifically():
@@ -121,7 +148,7 @@ def test_redact_rpc_payload_redacts_error_data_specifically():
     redacted = redact_rpc_payload(raw)
     assert redacted["error"]["code"] == -32000  # structural error fields untouched
     assert redacted["error"]["message"] == "failed"
-    assert redacted["error"]["data"]["leaked"] == REDACTED
+    assert is_redaction_marker(redacted["error"]["data"]["leaked"])
 
 
 def test_redact_rpc_payload_does_not_mutate_the_input_dict():

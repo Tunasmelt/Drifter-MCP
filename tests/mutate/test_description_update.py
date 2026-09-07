@@ -207,23 +207,31 @@ def test_empty_and_whitespace_only_descriptions_do_not_crash():
         assert result.injection_flagged is False
 
 
-def test_all_caps_substitution_only_preserves_title_case_a_real_documented_limitation():
-    """The case-preservation logic (`_substitute_synonyms`) only checks
-    the matched word's FIRST letter -- `if matched_word[0].isupper():
-    synonym = synonym[0].upper() + synonym[1:]`. An ALL-CAPS source word
-    ("GET") therefore comes out Title-cased ("Obtain"), not ALL-CAPS
-    ("OBTAIN") -- confirmed here as real, current behavior, in the same
-    spirit as the already-documented a/an article-agreement limitation
-    (this operator fixes letter-based article agreement, not phonetics;
-    here it preserves title-case capitalization, not case CLASS). Real
-    tool descriptions overwhelmingly use ordinary sentence case, so this
-    is a narrow, low-probability edge, not a functional blocker -- but
-    it's real, confirmed behavior, not an assumption.
-    """
+def test_all_caps_substitution_preserves_all_caps_not_just_title_case():
+    """Previously a real, documented limitation (FEATURES.md F-16, fixed this
+    round): `_substitute_synonyms`'s case-preservation only ever checked the
+    matched word's FIRST letter, so an ALL-CAPS source word ("GET") came out
+    Title-cased ("Obtain") instead of ALL-CAPS ("OBTAIN") -- confirmed as a
+    red test against the pre-fix implementation before fixing it, per this
+    project's own required procedure for this class of change. Now the case
+    CLASS (all-caps vs. title-case vs. lowercase) is preserved, not just the
+    first letter."""
     result = mutate_description("GET the file contents.", seed=1)
     assert "GET" not in result.mutated
-    assert "Obtain" in result.mutated  # title-cased, not "OBTAIN"
+    assert "OBTAIN" in result.mutated
+    assert "Obtain" not in result.mutated
+
+
+def test_title_case_substitution_still_preserves_title_case_not_all_caps():
+    """The all-caps fix above must not regress the existing, correct
+    title-case behavior -- a source word capitalized only at its first
+    letter ("Get") must still substitute to a first-letter-only capitalized
+    synonym ("Obtain"), not ALL-CAPS ("OBTAIN") or all-lowercase ("obtain")."""
+    result = mutate_description("Get the file contents.", seed=1)
+    assert "Get" not in result.mutated
+    assert "Obtain" in result.mutated
     assert "OBTAIN" not in result.mutated
+    assert "obtain" not in result.mutated
 
 
 # --- manifest-level application ---------------------------------------------

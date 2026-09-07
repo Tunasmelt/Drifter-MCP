@@ -54,6 +54,106 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-10 retry-misdetection: redesigned and fixed, after a false start caught before it shipped
+
+Following the user's explicit go-ahead to redesign the F-10 fix despite it touching
+CLAUDE.md's non-negotiable "never write payload data" invariant: `record/redact.py`'s
+fixed `"[REDACTED]"` placeholder collapsed every secret matching a given pattern to
+the same value, which `drifter stats`' retry heuristic (identical-consecutive-
+arguments) read as a false retry whenever two DIFFERENT real secrets happened to
+match the same pattern.
+
+**First design attempt was wrong and was caught before landing, not after:** a
+per-`SessionRecorder`-instance random salt looked like the obviously more private
+fix (same secret → same marker within a session; different secret → different
+marker; same secret across two sessions → different marker, defeating any
+cross-corpus dictionary check). It was never committed — re-reading `replay/
+replay_store.py`'s own `replay_key` docstring before implementing surfaced that
+tier-1 exact-key replay redacts a LIVE call's raw arguments at lookup time and
+requires landing on the EXACT SAME marker the original recording session already
+wrote, from a completely different process with no access to that session's salt.
+A random salt would make every secret-shaped argument miss on replay, permanently
+and silently — regressing F-11 to fix F-10.
+
+**Actual fix:** the marker is now `sha256(matched_value)`, truncated to 12 hex
+chars (`[REDACTED:xxxxxxxxxxxx]`) — deterministic (no salt), so F-11's replay
+matching keeps working exactly as before, while still distinguishing different
+secrets from each other (fixing F-10) and remaining infeasible to invert (every
+input routed through it is high-entropy by construction — a structured credential
+format or already past the entropy/character-class gate). Documented trade-off,
+not silently accepted: an attacker holding both a candidate secret guess and a
+recorded corpus can confirm whether that guess was used, across sessions — the
+same property the old fixed placeholder already had zero of either way, so this is
+a net addition of same-value-equality information only, not a regression from a
+stronger baseline.
+
+`record.redact.REDACTED` (the old fixed-string constant) is removed — nothing
+should compare against a specific marker value anymore, since it's now
+value-derived. Replaced by `record.redact.is_redaction_marker(value)`, a proper
+shape check, used everywhere the old constant-equality checks were
+(`tests/record/test_redact_unit.py`, `tests/cli/test_stats.py`). The exact test
+that had locked in the old bug as documented behavior
+(`test_two_different_secrets_that_both_redact_identically_are_misdetected_as_a_
+retry`) is flipped to confirm the fix
+(`test_two_different_secrets_are_no_longer_misdetected_as_a_retry`) rather than
+deleted, preserving the regression coverage. Two new unit tests
+(`test_two_different_secrets_redact_to_different_markers`,
+`test_the_same_secret_always_redacts_to_the_same_marker`) pin down the two
+properties the whole design rests on. `docs/FEATURES.md`'s F-10 row moves from
+"Built, real interaction confirmed" (documented tradeoff) to "✅ Built" (fixed).
+
+---
+
+## Two "needs fixing" items closed out: one real fix, one confirmed non-bug
+
+Following up directly on the previous entry's triage: two of the three narrow,
+non-architectural items were run down to a real conclusion rather than left open.
+
+**F-16's ALL-CAPS case-preservation gap — fixed, red-test-first.** `_substitute_
+synonyms`'s case logic only ever checked the matched word's first letter
+(`if matched_word[0].isupper(): synonym[0].upper() + synonym[1:]`), so an ALL-CAPS
+source word ("GET") came out title-cased ("Obtain") rather than ALL-CAPS ("OBTAIN").
+A new test asserting the correct behavior was written and confirmed to fail against
+the pre-fix code first (`test_all_caps_substitution_preserves_all_caps_not_just_
+title_case`, replacing the old test that asserted the bug's own behavior as a
+"documented limitation"), then fixed: case CLASS (all-caps vs. title-case vs.
+lowercase) is now preserved, not just the first letter, with
+`test_title_case_substitution_still_preserves_title_case_not_all_caps` added
+alongside it to confirm the existing, correct title-case path didn't regress. All 22
+tests in `tests/mutate/test_description_update.py` pass. FEATURES.md's F-16 row
+updated: one known gap fixed, the closed-set injection-pattern gap (limitation 13)
+remains, deliberately, per that gap's own already-reviewed decision not to widen the
+pattern list reflexively.
+
+**The Gate-4-report's "unconfirmed proxy fidelity" signal — investigated, does not
+reproduce.** The prior entry's third finding (a `list_directory` call against an
+out-of-bounds parent directory reportedly recording `is_error: false` through the
+proxy) was run down directly rather than left as an open flag: a real
+`@modelcontextprotocol/server-filesystem` instance and a real `drifter observe`
+proxy, driven by a hand-built MCP client, both agree — the identical out-of-bounds
+call returns `is_error: true` in both the direct and proxied case, and the raw
+recorded JSONL confirms `"is_error": true` was actually written, not just reported
+correctly by an aggregate. `record/proxy.py`'s error forwarding is correct for this
+case. docs/SPEC.md §15 limitation 16 updated to record this as investigated and not
+reproduced, rather than leaving an ambiguous "needs follow-up" hanging indefinitely —
+the original subagent's report almost certainly compared against a differently-scoped
+or differently-resolved path than it believed, not an actual fidelity gap.
+
+**F-10's retry-misdetection item was NOT fixed, and shouldn't be without a separate
+decision.** On closer inspection this doesn't have a narrow fix available: retry
+detection (`cli/stats.py`) compares already-redacted arguments because that's the
+only form of the arguments this project's own non-negotiable invariant (CLAUDE.md,
+docs/SPEC.md §3 — recording never writes payload data by default, only shapes) allows
+onto disk in the first place. Any fix that distinguishes two different real secrets
+from each other necessarily requires writing *something* derived from the actual
+secret value that isn't a fixed placeholder — even a hash, despite revealing nothing
+about the value itself beyond equality, is a real, deliberate loosening of that
+invariant, not a bug fix. This is the "architectural invariant seems wrong" case
+CLAUDE.md reserves for a deliberate decision, moved from the "needs fixing" bucket to
+"needs adapting," not silently patched.
+
+---
+
 ## Gate 4's real second-user test, attempted for real: exact-match replay does not hold up against a genuine agent
 
 Gate 4 was previously closed by explicit, unverified override (previous entry below):

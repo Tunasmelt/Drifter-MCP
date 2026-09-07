@@ -655,14 +655,16 @@ when*.
     available in the same session preferred its own native tools and made zero MCP
     calls on its first attempt — a real behavioral fact about dogfooding with a
     capable agent, not a Drifter defect, but one that affects how any future real
-    dogfood session should be prompted. A third, unconfirmed signal from the same
-    test, flagged rather than asserted as a bug: one recorded call showed
-    `list_directory` against a parent (out-of-bounds) directory returning
-    `is_error: false` through the proxy, while an independent, direct (non-Drifter)
-    call to the same real server correctly refused with "Access denied" for the
-    identical out-of-bounds path. The test agent could not root-cause this further —
-    `record: {redact: shape}`'s payload redaction hides the actual result content
-    needed to confirm whether this is a real fidelity gap in `record/proxy.py`'s
-    passthrough or an artifact of how the discrepancy was checked. Needs follow-up
-    with un-redacted local reproduction before it can be called a confirmed bug
-    either way; recorded here so it isn't lost.
+    dogfood session should be prompted. A third signal from the same test was flagged
+    as unconfirmed (`list_directory` against a parent/out-of-bounds directory
+    reportedly recording `is_error: false` through the proxy, versus a direct call
+    correctly refusing) and has since been investigated directly: a local
+    reproduction (real `@modelcontextprotocol/server-filesystem`, real
+    `drifter observe` proxy, identical out-of-bounds `list_directory` call) was run
+    both directly against the server and through the proxy. Both agree —
+    `is_error: true` in both cases, and the recorded JSONL correctly shows
+    `"is_error": true` for the call (confirmed by reading the raw record, not just
+    `drifter stats`' aggregate). **Does not reproduce; not a real bug.** The
+    subagent's original test almost certainly compared against a differently-scoped
+    or differently-resolved path than it believed, not an actual proxy fidelity gap.
+    `record/proxy.py`'s error forwarding is correct for this case.
