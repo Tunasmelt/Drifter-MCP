@@ -39,7 +39,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-22 | Baseline fidelity gating | ✅ Built | Gate 2 |
 | F-23 | Behavior effect-size scoring | ✅ Built | Gate 2, zero-spread edge case is a stated design decision |
 | F-24 | Task assertion engine | ⚠️ UNKNOWN-default only | No real assertion authoring exists — **needs building** for v1 (depends on F-30) |
-| F-25 | Safety verdict engine | ❌ Not built | **Needs building** — v1 scope, F-26 now unblocks it |
+| F-25 | Safety verdict engine | ✅ Built | `policy/safety.py`, 2 of docs/SPEC.md §8's 5 check categories built (destructive invocation, confirmation_required bypass), 3 real documented gaps — wired into `drifter run`'s real report, evaluated with no fidelity gate |
 | F-26 | Tool risk classification | ✅ Built | `policy/classify.py`'s 4-tier resolution (user override → MCP annotations → name heuristics → observed behavior), wired into `drifter doctor`. Tier 4 (observed behavior) is a documented, deliberate stub — no signal currently recorded can honestly distinguish write from read-only |
 | F-27 | Adaptive repeat scheduling | ❌ Not built | **Needs building** — v1 scope |
 | F-28 | Signature grouping | ❌ Not built | **Needs building** — `mine/` is empty; deferred past Gate 3 deliberately (no real multi-week corpus yet) |
@@ -72,12 +72,15 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    → MCP annotations → name heuristics → observed behavior — the last a documented
    stub, see F-26's own entry), wired into `drifter doctor`. Now unblocks F-25 →
    F-31/F-32.
-5. **F-25 → F-31/F-32** — the rest of the `policy/` module (safety verdict engine,
-   then blast-radius preview / budget limits, both depending on F-25).
-6. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
+5. ~~**F-25**~~ — **built.** `policy/safety.py`, wired into `drifter run`'s real
+   report. 2 of 5 check categories built (destructive invocation,
+   confirmation_required bypass), 3 real documented gaps — see F-25's own entry.
+   Now unblocks F-31/F-32.
+6. **F-31/F-32** — blast-radius preview / budget limits, both depending on F-25.
+7. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
    multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
    first place, still true).
-7. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
+8. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
    no blocking dependents.
 
 ---
@@ -470,6 +473,20 @@ unassessed fixture correctly reports UNKNOWN, never PASS by default.
 **Technical:** Checks every trajectory against tool risk classification (F-26):
 unexpected write/destructive invocation, capability outside policy,
 `confirmation_required` bypass, secret leakage, annotation-behavior mismatch.
+**Built** (`policy/safety.py`): `evaluate_safety`/`evaluate_safety_for_session`
+resolve 2 of the 5 categories above from data this project actually records —
+a call to a tool F-26 classifies `"destructive"`/`"irreversible_write"`, and a
+call to a `policy.confirmation_required`-listed tool (treated as an automatic
+finding, since no live-mode confirmation UX exists anywhere in this codebase to
+have genuinely bypassed — see docs/SPEC.md §8's own implementation-status note for
+the full account). The other 3 (capability outside `allowed_capabilities`, secret
+leakage, annotation-behavior mismatch) are real, documented gaps, not silently
+dropped — each blocked by a real, separate reason (an unspecified config field, a
+structural recording invariant, F-26's own tier-3 stub respectively), not
+reinterpreted loosely to look built. Wired into `drifter run`'s real report
+(`cli/run.py`'s `_evaluate_safety_across_arms`) — evaluated across EVERY recorded
+session from both arms, deliberately with no fidelity gate, matching docs/SPEC.md §8's
+"evaluated on every run regardless of configuration."
 
 **Simple:** Checks whether the agent did anything genuinely risky during the test —
 independently of whether the task technically succeeded or the behavior merely
@@ -477,7 +494,14 @@ changed.
 
 **Depends on:** F-26.
 **Done when:** a fixture with a planted unexpected write to a destructive tool is
-caught as a SAFETY VIOLATION even when Behavior shows NO_REGRESSION.
+caught as a SAFETY VIOLATION even when Behavior shows NO_REGRESSION — confirmed at
+the unit level (`tests/policy/test_safety.py`) and, more importantly, through the
+REAL end-to-end pipeline: `tests/cli/test_run.py`'s `test_run_mutation_comparison_
+reports_a_real_safety_violation_via_policy_override` runs a real replay-served
+agent, forces a real golden-fixture tool into `policy.destructive`, and confirms
+the rendered report shows `SAFETY VIOLATION` alongside a clean `BEHAVIOR
+NO_REGRESSION` — the exact "reported even when Behavior shows NO_REGRESSION"
+case docs/SPEC.md §8 describes.
 
 ### F-26 Tool risk classification
 

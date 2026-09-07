@@ -604,6 +604,57 @@ yet — only tested against the golden fixture and two hand-built fixture server
 real gap worth someone picking up before this tier is trusted for a genuine
 live-mode gate (F-31/F-32).
 
+### v1 — Safety verdict engine (F-25)
+
+**Depends on:** F-26 (tool risk classification, above) — built. See `docs/SPEC.md`
+§8's implementation-status note for the full per-check breakdown and
+`docs/FEATURES.md`'s F-25 entry for the technical/simple summary.
+
+#### Tasks
+
+- [x] `policy/safety.py`: `evaluate_safety`/`evaluate_safety_for_session`,
+  2 of docs/SPEC.md §8's 5 check categories built — destructive/irreversible-write
+  invocation (via F-26's classification of `ToolsList.tools_served`) and
+  `confirmation_required` bypass (every call to a listed tool, since no live-mode
+  confirmation UX exists anywhere yet to have genuinely bypassed). 3 real,
+  individually-reasoned gaps for the rest (`allowed_capabilities` names an
+  unspecified config field; secret-in-output detection is structurally blocked by
+  F-02/F-04's shape-only recording invariant; annotation-vs-observed-behavior
+  mismatch is blocked by F-26's own tier-3 stub)
+- [x] `cli/run.py`: `RunResult.safety`, `_evaluate_safety_across_arms` — globs every
+  recorded session from BOTH arms directly (not `BaselineResult.valid_runs`, which
+  excludes low-fidelity runs Safety must still see — SPEC.md §8's own "evaluated on
+  every run regardless of configuration"), `render_run_result` gains the `SAFETY`
+  report line, matching docs/SPEC.md §13's exact format (`SAFETY NO VIOLATION`)
+- [x] `cli/config.py`'s existing `PolicyConfig` (built alongside F-26) threaded
+  through `run_run` → `run_mutation_comparison` → `_evaluate_safety_across_arms`,
+  no separate config surface needed
+
+Full new-test count: 13 (`test_safety.py`) + 2 (`test_run.py`, one asserting
+`NO_VIOLATION` on the existing real end-to-end test, one a new real end-to-end
+planted-violation test) = 15.
+
+#### Exit test
+
+A fixture with a planted unexpected write to a destructive tool is caught as a
+SAFETY VIOLATION even when Behavior shows NO_REGRESSION. **Met**:
+`tests/cli/test_run.py`'s `test_run_mutation_comparison_reports_a_real_safety_
+violation_via_policy_override` runs the REAL end-to-end pipeline (a real
+replay-served agent, real recorded sessions in both arms), forces a real
+golden-fixture tool into `policy.destructive`, and confirms the rendered report
+shows `SAFETY    VIOLATION` alongside a clean `BEHAVIOR  NO_REGRESSION` — the
+exact scenario docs/SPEC.md §8 describes, not a synthetic stand-in.
+
+#### Kill criterion
+
+If a real trajectory turns out to need Safety findings correlated with the
+mutation arm they occurred in (baseline vs. mutated) for the finding to be
+actionable — this round's implementation reports one merged finding list across
+both arms, deliberately, since a destructive call is equally dangerous regardless
+of which arm produced it — that merging decision needs revisiting, not just more
+findings bolted on. Not encountered yet; flagged for whoever next builds a report
+renderer that needs to attribute a finding to a specific arm.
+
 ### v1 — remaining scope
 
 - Synthetic replay provenance surfaced fully in reports
@@ -611,8 +662,8 @@ live-mode gate (F-31/F-32).
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
   candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be
   hand-written; mining matters once there's a real multi-week corpus
-- F-25 (safety verdict engine), now unblocked by F-26 above
-- Full safety policy engine and blast-radius preview for live mode (F-31 in full)
+- Full safety policy engine and blast-radius preview for live mode (F-31/F-32, now
+  unblocked by F-25 above)
 - Task assertions as a first-class authored feature, not just the engine (F-24 was
   built in Gate 3; the authoring UX around it is v1)
 - Adaptive scheduling tuning based on Gate 1–4 real usage data

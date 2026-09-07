@@ -296,6 +296,24 @@ destructive tool invocation, capability outside `allowed_capabilities`, bypassed
 contradicting a declared annotation. Reported even when Behavior shows NO_REGRESSION —
 this is the highest-value finding class.
 
+*Implementation status (F-25, docs/CHANGELOG.md):* `policy/safety.py` builds two of
+the five checks above, both grounded in data this project actually records — a
+destructive/irreversible-write invocation (`ToolCall.tool_name` against F-26's
+classification of `ToolsList.tools_served`) and a `confirmation_required` "bypass"
+(every call to a `policy.confirmation_required`-listed tool, since no live-mode
+confirmation UX exists anywhere in this codebase yet to have genuinely bypassed —
+the honest reading of "bypassed" when the thing being bypassed doesn't exist yet).
+The other three are real, stated gaps, not silently dropped: `allowed_capabilities`
+names a config field that was never actually specified in §11's configuration
+surface (the same shape of gap F-19's investigation found); secret detection in
+output is structurally blocked by F-02/F-04's own shape-only recording invariant
+(no string VALUE, redacted or not, ever reaches `result_shape`); and
+annotation-vs-observed-behavior mismatch is blocked directly by F-26's own documented
+scope decision (the observed-behavior classification tier always declines). Wired
+into `drifter run`'s real report (`cli/run.py`) — evaluated across every recorded
+session from both arms, deliberately with NO fidelity gate, matching this
+paragraph's own "evaluated on every run regardless of configuration."
+
 ## 9. Calibration register
 
 Every constant below is an engineering default, not a research finding. Ships in

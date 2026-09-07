@@ -30,9 +30,12 @@ from cli.run import (
 from evaluate.baseline import BaselineResult
 from evaluate.effect_size import EffectSizeResult
 from mutate.tool_addition import add_tool
+from policy.safety import SafetyResult
 from record.reader import read_session
 from record.schema import ToolCall
 from replay.replay_proxy import tools_served_from_session
+
+NO_VIOLATION = SafetyResult(verdict="NO_VIOLATION", findings=())
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 SCRIPTED_AGENT = Path(__file__).parent.parent / "fixtures" / "scripted_agent.py"
@@ -69,7 +72,7 @@ def test_render_run_result_shows_task_axis_as_unknown_unconditionally():
     result = RunResult(
         task_id="t", operator="description_update", baseline=baseline, mutated=baseline,
         effect=EffectSizeResult(deviation_rate=0.0, effect_size=0.0, verdict="NO_REGRESSION"),
-        mutation_log=[],
+        mutation_log=[], safety=NO_VIOLATION,
     )
     output = render_run_result(result)
     assert "TASK      UNKNOWN — no oracle configured" in output
@@ -84,7 +87,7 @@ def test_render_run_result_handles_unknown_behavior_verdict_without_crashing():
     result = RunResult(
         task_id="t", operator="description_update", baseline=empty, mutated=empty,
         effect=EffectSizeResult(deviation_rate=None, effect_size=None, verdict="UNKNOWN"),
-        mutation_log=[],
+        mutation_log=[], safety=NO_VIOLATION,
     )
     output = render_run_result(result)
     assert "BEHAVIOR  UNKNOWN" in output
@@ -191,10 +194,49 @@ def test_run_mutation_comparison_description_update_end_to_end(tmp_path):
     assert result.effect.verdict == "NO_REGRESSION"
     assert result.effect.deviation_rate == 0.0
     assert len(result.mutation_log) == len(tools_served_from_session(GOLDEN_FIXTURE))
+    assert result.safety.verdict == "NO_VIOLATION"  # F-25: the golden fixture's real tools are all benign
 
     output = render_run_result(result)
     assert "NO_REGRESSION" in output
     assert "desc_update_task" in output
+    assert "SAFETY    NO VIOLATION" in output
+
+
+def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_override(tmp_path):
+    """F-25 driven through the REAL end-to-end pipeline (real replay-served
+    agent, real recorded sessions in both arms), not just policy/safety.py's
+    own unit tests: a real golden-fixture tool, forced into policy.destructive,
+    must surface as a SAFETY VIOLATION in the real rendered report -- even
+    though Behavior itself is a clean NO_REGRESSION, matching docs/SPEC.md §8's
+    "reported even when Behavior shows NO_REGRESSION" framing.
+    """
+    from cli.config import PolicyConfig
+
+    calls = _golden_calls()[:3]
+    command = [sys.executable, str(SCRIPTED_AGENT), *(_spec(c.tool_name, c.arguments) for c in calls)]
+    forced_destructive = calls[0].tool_name
+
+    result = run_mutation_comparison(
+        task_id="safety_task",
+        prompt="",
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        agent_command=command,
+        operator="description_update",
+        session_dir=tmp_path / "runs",
+        raw_dir=tmp_path / "raw",
+        repeats=2,
+        timeout_s=30.0,
+        policy=PolicyConfig(destructive=[forced_destructive]),
+    )
+
+    assert result.effect.verdict == "NO_REGRESSION"  # behavior itself is unaffected
+    assert result.safety.verdict == "VIOLATION"
+    assert any(f.tool_name == forced_destructive for f in result.safety.findings)
+
+    output = render_run_result(result)
+    assert "SAFETY    VIOLATION" in output
+    assert forced_destructive in output
 
 
 # --- real end-to-end: agent.mode: http (F-38) --------------------------------

@@ -9,16 +9,22 @@ serving proxy, and behavior comparison (`evaluate.effect_size`).
 Scope, deliberately minimal — this is Gate 3's actual exit test (one
 real fragility found in the real dogfood agent), not the polished v1
 command surface: no `--budget`/`--dry-run`, no adaptive repeat
-scheduling (F-27), no docs/SPEC.md §13's full report-format mockup (task/
-safety verdict lines, calibration footnotes) — only what's needed to
-run a baseline, apply one operator, run the mutated arm, and report
-Behavior-axis NO_REGRESSION/INCONCLUSIVE/REGRESSION/UNKNOWN. Task axis
-reports UNKNOWN unconditionally (no assertion engine exists — F-24
-depends on F-30, task definitions, which isn't scheduled until later;
-see this prompt's own STOP-AND-CHECK) — that's the correct, honest
-default per the non-negotiable "verdict defaults to UNKNOWN" invariant,
-not a stub standing in for something unbuilt. Safety axis is out of
-scope entirely this prompt (F-25/F-26 risk classification).
+scheduling (F-27), no docs/SPEC.md §13's full calibration-footnote
+reporting — only what's needed to run a baseline, apply one operator,
+run the mutated arm, and report Behavior-axis
+NO_REGRESSION/INCONCLUSIVE/REGRESSION/UNKNOWN. Task axis reports UNKNOWN
+unconditionally (no assertion engine exists — F-24 depends on F-30, task
+definitions, which isn't scheduled until later; see this prompt's own
+STOP-AND-CHECK) — that's the correct, honest default per the
+non-negotiable "verdict defaults to UNKNOWN" invariant, not a stub
+standing in for something unbuilt.
+
+Safety axis (F-25/F-26, docs/CHANGELOG.md) IS wired, added once both existed:
+`_evaluate_safety_across_arms` evaluates every recorded session from both
+arms (not just "valid" ones — Safety has no fidelity gate, docs/SPEC.md §8's
+own text: "evaluated on every run regardless of configuration") against
+`config.policy`'s destructive-override/confirmation-required lists via
+`policy.safety.evaluate_safety_for_session`.
 
 STOP-AND-CHECK findings, load-bearing for this module's design (not
 re-derived here — see the session record for the full investigation):
@@ -47,13 +53,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
-from cli.config import ConfigError, load_config
+from cli.config import ConfigError, PolicyConfig, load_config
 from cli.stats import resolve_runs_dir
 from cli.subprocess_adapter import make_run_once
 from evaluate.baseline import BaselineResult, run_baseline
 from evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
 from mutate.description_update import MutationLogEntry, mutate_tool_manifest
 from mutate.tool_addition import add_tool
+from policy.safety import SafetyFinding, SafetyResult, evaluate_safety_for_session
 from record.calibration import Calibration, load_calibration
 from replay.replay_proxy import tools_served_from_session
 from replay.replay_store import ReplayStore
@@ -71,6 +78,7 @@ class RunResult:
     mutated: BaselineResult
     effect: EffectSizeResult
     mutation_log: list[MutationLogEntry]
+    safety: SafetyResult
 
 
 def _template_command(command: list[str], prompt: str) -> list[str]:
@@ -78,6 +86,31 @@ def _template_command(command: list[str], prompt: str) -> list[str]:
     AgentConfig docstring for why this is list-of-tokens, not a shell
     string requiring shlex parsing."""
     return [token.replace("{task.prompt}", prompt) for token in command]
+
+
+def _evaluate_safety_across_arms(session_dir: Path, policy: PolicyConfig) -> SafetyResult:
+    """Safety (docs/SPEC.md §8) is evaluated on EVERY recorded run, not just
+    "valid" ones — unlike Behavior/Task, it has no fidelity gate at all
+    (SPEC.md §8's own text: "Evaluated on every run regardless of
+    configuration"). A destructive call in a low-fidelity or otherwise
+    excluded run is still a real destructive call. Globs every session
+    JSONL under both arms directly, rather than reusing BaselineResult's
+    `valid_runs` accounting, which deliberately excludes runs this check
+    must still see.
+    """
+    findings: list[SafetyFinding] = []
+    for arm_dir in (session_dir / "baseline", session_dir / "mutated"):
+        if not arm_dir.exists():
+            continue
+        for session_path in sorted(arm_dir.glob("*.jsonl")):
+            result = evaluate_safety_for_session(
+                session_path,
+                destructive_override=policy.destructive,
+                confirmation_required=policy.confirmation_required,
+            )
+            findings.extend(result.findings)
+    verdict = "VIOLATION" if findings else "NO_VIOLATION"
+    return SafetyResult(verdict=verdict, findings=tuple(findings))
 
 
 def run_mutation_comparison(
@@ -95,6 +128,7 @@ def run_mutation_comparison(
     timeout_s: float | None = DEFAULT_TIMEOUT_S,
     agent_mode: str = "subprocess",
     agent_env_var: str = "DRIFTER_PROXY_URL",
+    policy: PolicyConfig | None = None,
 ) -> RunResult:
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
@@ -102,7 +136,15 @@ def run_mutation_comparison(
     same `fixture_path`-derived `ReplayStore` — the only difference
     between them is which manifest (`tools_served`) the replay proxy
     serves, exactly matching what docs/SPEC.md §7/§8 mean by "same task,
-    mutation active vs. not."
+    mutation active vs. not." Also evaluates the Safety axis (F-25) across
+    every recorded run from both arms — see `_evaluate_safety_across_arms`.
+
+    `policy` defaults to an empty `PolicyConfig()` (no overrides, nothing
+    requires confirmation) when not given, matching `cli.config.
+    DrifterConfig.policy`'s own default — callers that already have a
+    loaded config pass `config.policy` through; this function never loads
+    config itself (same "caller owns configuration" shape as
+    `evaluate.baseline.run_baseline`).
     """
     if operator not in OPERATORS:
         raise ValueError(f"unknown operator {operator!r} — must be one of {OPERATORS}")
@@ -150,6 +192,7 @@ def run_mutation_comparison(
     mutated_result = run_baseline(f"{task_id}__mutated_{operator}", mutated_run_once, repeats=repeats, calibration=calibration)
 
     effect = compute_behavior_effect_size(baseline_result, mutated_result, calibration=calibration)
+    safety = _evaluate_safety_across_arms(session_dir, policy or PolicyConfig())
 
     return RunResult(
         task_id=task_id,
@@ -158,6 +201,7 @@ def run_mutation_comparison(
         mutated=mutated_result,
         effect=effect,
         mutation_log=mutation_log,
+        safety=safety,
     )
 
 
@@ -187,6 +231,14 @@ def render_run_result(result: RunResult) -> str:
 
     lines.append("")
     lines.append("TASK      UNKNOWN — no oracle configured")
+    lines.append("")
+
+    # F-25: reported even when Behavior shows NO_REGRESSION (docs/SPEC.md §8's
+    # own text) -- this is the highest-value finding class, so it's never
+    # folded into or gated by the Behavior/Task verdicts above.
+    lines.append(f"SAFETY    {result.safety.verdict.replace('_', ' ')}")
+    for finding in result.safety.findings:
+        lines.append(f"          {finding.detail}")
     lines.append("")
 
     for run, label in ((result.baseline, "baseline"), (result.mutated, "mutated")):
@@ -248,5 +300,6 @@ def run_run(
         timeout_s=timeout_s,
         agent_mode=config.agent.mode,
         agent_env_var=config.agent.env_var,
+        policy=config.policy,
     )
     output_stream.write(render_run_result(result))

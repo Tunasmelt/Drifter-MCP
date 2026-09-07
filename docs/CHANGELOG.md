@@ -54,6 +54,59 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-25 (safety verdict engine) built, wired into a real `drifter run` report
+
+Following the priority list, now that F-26 unblocks it: `policy/safety.py`
+resolves docs/SPEC.md §8's Safety axis — "evaluated on every run regardless of
+configuration... reported even when Behavior shows NO_REGRESSION" — for two of
+its five named check categories, grounded in data this project actually records;
+wired into `cli/run.py` so a real `drifter run` report now has a real `SAFETY`
+line, not a stub.
+
+**Built:** a call to a tool F-26 classifies `"destructive"` or
+`"irreversible_write"` is a finding; a call to a tool listed in `drifter.yaml`'s
+`policy.confirmation_required` is treated as an automatic finding too — a real,
+stated reinterpretation of "bypassed," not a guess: no live-mode confirmation
+UX exists anywhere in this codebase yet (F-31/F-32 are still unbuilt), so there
+is no real confirmation step for a call to have genuinely bypassed. Since
+Drifter never invokes such a tool without going through this harness, every
+call to a `confirmation_required`-listed tool is the honest, correct reading of
+"bypassed" when the thing being bypassed doesn't exist yet.
+
+**Not built, each for its own real, individually-checked reason, not a batch
+excuse:** "capability outside `allowed_capabilities`" — no config field by that
+name exists anywhere in `cli/config.py`/docs/SPEC.md §11's actual configuration
+surface, the same shape of gap F-19's cache-busting investigation found (a
+feature description naming a mechanism that was never concretely specified).
+"Secrets detected in output" — structurally impossible from what's currently
+recorded: `compute_result_shape` never stores string VALUES at all, not even a
+redaction marker, so there is nothing to scan (F-02/F-04's shape-only
+invariant, working exactly as designed). "Observed behavior contradicting a
+declared annotation" — directly blocked by F-26's own documented scope
+decision: the observed-behavior classification tier always declines, so there's
+nothing to compare a declared annotation against yet.
+
+`cli/run.py` gains `_evaluate_safety_across_arms`, called from
+`run_mutation_comparison` and threaded into the new `RunResult.safety` field.
+Deliberately evaluated across EVERY recorded session from both arms via a
+direct glob of the session directories — not `BaselineResult.valid_runs`, which
+excludes low-fidelity or otherwise-invalid runs Safety must still see, since a
+destructive call is dangerous regardless of whether the surrounding trajectory
+cleared the fidelity floor. `render_run_result` gains the `SAFETY` line, format
+matching docs/SPEC.md §13's report mockup exactly (`SAFETY    NO VIOLATION`).
+
+Confirmed through the real end-to-end pipeline, not just unit tests: `tests/
+cli/test_run.py` gains a test that runs a real replay-served agent, forces a
+real golden-fixture tool into `policy.destructive`, and confirms the rendered
+report shows `SAFETY    VIOLATION` alongside a clean `BEHAVIOR  NO_REGRESSION`
+— F-25's own "Done when" bar, met with real data rather than a hand-built
+dataclass. 15 new tests total across `tests/policy/test_safety.py` and `tests/
+cli/test_run.py`. docs/SPEC.md §8 and docs/PHASES.md both gain implementation-status
+notes/a full gate-shaped Tasks/Exit-test/Kill-criterion block recording exactly
+which of the five check categories are real and which are honestly deferred.
+
+---
+
 ## F-26 (tool risk classification) built: the `policy/` module's first feature
 
 Following the priority list: `policy/classify.py` resolves a `ToolDescriptor`
