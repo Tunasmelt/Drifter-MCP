@@ -94,7 +94,7 @@ def test_user_7_low_fidelity_reports_unknown_not_a_false_verdict(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=fixture_path,
+        fixture=fixture_path,
         server_name="fake",
         task_id="test_user_7",
         operator="description_update",

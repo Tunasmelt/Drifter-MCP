@@ -82,7 +82,7 @@ def test_harness_reports_regression_against_a_known_planted_break(tmp_path):
     result = run_mutation_comparison(
         task_id="kill_criterion_brittle_agent",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",

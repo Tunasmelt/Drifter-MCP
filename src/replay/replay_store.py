@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Literal
@@ -139,6 +140,18 @@ class ReplayStore:
                 self._semantic_index[semantic_key(record.server, record.tool_name, record.arguments)] = replace(
                     response, match_tier="semantic"
                 )
+
+    def index_sessions(self, paths: Sequence[Path]) -> None:
+        """Indexes every session in `paths` into this one store — DEC-027(b)'s
+        corpus replay (docs/CHANGELOG.md). Nothing here is new behavior:
+        `index_session` was always additive across files (last-writer-wins
+        per key, see its own docstring), and `tests/replay/test_replay_store.
+        py` already covered multi-file merging. This exists so the intent is
+        named at the call site rather than left as a bare loop, and so
+        `replay/corpus.py`'s resolved path list has an obvious destination.
+        """
+        for path in paths:
+            self.index_session(path)
 
     def lookup(
         self,

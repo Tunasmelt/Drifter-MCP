@@ -112,7 +112,7 @@ def test_user_1_happy_path_end_to_end(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=fixture_path,
+        fixture=fixture_path,
         server_name="fake",
         task_id="test_user_1",
         operator="description_update",

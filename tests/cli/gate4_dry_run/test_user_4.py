@@ -84,7 +84,7 @@ def test_user_4_tool_addition_regression_via_last_tool_selection(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=fixture_path,
+        fixture=fixture_path,
         server_name="annotated",
         task_id="test_user_4",
         operator="tool_addition",

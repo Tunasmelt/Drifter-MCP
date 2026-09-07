@@ -6,6 +6,68 @@ not just a diff.
 
 ---
 
+## DEC-027(b): corpus replay — `drifter run` reads a corpus, not one fixture
+
+The second of DEC-027's three pieces. `drifter run --fixture <one.jsonl>` replayed
+from exactly one recorded session; `--fixture` now accepts any number of session
+files, directories of them, or a mix, and every resolved session is indexed into one
+`ReplayStore`. `drifter replay-serve` got the same treatment, for the same reason —
+a real external agent connecting to it explores exactly the way the Gate 4 test's did.
+
+**What is and isn't being claimed.** docs/SPEC.md §7 already records that a second,
+*richer* single fixture failed identically to the first, which rules out "the fixture
+wasn't rich enough yet" as an explanation. That finding is not contradicted here and
+the distinction matters: what failed was one session whose author tried to ANTICIPATE
+the agent's follow-up patterns; a corpus is the union of many sessions actually
+RECORDED from real behavior, accumulating coverage empirically instead of by guess.
+That is why DEC-027 chose it as the honest lever. It is not a claim that it suffices —
+§7's combinatorial argument applies undiminished to any finite corpus, and nothing has
+yet measured how the MISS rate moves as a corpus grows. Corpus replay is the only
+honest direction available; its sufficiency is an open empirical question, which is
+what DEC-027(c) exists to answer rather than assume. A cross-reference saying so was
+added to §7 itself, since the two passages could otherwise be read as contradicting.
+
+**`replay/corpus.py`** resolves inputs and reports what the corpus holds. Two
+decisions worth stating:
+
+*Directory expansion is deliberately non-recursive.* `drifter observe` writes
+sessions directly into the runs directory while `drifter run` writes its arms to
+`<runs>/run/<task>/{baseline,mutated}/`, so a non-recursive glob picks up real
+observed recordings and structurally excludes `drifter run`'s own output. That is
+load-bearing, not tidiness: indexing a prior run's baseline arm would be circular
+(replaying Drifter's own replay), and indexing its mutated arm would poison the
+corpus with a deliberately-altered manifest, silently presenting the mutated
+interface as the real server's.
+
+*Task grouping is not required and deliberately not attempted.* No recorded field
+ties a session to the task that produced it (`cli/score.py`'s docstring documents
+that gap at length). It doesn't block this: replay keys on `(server, tool,
+arguments)`, not on task, so a session recorded doing some other task against the
+same server is valid replay material — and task diversity across a corpus is exactly
+what widens coverage. Sessions from a *different* server are harmless to index (their
+keys carry that server's name and can never match) but are counted separately, so the
+reported number never overstates what actually contributes.
+
+**Reported before anything is spent.** `drifter run` now prints a REPLAY CORPUS line
+ahead of the blast-radius preview: how many of the resolved sessions actually recorded
+against this server, how many calls were indexed, a warning if none did, and a warning
+if the contributing sessions disagree on the tool manifest (real interface drift
+mid-corpus, surfaced rather than silently resolved by picking the newest). Run against
+this repo's own accumulated corpus it immediately reported `20 of 83 session(s)
+recorded against 'filesystem', 15 call(s) indexed` — thin, and now visibly so.
+
+**A real bug, found by running it rather than reasoning about it.** The first version
+sampled the manifest source as the single session for `policy/blast_radius.py`'s
+per-run cost estimate. Against the real corpus, the most recently started session
+turned out to carry a manifest and zero calls — so the preview a user authorizes real
+spending through cheerfully reported "~0 tool call(s)". Blast radius is a cost-and-risk
+ceiling, so of the available single-session samples it must take the one that cannot
+understate: now the HEAVIEST contributing session (`Corpus.heaviest_path`), which
+restored a correct ~140-call estimate for the same invocation. Locked in by its own
+regression test.
+
+---
+
 ## DEC-027: limitation 16 decided — the premise is wrong, not the matching
 
 docs/SPEC.md §15 limitation 16 (exact-match replay collapsing against a real,

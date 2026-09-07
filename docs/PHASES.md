@@ -824,10 +824,12 @@ encountered yet; no current consumer needs it.
   ahead of everything below them on this list:
   - ~~(a) minimum-evidence gate on the Behavior verdict~~ — built
     (`calibration.min_valid_runs`, default 3; UNKNOWN with a rendered reason below it).
-  - (b) **corpus-based replay** — `drifter run` indexes every recorded session for a
-    task rather than a single `--fixture`. Attacks the MISS rate with coverage, the
-    only honest lever. `ReplayStore.index_session` is already additive per file, so
-    this is mostly CLI/orchestration surface, not new matching logic.
+  - ~~(b) corpus-based replay~~ — built (`replay/corpus.py`): `--fixture` on both
+    `drifter run` and `drifter replay-serve` takes any number of session files,
+    directories, or a mix, all indexed into one store, with a REPLAY CORPUS summary
+    printed before anything is spent. **Not** a claim that it closes limitation 16 —
+    docs/SPEC.md §7's combinatorial argument applies to any finite corpus, and how the
+    MISS rate actually moves as a corpus grows is unmeasured. That is (c)'s job.
   - (c) **projected replay coverage, pre-flight** — report a corpus's expected MISS
     rate before real agent runs are spent, not after. Belongs in F-31's blast-radius
     preview, which already carries "estimated replay coverage" as a stated gap.

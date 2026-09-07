@@ -210,7 +210,7 @@ def test_report_reconstructs_the_same_verdict_a_real_drifter_run_produced(tmp_pa
     live_result = run_mutation_comparison(
         task_id="reconstruct_task",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",

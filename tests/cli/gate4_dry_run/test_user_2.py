@@ -134,7 +134,7 @@ def test_user_2_real_regression_via_the_full_pipeline(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=fixture_path,
+        fixture=fixture_path,
         server_name="shared",
         task_id="test_user_2",
         operator="description_update",

@@ -150,18 +150,31 @@ agent: {mode: http, env_var: DRIFTER_PROXY_URL}
 Then:
 
 ```
-drifter run --fixture <recorded.jsonl> --server my-server \
+drifter run --fixture .drifter/runs --server my-server \
             --task-id my-task --prompt "..." --operator description_update
+```
+
+`--fixture` takes as many recorded sessions as you have — individual files,
+directories of them, or a mix — and replays from all of them at once. **Point it at
+your whole corpus, not one session.** A real agent explores, so any single recording
+covers very little of what it does next; more recordings means more calls resolve
+instead of MISSing. `drifter run` prints what it actually found before spending
+anything:
+
+```
+REPLAY CORPUS  20 of 83 session(s) recorded against 'filesystem', 15 call(s) indexed
 ```
 
 `drifter run`'s current scope is deliberately minimal (see its own module docstring)
 — one task, one operator, a behavioral comparison. It is not yet the full orchestrated
 `v1` command surface. **Known limitation, confirmed against a real, non-scripted
-agent** (see [`docs/SPEC.md` §15, limitation 16](docs/SPEC.md)): exact-match replay
-frequently fails to match a real agent's actual call pattern, which can exclude most
-runs for low fidelity and leave a verdict computed from very little surviving data —
-always check the report's `N/10 valid runs` lines, not just its headline verdict,
-before trusting a `REGRESSION`/`NO_REGRESSION` result.
+agent** (see [`docs/SPEC.md` §15, limitation 16](docs/SPEC.md) and DEC-027 in
+[`docs/CHANGELOG.md`](docs/CHANGELOG.md)): replay frequently fails to match a real
+agent's actual call pattern, which excludes runs for low fidelity. Drifter no longer
+reports a confident verdict on top of that — below `calibration.min_valid_runs` per
+arm you get `UNKNOWN` with the surviving counts — but a thin corpus still means fewer
+usable runs, so check the `N/10 valid runs` and `REPLAY CORPUS` lines, not just the
+headline verdict.
 
 `drifter run` shows a blast-radius preview (planned agent runs, estimated tool calls
 by risk level) and asks for confirmation before spawning any real agent process —

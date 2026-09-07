@@ -159,7 +159,7 @@ def test_run_run_raises_actionable_error_when_agent_block_missing(tmp_path):
     config_path = _write_config(tmp_path, VALID_YAML_NO_AGENT)
     out = io.StringIO()
     with pytest.raises(ConfigError, match="agent:"):
-        run_run(config_path=config_path, fixture_path=GOLDEN_FIXTURE, server_name=GOLDEN_SERVER, output_stream=out)
+        run_run(config_path=config_path, fixture=GOLDEN_FIXTURE, server_name=GOLDEN_SERVER, output_stream=out)
 
 
 def test_run_run_raises_actionable_error_when_fixture_missing(tmp_path):
@@ -175,7 +175,7 @@ def test_run_run_raises_actionable_error_when_server_missing(tmp_path):
     config_path = _write_config(tmp_path, text)
     out = io.StringIO()
     with pytest.raises(ConfigError, match="server"):
-        run_run(config_path=config_path, fixture_path=GOLDEN_FIXTURE, output_stream=out)
+        run_run(config_path=config_path, fixture=GOLDEN_FIXTURE, output_stream=out)
 
 
 def test_run_run_end_to_end_via_real_config(tmp_path):
@@ -191,7 +191,7 @@ def test_run_run_end_to_end_via_real_config(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         task_id="via_config",
         operator="description_update",
@@ -226,7 +226,7 @@ def test_run_run_declining_confirmation_aborts_without_running_the_agent(tmp_pat
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         task_id="declined_task",
         runs_dir=tmp_path / "runs",
@@ -248,7 +248,7 @@ def test_run_run_empty_input_is_treated_as_declining(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         runs_dir=tmp_path / "runs",
         output_stream=out,
@@ -268,7 +268,7 @@ def test_run_run_interactive_yes_confirmation_proceeds(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         task_id="confirmed_task",
         runs_dir=tmp_path / "runs",
@@ -298,7 +298,7 @@ def test_run_run_dry_run_shows_preview_and_never_spawns_the_agent(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         task_id="dry_run_task",
         runs_dir=tmp_path / "runs",
@@ -324,7 +324,7 @@ def test_run_mutation_comparison_budget_limits_the_number_of_real_agent_runs(tmp
     result = run_mutation_comparison(
         task_id="budget_task",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",
@@ -359,7 +359,7 @@ def test_run_mutation_comparison_description_update_end_to_end(tmp_path):
     result = run_mutation_comparison(
         task_id="desc_update_task",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",
@@ -402,7 +402,7 @@ def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_over
     result = run_mutation_comparison(
         task_id="safety_task",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",
@@ -444,7 +444,7 @@ def test_run_mutation_comparison_parameter_rename_end_to_end(tmp_path):
     result = run_mutation_comparison(
         task_id="param_rename_task",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="parameter_rename",
@@ -481,7 +481,7 @@ def test_run_run_end_to_end_via_config_with_agent_mode_http(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         task_id="http_mode_task",
         operator="description_update",
@@ -523,7 +523,7 @@ def test_run_mutation_comparison_tool_addition_end_to_end_over_http(tmp_path):
     result = run_mutation_comparison(
         task_id="tool_addition_http_task",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="tool_addition",
@@ -556,7 +556,7 @@ def test_run_mutation_comparison_reports_a_real_regression_over_http(tmp_path):
     result = run_mutation_comparison(
         task_id="regression_over_http",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=[sys.executable, str(SCRIPTED_AGENT), select_spec],
         operator="description_update",
@@ -601,7 +601,7 @@ def test_run_mutation_comparison_tool_addition_end_to_end(tmp_path):
     result = run_mutation_comparison(
         task_id="tool_addition_task",
         prompt="",
-        fixture_path=GOLDEN_FIXTURE,
+        fixture=GOLDEN_FIXTURE,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="tool_addition",

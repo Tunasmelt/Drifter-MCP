@@ -23,7 +23,13 @@ Manifest selection: `--fixture` provides the `ReplayStore` + baseline
 recorded corpus, never a live connection: this command never imports
 `mcp.client.stdio` or anything that could dial a real tool server,
 same structural guarantee as `replay_proxy.py`/`subprocess_adapter.py`
-themselves). `--mutate {description_update,tool_addition}` (optional)
+themselves). As of DEC-027(b) that is a real corpus, not one file:
+`--fixture` takes any number of sessions and/or directories, indexed
+into one store (`replay/corpus.py`), which matters most HERE of all
+places — everything connecting to this entrypoint is by definition a
+real external agent, the exact case docs/SPEC.md §15 limitation 16
+measured a collapsing MISS rate for.
+`--mutate {description_update,tool_addition,parameter_rename}` (optional)
 applies that operator to the manifest before serving it, with `--seed`
 controlling reproducibility — the exact same two-arm choice `cli/
 run.py`'s own orchestration already computes for the scripted-agent
@@ -51,6 +57,7 @@ which is what actually blocked the real dogfood run.
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
@@ -62,14 +69,15 @@ from mutate.description_update import mutate_tool_manifest
 from mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
 from mutate.tool_addition import add_tool
 from record.writer import SessionRecorder
-from replay.replay_proxy import run_replay_proxy, tools_served_from_session
+from replay.corpus import load_corpus, render_corpus_summary
+from replay.replay_proxy import run_replay_proxy
 from replay.replay_store import ReplayStore
 
 OPERATORS = ("description_update", "tool_addition", "parameter_rename")
 
 
 def run_replay_serve(
-    fixture_path: Path,
+    fixture: Path | Sequence[Path],
     server_name: str,
     session_dir: Path,
     raw_dir: Path,
@@ -80,9 +88,15 @@ def run_replay_serve(
     if operator is not None and operator not in OPERATORS:
         raise ConfigError(f"unknown --mutate operator {operator!r} — must be one of {OPERATORS}")
 
+    # DEC-027(b): a real external agent connecting here explores exactly the
+    # way the Gate 4 test's agent did, so a one-session corpus MISSes
+    # constantly — same lever and same mechanism as `drifter run`'s (see
+    # `replay/corpus.py`). `fixture` takes files, directories, or a mix.
+    inputs = [Path(fixture)] if isinstance(fixture, (str, Path)) else [Path(p) for p in fixture]
+    corpus = load_corpus(inputs, server_name)
     store = ReplayStore()
-    store.index_session(fixture_path)
-    original_tools = tools_served_from_session(fixture_path)
+    store.index_sessions(corpus.session_paths)
+    original_tools = list(corpus.tools_served)
 
     synthetic_tool_names: frozenset[str] = frozenset()
     inverse_map: dict[str, dict[str, str]] | None = None
@@ -101,7 +115,8 @@ def run_replay_serve(
     recorder = SessionRecorder(session_dir=session_dir, raw_dir=raw_dir, server_name=server_name)
 
     mutation_note = f"mutated: {operator}, seed={seed}" if operator else "baseline, unmutated"
-    status_stream.write(f"drifter replay-serve — serving {server_name!r} from {fixture_path} ({mutation_note})\n")
+    status_stream.write(render_corpus_summary(corpus, server_name) + "\n")
+    status_stream.write(f"drifter replay-serve — serving {server_name!r} ({mutation_note})\n")
     status_stream.flush()
 
     try:

@@ -278,6 +278,19 @@ open-ended sequence (some runs reached 8-9 calls for a 2-call task). No finite
 single-session recording can realistically pre-populate that space at exact-tier-only
 resolution.
 
+*Relationship to DEC-027(b)'s corpus replay, stated because these two findings could
+easily be read as contradicting each other and do not.* What is ruled out above is
+"one richer, better-anticipated fixture" — a single session whose author tried to
+guess the follow-up patterns in advance. Corpus replay is a different mechanism: the
+UNION of many sessions actually recorded from real agent behavior, which accumulates
+coverage empirically instead of by anticipation. That distinction is why DEC-027 chose
+it as the honest lever. It is emphatically NOT a claim that it suffices: this
+section's own combinatorial argument applies with undiminished force to any finite
+corpus, and nothing has yet measured how the MISS rate actually moves as a corpus
+grows. Treat corpus replay as the only honest direction available, with its
+sufficiency an open empirical question — which is precisely what DEC-027(c)
+(projected coverage, measured and reported) exists to answer rather than assume.
+
 This reframes a prior Gate 3 scoping decision. Tier 3 (semantic matching) was
 deferred from F-16/F-17 on the reasoning that neither operator's own mutation changes
 argument values in a way that needs it — correct as far as it went. This finding

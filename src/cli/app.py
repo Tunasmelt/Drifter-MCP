@@ -95,7 +95,11 @@ def _build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Baseline + one mutation operator, replay mode (F-35, Gate 3 minimal scope)")
     run_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml (needs an agent: block)")
-    run_parser.add_argument("--fixture", type=Path, required=True, help="Already-recorded session JSONL to replay from")
+    run_parser.add_argument(
+        "--fixture", type=Path, required=True, nargs="+",
+        help="Already-recorded session JSONL(s) to replay from, and/or directories of them "
+             "(DEC-027: coverage across a corpus is what keeps replay fidelity up)",
+    )
     run_parser.add_argument("--server", required=True, help="Server name the fixture session was recorded against")
     run_parser.add_argument("--task-id", default="task", help="Label for this task (no task-definition system exists yet — see cli/run.py)")
     run_parser.add_argument("--prompt", default="", help="Substituted into agent.command's {task.prompt} token")
@@ -125,7 +129,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
 
     replay_serve_parser = subparsers.add_parser("replay-serve", help="Serve a replayed manifest over real stdio, for a real agent to connect to")
-    replay_serve_parser.add_argument("--fixture", type=Path, required=True, help="Already-recorded session JSONL to replay from")
+    replay_serve_parser.add_argument(
+        "--fixture", type=Path, required=True, nargs="+",
+        help="Already-recorded session JSONL(s) to replay from, and/or directories of them (DEC-027)",
+    )
     replay_serve_parser.add_argument("--server", required=True, help="Server name the fixture session was recorded against")
     replay_serve_parser.add_argument("--runs-dir", type=Path, default=Path(".drifter/runs"), help="Where to write the new recorded session JSONL")
     replay_serve_parser.add_argument("--raw-dir", type=Path, default=None, help="Defaults to <runs-dir>/../raw")
@@ -199,7 +206,7 @@ def main() -> None:
         try:
             result = run_run(
                 config_path=args.config,
-                fixture_path=args.fixture,
+                fixture=args.fixture,
                 server_name=args.server,
                 task_id=args.task_id,
                 prompt=args.prompt,
@@ -225,7 +232,7 @@ def main() -> None:
         raw_dir = args.raw_dir if args.raw_dir is not None else args.runs_dir.parent / "raw"
         try:
             run_replay_serve(
-                fixture_path=args.fixture,
+                fixture=args.fixture,
                 server_name=args.server,
                 session_dir=args.runs_dir,
                 raw_dir=raw_dir,

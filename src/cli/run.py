@@ -41,17 +41,24 @@ label) and what `{task.prompt}` templating needs, nothing richer.
 
 Also per that STOP-AND-CHECK: docs/PHASES.md states "Gate 3 stays in replay
 mode throughout" — this command never spawns or connects to a live
-server. It builds a `ReplayStore`/manifest from an ALREADY-RECORDED
-session (`--fixture`), and spawns only the real agent under test (via
+server. It builds a `ReplayStore`/manifest from ALREADY-RECORDED
+sessions (`--fixture`), and spawns only the real agent under test (via
 `cli.subprocess_adapter`) against the replay-serving proxy, for both
 the baseline and mutated arms. The corpus this reads must already
 exist (from a prior `drifter observe` run, or the golden fixture) —
 this command does not record one.
+
+`--fixture` takes a whole corpus as of DEC-027(b) (docs/CHANGELOG.md):
+any number of session files, directories of them, or a mix, all indexed
+into one store. That is limitation 16's only honest lever — coverage,
+not looser matching — though explicitly not a claim that it closes it;
+see `replay/corpus.py` and docs/SPEC.md §7's own cross-reference.
 """
 
 from __future__ import annotations
 
 import sys
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
@@ -68,7 +75,7 @@ from policy.blast_radius import compute_blast_radius, render_blast_radius
 from policy.budget import BudgetTracker, budget_limited
 from policy.safety import evaluate_safety_across_arms
 from record.calibration import Calibration, load_calibration
-from replay.replay_proxy import tools_served_from_session
+from replay.corpus import load_corpus, render_corpus_summary
 from replay.replay_store import ReplayStore
 
 OPERATORS = ("description_update", "tool_addition", "parameter_rename")
@@ -83,10 +90,23 @@ def _template_command(command: list[str], prompt: str) -> list[str]:
     return [token.replace("{task.prompt}", prompt) for token in command]
 
 
+def _as_corpus_inputs(fixture: Path | Sequence[Path]) -> list[Path]:
+    """A single `Path` is a corpus of one — accepted deliberately, not as a
+    legacy shim: one recorded session is still a legitimate (if usually
+    inadequate, docs/SPEC.md §15 limitation 16) replay source, and the
+    golden-fixture tests genuinely want exactly that. `replay/corpus.py`
+    handles directories; this only normalizes "one or many" at the API
+    boundary.
+    """
+    if isinstance(fixture, (str, Path)):
+        return [Path(fixture)]
+    return [Path(p) for p in fixture]
+
+
 def run_mutation_comparison(
     task_id: str,
     prompt: str,
-    fixture_path: Path,
+    fixture: Path | Sequence[Path],
     server_name: str,
     agent_command: list[str],
     operator: str,
@@ -105,11 +125,18 @@ def run_mutation_comparison(
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
     Behavior-axis effect size between them. Both arms replay from the
-    same `fixture_path`-derived `ReplayStore` — the only difference
+    same `fixture`-derived `ReplayStore` — the only difference
     between them is which manifest (`tools_served`) the replay proxy
     serves, exactly matching what docs/SPEC.md §7/§8 mean by "same task,
     mutation active vs. not." Also evaluates the Safety axis (F-25) across
     every recorded run from both arms — see `evaluate_safety_across_arms`.
+
+    `fixture` is one session file, a directory of them, or any mix of both
+    (DEC-027(b), docs/CHANGELOG.md) — every resolved session is indexed into
+    one `ReplayStore`, because coverage is the only honest lever against the
+    MISS rate docs/SPEC.md §15 limitation 16 measured. The served manifest
+    comes from the most recent contributing session; see
+    `replay/corpus.py` for how the corpus is resolved and what it reports.
 
     `policy` defaults to an empty `PolicyConfig()` (no overrides, nothing
     requires confirmation) when not given, matching `cli.config.
@@ -130,9 +157,10 @@ def run_mutation_comparison(
         raise ValueError(f"unknown operator {operator!r} — must be one of {OPERATORS}")
 
     calibration = calibration or load_calibration()
+    corpus = load_corpus(_as_corpus_inputs(fixture), server_name)
     store = ReplayStore()
-    store.index_session(fixture_path)
-    original_tools = tools_served_from_session(fixture_path)
+    store.index_sessions(corpus.session_paths)
+    original_tools = list(corpus.tools_served)
     command = _template_command(agent_command, prompt)
     tracker = BudgetTracker(max_tool_calls=budget, max_wall_time_s=max_wall_time_s)
 
@@ -212,7 +240,7 @@ def run_mutation_comparison(
 
 def run_run(
     config_path: Path | None = None,
-    fixture_path: Path | None = None,
+    fixture: Path | Sequence[Path] | None = None,
     server_name: str | None = None,
     task_id: str = "task",
     prompt: str = "",
@@ -258,8 +286,11 @@ def run_run(
             f"{config_path or 'drifter.yaml'} has no `agent:` block — drifter run needs "
             "`agent.command` to know how to spawn the agent under test (docs/SPEC.md §11)."
         )
-    if fixture_path is None:
-        raise ConfigError("drifter run needs --fixture: an already-recorded session JSONL to replay from (Gate 3 stays in replay mode).")
+    if fixture is None:
+        raise ConfigError(
+            "drifter run needs --fixture: already-recorded session JSONL to replay from, "
+            "or a directory of them (Gate 3 stays in replay mode)."
+        )
     if server_name is None:
         raise ConfigError("drifter run needs --server: the server name the fixture session was recorded against.")
 
@@ -270,8 +301,24 @@ def run_run(
 
     calibration = load_calibration()
     effective_repeats = repeats if repeats is not None else calibration.baseline.repeats
-    original_tools = tools_served_from_session(fixture_path)
-    preview = compute_blast_radius(fixture_path, original_tools, effective_repeats, config.policy.destructive)
+
+    # DEC-027(b): resolve the corpus once, up front, and SHOW what it holds
+    # before anything is spent -- a thin or wrong-server corpus is the single
+    # most likely reason a verdict later comes back UNKNOWN, and the user can
+    # only act on that if they learn it here rather than afterwards.
+    corpus = load_corpus(_as_corpus_inputs(fixture), server_name)
+    output_stream.write(render_corpus_summary(corpus, server_name) + "\n\n")
+
+    original_tools = list(corpus.tools_served)
+    # Blast radius estimates the cost of ONE agent run, so it samples a
+    # single session rather than the whole corpus -- summing every session's
+    # calls would overstate a single run's cost by the corpus size. Of the
+    # available single-session samples it takes the HEAVIEST, because this
+    # preview is the gate a user authorizes real spending through and must
+    # not understate it (see `Corpus.heaviest_path` for the real bug that
+    # settled this).
+    representative = corpus.heaviest_path or corpus.session_paths[0]
+    preview = compute_blast_radius(representative, original_tools, effective_repeats, config.policy.destructive)
     output_stream.write(render_blast_radius(preview) + "\n")
 
     if dry_run:
@@ -289,7 +336,7 @@ def run_run(
     result = run_mutation_comparison(
         task_id=task_id,
         prompt=prompt,
-        fixture_path=fixture_path,
+        fixture=fixture,
         server_name=server_name,
         agent_command=config.agent.command,
         operator=operator,
