@@ -54,6 +54,78 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## Gate 4's real second-user test, attempted for real: exact-match replay does not hold up against a genuine agent
+
+Gate 4 was previously closed by explicit, unverified override (previous entry below):
+no real second user had ever run `init → observe → run` unassisted, and the honest
+record said so. Rather than leave that debt sitting under an ever-growing v1 feature
+stack indefinitely, and since no real second human is available, the closest available
+substitute was actually attempted: an independent, blind subagent — zero memory of
+this codebase or conversation, briefed only from `README.md`, explicitly instructed
+not to read `CLAUDE.md`/`docs/*` unless genuinely stuck the way a real user only reads
+internal docs after hitting a wall — was tasked with setting Drifter up from scratch
+against a real MCP server (`@modelcontextprotocol/server-filesystem`) and driving a
+REAL, non-scripted agent through it: a headless `claude -p` subprocess, not
+`tests/fixtures/scripted_agent.py`, which every prior gate's own testing (including
+the Gate 4 dry run) has used instead of a genuinely independent agent.
+
+**What worked, genuinely:** `drifter init` (found nothing before a `.mcp.json`
+existed, worked correctly once one did — an honest, actionable failure, not a crash),
+`drifter observe`, `drifter doctor`, `drifter stats`, `drifter score` — all usable
+unassisted, all honestly interpretable, matching this project's own stated design
+principles.
+
+**What didn't:**
+
+1. **A real documentation gap** — `drifter run` cannot be configured from README
+   alone. The required `agent:` block in `drifter.yaml` (`agent.mode`/`agent.command`,
+   docs/SPEC.md §11) was never mentioned in the Quickstart, and `mode: subprocess`
+   doesn't fit how Claude Code CLI actually invokes MCP servers (it spawns its own
+   children via `--mcp-config`, it doesn't speak MCP on its own stdio) — the test
+   agent had to source-dive `cli/run.py`/`cli/subprocess_adapter.py`/`cli/config.py`
+   and hand-build an `agent.mode: http` wrapper before `drifter run` would run at all.
+   **Fixed in this entry** — README's Quickstart now documents both `agent.mode`
+   values and the `mode: http` case's actual fit for a CLI-driven agent like Claude
+   Code, a straightforward factual correction, not an architectural decision.
+2. **The real, architectural-level finding** — once configured and run
+   (`calibration.yaml`'s default `repeats: 10`/arm), 9/10 baseline and 8/10 mutated
+   real runs were excluded for fidelity below the 0.70 floor (F-15/F-22's gating,
+   working exactly as designed), leaving 1 valid baseline and 2 valid mutated runs to
+   compute a verdict from. The report displayed a confident, unqualified `BEHAVIOR
+   REGRESSION`. Reading the actual transcripts of every surviving "valid" run showed
+   each was itself a near-total-failure session — the agent reporting the proxied
+   tools "aren't returning results" or hitting "replay MISS," several mutated-arm
+   agents falling back to native tools entirely. The verdict was measuring which of
+   two small, mostly-degenerate failure pools happened to fail in a more similar
+   shape, not behavioral drift on a completed task — and nothing in the report
+   surfaces that thinness to a reader who doesn't go read the raw transcripts. This
+   confirms and quantifies, with real numbers for the first time, the tier-3 finding
+   Gate 3 carried forward as "possibly blocking exact-tier replay's real-world
+   viability" — see docs/SPEC.md §15, new **limitation 16**, for the full account,
+   including two secondary findings (the doc gap above; a real agent preferring
+   native tools over MCP-proxied ones when both are available for a vague prompt) and
+   one unconfirmed signal flagged for follow-up (a possible proxy fidelity/
+   error-forwarding discrepancy on an out-of-bounds path — `list_directory` against a
+   parent directory recorded `is_error: false` through the proxy while a direct,
+   non-proxied call to the same real server correctly refused; payload redaction
+   blocked full root-causing, so this is reported, not asserted, as a bug).
+
+**Deliberately not patched here.** README's `agent:` block was a genuine, simple,
+factual documentation gap — fixed directly in this entry per this project's own
+standard for that class of issue. The exact-match-replay finding is not: it strikes
+at README's own "replayed... at zero marginal cost" / "record once, replay for free"
+framing, which is squarely the "architectural invariant seems wrong" case CLAUDE.md
+reserves for a deliberate decision, not a reflexive patch. `.drifter/GATE_STATUS`'s
+`gate_4_status` is updated to `override_followed_by_real_test_blocking_issue_found` —
+neither the original unverified override nor a clean pass, its own honest category —
+with the original override text preserved verbatim beneath the update rather than
+overwritten. Whoever picks up v1 next needs to decide explicitly how to respond to
+this before trusting `drifter run`'s verdicts or building further v1 features
+(F-39/F-13/`policy/`/`mine/`, the previously-recorded priority order) on top of the
+mutation-comparison pipeline as it currently stands.
+
+---
+
 ## F-20 audit: the planned mechanism was never built, but the real invariant holds — now locked in
 
 Continuing straight from the F-19 finding, F-20 (header integrity on live forwards)

@@ -602,3 +602,67 @@ when*.
     in by `tests/replay/test_replay_proxy.py`'s
     `test_tools_list_response_has_no_ttlms_or_cachescope_a_confirmed_gap`, which
     asserts their absence on the real wire rather than forcing the test green.
+16. `drifter run`'s exact-match replay essentially never matches a real, unscripted
+    agent's actual call pattern, and the report this produces gives no visible signal
+    to a cold reader that its verdict rests on mostly-excluded, mostly-failed runs.
+    Gate 3's own carried-forward tier-3 finding (limitation-adjacent text in
+    `.drifter/GATE_STATUS`'s `gate_3_note`, not previously numbered here) predicted
+    this as "possibly blocking exact-tier replay's real-world viability" based on two
+    ambiguous UNKNOWN outcomes against real Claude Code. This is that prediction
+    confirmed and quantified, not a new guess: an independent, blind test agent (no
+    memory of this codebase, briefed only from README.md, standing in for the real
+    second user Gate 4's own exit test still lacks) drove a genuine, non-scripted
+    headless Claude Code process through `drifter observe` on a real filesystem-server
+    task, then ran `drifter run --operator description_update` against the resulting
+    recording with `calibration.yaml`'s default `repeats: 10` per arm. Result: 9/10
+    baseline runs and 8/10 mutated runs were excluded for fidelity below the 0.70
+    floor (F-15/F-22's own gating, working exactly as designed) — leaving 1 valid
+    baseline run and 2 valid mutated runs to compute a verdict from. The report
+    displayed a confident `BEHAVIOR REGRESSION` at "100% deviation from baseline."
+    Reading the actual stdout transcripts of every surviving "valid" run (baseline and
+    mutated) showed every one was a near-total-failure session — the agent
+    complaining the proxied tools "aren't returning results" or hit "replay MISS," and
+    several mutated-arm agents falling back to their own built-in file tools instead
+    of the MCP ones entirely. The verdict wasn't measuring behavioral drift on a
+    completed task; it was measuring which of two small, mostly-degenerate failure
+    pools happened to fail in a more similar shape to each other. Compounding this:
+    "fidelity" and why 85% of real runs were silently dropped is not explained
+    anywhere a user would see it — not in `--help`, not in the report itself, not in
+    README — a less careful user would see "BEHAVIOR REGRESSION" printed confidently
+    and believe it. This is a materially different, and more dangerous, failure shape
+    than limitation 1's "structurally, not semantically, correct" caveat: that
+    limitation describes synthesized content diverging from a real server's behavior;
+    this one describes the harness producing a headline verdict that looks decisive
+    while resting on a foundation the report never surfaces as thin. Root cause, per
+    the same test: a fresh, non-scripted agent invocation naturally diverges from the
+    single recorded trajectory in ways exact-key replay (F-11, tier-1 only; tier-3
+    semantic matching, F-13, still not built) cannot resolve — different intermediate
+    tool choices, different path formatting, different exploratory calls before the
+    "real" ones — none of which change task intent, all of which miss an exact key.
+    Not fixed here — this is squarely an architectural-invariant-level finding
+    (README's own "replayed... at zero marginal cost per run" and "record once,
+    replay for free" framing is the claim this evidence undercuts), requiring the
+    same deliberate decision CLAUDE.md reserves for that class of finding, not a
+    quick patch. Two secondary findings from the same test, real but narrower in
+    scope: (a) `drifter run` could not be configured from README alone at all — the
+    required `agent:` block in `drifter.yaml` (`agent.mode`/`agent.command`, docs/SPEC.md
+    §11) is undocumented there, and `mode: subprocess` doesn't fit how Claude Code CLI
+    actually invokes MCP servers (it spawns its own children via `--mcp-config`,
+    it doesn't speak MCP on its own stdio), forcing the test agent to source-dive
+    `cli/run.py`/`cli/subprocess_adapter.py`/`cli/config.py` and hand-build an
+    `agent.mode: http` wrapper before `drifter run` would run at all; (b) a real,
+    unscripted agent given a vague prompt and both native and MCP-proxied tools
+    available in the same session preferred its own native tools and made zero MCP
+    calls on its first attempt — a real behavioral fact about dogfooding with a
+    capable agent, not a Drifter defect, but one that affects how any future real
+    dogfood session should be prompted. A third, unconfirmed signal from the same
+    test, flagged rather than asserted as a bug: one recorded call showed
+    `list_directory` against a parent (out-of-bounds) directory returning
+    `is_error: false` through the proxy, while an independent, direct (non-Drifter)
+    call to the same real server correctly refused with "Access denied" for the
+    identical out-of-bounds path. The test agent could not root-cause this further —
+    `record: {redact: shape}`'s payload redaction hides the actual result content
+    needed to confirm whether this is a real fidelity gap in `record/proxy.py`'s
+    passthrough or an artifact of how the discrepancy was checked. Needs follow-up
+    with un-redacted local reproduction before it can be called a confirmed bug
+    either way; recorded here so it isn't lost.

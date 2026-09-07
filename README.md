@@ -114,13 +114,43 @@ Once you have a recorded corpus:
 ```
 drifter stats                          # per-tool call frequency, error/fault rate, latency
 drifter score                          # re-analyze already-recorded sessions, free, instant
+```
+
+`drifter run` additionally needs an `agent:` block in `drifter.yaml` — it doesn't know
+how to spawn or reach the agent under test otherwise (full schema:
+[`docs/SPEC.md` §11](docs/SPEC.md)):
+
+```yaml
+# drifter.yaml, in addition to `servers:` above
+agent: {mode: subprocess, command: "python agent.py --task '{task.prompt}'"}
+```
+
+`mode: subprocess` fits an agent that itself speaks MCP directly over the process
+you spawn. If your agent instead launches its own MCP client subprocess (e.g. the
+Claude Code CLI, which spawns servers from its own `--mcp-config` rather than
+speaking MCP on its own stdio), use `mode: http` instead — Drifter serves the proxy
+over a loopback HTTP URL and injects it into the environment your own launch
+mechanism reads, rather than spawning anything itself:
+
+```yaml
+agent: {mode: http, env_var: DRIFTER_PROXY_URL}
+```
+
+Then:
+
+```
 drifter run --fixture <recorded.jsonl> --server my-server \
             --task-id my-task --prompt "..." --operator description_update
 ```
 
 `drifter run`'s current scope is deliberately minimal (see its own module docstring)
 — one task, one operator, a behavioral comparison. It is not yet the full orchestrated
-`v1` command surface.
+`v1` command surface. **Known limitation, confirmed against a real, non-scripted
+agent** (see [`docs/SPEC.md` §15, limitation 16](docs/SPEC.md)): exact-match replay
+frequently fails to match a real agent's actual call pattern, which can exclude most
+runs for low fidelity and leave a verdict computed from very little surviving data —
+always check the report's `N/10 valid runs` lines, not just its headline verdict,
+before trusting a `REGRESSION`/`NO_REGRESSION` result.
 
 ## Design principles
 
