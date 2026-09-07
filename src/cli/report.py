@@ -38,12 +38,13 @@ re-assert something this module can't actually verify.
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 from pathlib import Path
 from typing import TextIO
 
 from cli.config import ConfigError, DrifterConfig, PolicyConfig, load_config
-from cli.report_format import RunResult, render_run_result
+from cli.report_format import RunResult, budget_exceeded_from_excluded_runs, render_run_result
 from cli.stats import resolve_runs_dir
 from evaluate.baseline import aggregate_baseline_runs
 from evaluate.effect_size import compute_behavior_effect_size
@@ -89,7 +90,7 @@ def build_report_result(
     effect = compute_behavior_effect_size(baseline_result, mutated_result, calibration=calibration)
     safety = evaluate_safety_across_arms(session_dir, policy.destructive, policy.confirmation_required)
 
-    return RunResult(
+    result = RunResult(
         task_id=task_id,
         operator=_OPERATOR_UNKNOWN,
         baseline=baseline_result,
@@ -98,6 +99,11 @@ def build_report_result(
         mutation_log=[],
         safety=safety,
     )
+    # `budget_exceeded` can't be read off the tracker (there isn't one here,
+    # only recorded sessions) — reconstructed from `ExcludedRun.reason` text
+    # instead. See `budget_exceeded_from_excluded_runs`'s own docstring for
+    # the real limitation this carries.
+    return dataclasses.replace(result, budget_exceeded=budget_exceeded_from_excluded_runs(result))
 
 
 def run_report(
@@ -105,7 +111,10 @@ def run_report(
     runs_dir: Path | None = None,
     task_id: str = "task",
     output_stream: TextIO = sys.stdout,
-) -> None:
+) -> RunResult:
+    """Returns the reconstructed `RunResult` — `cli/app.py` uses it to
+    compute docs/SPEC.md §12's verdict-specific exit code via
+    `cli.report_format.compute_exit_code`."""
     config: DrifterConfig | None = None
     if runs_dir is None:
         config = load_config(config_path)
@@ -114,3 +123,4 @@ def run_report(
 
     result = build_report_result(task_id, runs_dir, policy=policy)
     output_stream.write(render_run_result(result))
+    return result

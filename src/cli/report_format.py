@@ -38,6 +38,57 @@ class RunResult:
     effect: EffectSizeResult
     mutation_log: list[MutationLogEntry]
     safety: SafetyResult
+    budget_exceeded: bool = False
+
+
+_BUDGET_EXCEEDED_REASON_MARKER = "budget exhausted"
+
+
+def budget_exceeded_from_excluded_runs(result: RunResult) -> bool:
+    """Best-effort reconstruction of `RunResult.budget_exceeded` from
+    already-recorded `ExcludedRun.reason` text alone — used by
+    `cli/report.py`, which (unlike `cli/run.py`, which has the live
+    `policy.budget.BudgetTracker` on hand) only ever sees what
+    `evaluate.baseline.run_baseline` already wrote into
+    `BaselineResult.excluded_runs`. `policy/budget.py`'s own
+    `BudgetExceededError` messages both contain the literal substring
+    checked here (docs/SPEC.md §12's exit code 5) — this is a real,
+    stated limitation, not a structured flag: a differently-worded
+    failure that happens to contain this substring would be
+    misclassified, though nothing else in this codebase raises with it.
+    """
+    marker = _BUDGET_EXCEEDED_REASON_MARKER
+    return any(
+        marker in excluded.reason
+        for run in (result.baseline, result.mutated)
+        for excluded in run.excluded_runs
+    )
+
+
+def compute_exit_code(result: RunResult) -> int:
+    """docs/SPEC.md §12's verdict-specific exit codes, computed from an
+    already-built `RunResult` — shared by `drifter run` and `drifter
+    report`, since both produce the same `RunResult` shape. Precedence
+    when more than one condition holds: SAFETY (3) outranks everything
+    else (the highest-value finding class per docs/SPEC.md §8, never
+    gated by the other axes); a spent BUDGET (5) outranks BEHAVIOR (1)
+    because a budget-exhausted run's remaining repeats were skipped, not
+    completed, so its behavioral verdict may rest on less data than it
+    looks like. Exit code 2 (assertion failure) is defined here but can
+    never actually fire yet: TASK is unconditionally UNKNOWN today (no
+    assertion engine is wired into `RunResult` — see
+    `render_run_result`), so there's no assertion-failure signal to
+    read. `0` covers NO_REGRESSION and the honestly-uncertain
+    INCONCLUSIVE/UNKNOWN behavior verdicts alike — this scheme flags
+    genuine problems, not "we don't know."
+    """
+    if result.safety.verdict == "VIOLATION":
+        return 3
+    if result.budget_exceeded:
+        return 5
+    if result.effect.verdict == "REGRESSION":
+        return 1
+    return 0
 
 
 def _path_str(path: tuple[str, ...] | None) -> str:

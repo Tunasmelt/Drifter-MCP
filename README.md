@@ -165,6 +165,13 @@ my-task` re-renders the exact same BEHAVIOR/TASK/SAFETY output from the sessions
 actually mutated (that detail isn't persisted to disk yet), but everything else is
 identical to the original run's own output.
 
+Both `drifter run` and `drifter report` exit with a verdict-specific code for
+scripting/CI use (see [`docs/SPEC.md` §12](docs/SPEC.md)): `0` clean, `1`
+behavior regression, `3` safety violation, `5` budget exceeded, `4` config/
+connectivity error. `2` (assertion failure) is defined but can't fire yet —
+TASK always reports `UNKNOWN` until task assertions ship as an authored
+feature.
+
 ## Design principles
 
 The short version (full list in [`docs/SPEC.md` §3](docs/SPEC.md)):

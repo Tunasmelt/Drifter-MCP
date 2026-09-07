@@ -18,6 +18,18 @@ mechanism `run` needed but never had (see cli/replay_serve.py's own docstring
 for why: found blocking the real Gate 0 dogfood run, not planned in advance).
 Unregistered subcommands fail with argparse's own "invalid choice" error
 rather than a stub pretending to be implemented.
+
+docs/SPEC.md §12's verdict-specific exit codes (`1` behavior regression,
+`2` assertion failure, `3` safety violation, `5` budget exceeded, on top
+of the `0`/`4` clean/config-error split every command already had) are
+now wired for `run` and `report` — the two commands that produce a full
+`RunResult` with real verdicts to read (`cli.report_format.
+compute_exit_code`). `score` still exits `0`/`4` only: it produces a bare
+`BaselineResult`, not a `RunResult` — there is no BEHAVIOR/TASK/SAFETY
+verdict for it to report an exit code about. Exit code `2` is real,
+wired code with nothing that can ever trigger it yet: TASK is
+unconditionally UNKNOWN today (no assertion engine reads into
+`RunResult`) — see `compute_exit_code`'s own docstring.
 """
 
 from __future__ import annotations
@@ -165,17 +177,20 @@ def main() -> None:
             raise SystemExit(4) from None
     elif args.command == "report":
         from cli.report import run_report
+        from cli.report_format import compute_exit_code
 
         try:
-            run_report(config_path=args.config, runs_dir=args.runs_dir, task_id=args.task_id)
+            result = run_report(config_path=args.config, runs_dir=args.runs_dir, task_id=args.task_id)
         except ConfigError as e:
             print(f"drifter report: {e}", file=sys.stderr)
             raise SystemExit(4) from None
+        raise SystemExit(compute_exit_code(result))  # docs/SPEC.md §12: 0/1/3/5
     elif args.command == "run":
         from cli.run import run_run
+        from cli.report_format import compute_exit_code
 
         try:
-            run_run(
+            result = run_run(
                 config_path=args.config,
                 fixture_path=args.fixture,
                 server_name=args.server,
@@ -194,6 +209,9 @@ def main() -> None:
         except ConfigError as e:
             print(f"drifter run: {e}", file=sys.stderr)
             raise SystemExit(4) from None
+        # `result` is None for --dry-run or a declined confirmation — no
+        # comparison ran, so there's no verdict to report; exit clean (0).
+        raise SystemExit(compute_exit_code(result) if result is not None else 0)  # docs/SPEC.md §12: 0/1/3/5
     elif args.command == "replay-serve":
         from cli.replay_serve import run_replay_serve
 

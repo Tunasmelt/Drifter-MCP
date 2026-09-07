@@ -448,10 +448,20 @@ Exit codes: `0` clean · `1` behavior regression · `2` assertion failure ·
 *Implementation status:* `init`/`observe`/`stats`/`score`/`report`/`run`/
 `replay-serve`/`doctor` are all built. `tasks mine`/`tasks approve` remain unbuilt
 (F-28/F-29/F-30, deliberately deferred past Gate 3 — no real multi-week corpus
-exists yet to mine). The exit-code scheme above is NOT wired up — every command
-currently exits `0`/`4` only (clean vs. config/connectivity error); a verdict-
-specific exit code (`1`/`2`/`3`/`5`) is real, unbuilt scope, not attempted as part
-of any feature built so far.
+exists yet to mine). The exit-code scheme above is now wired for `run` and
+`report` (`cli.report_format.compute_exit_code`) — the two commands that
+produce a full BEHAVIOR/TASK/SAFETY `RunResult` with real verdicts to read.
+`score` still exits `0`/`4` only: it produces a bare per-corpus `BaselineResult`,
+not a `RunResult` — there is no verdict for it to report an exit code about, and
+extending it would mean inventing one, not wiring up something that already
+exists. Exit code `2` (assertion failure) is real, wired code that can never
+actually fire yet: TASK is unconditionally UNKNOWN (no assertion engine reads
+into `RunResult`) until task assertions become a first-class authored feature
+(v1 remaining scope, below). Exit code `5` (budget exceeded) is exact for `run`
+(read directly off the live `policy.budget.BudgetTracker`) but a best-effort
+string-match reconstruction for `report` (`ExcludedRun.reason` text alone,
+since a rebuilt report has no live tracker to ask) — a real, stated limitation,
+not a hidden assumption.
 
 ## 13. Report format
 

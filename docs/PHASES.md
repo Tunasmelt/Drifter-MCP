@@ -828,8 +828,12 @@ encountered yet; no current consumer needs it.
   built in Gate 3; the authoring UX around it is v1)
 - Adaptive scheduling tuning based on Gate 1–4 real usage data (F-27, the last
   unbuilt v1 priority-list item)
-- The docs/SPEC.md §12 exit-code scheme (`1`/`2`/`3`/`5` for verdict-specific
-  outcomes) is not wired up anywhere — every command still exits `0`/`4` only
+- ~~The docs/SPEC.md §12 exit-code scheme (`1`/`2`/`3`/`5` for verdict-specific
+  outcomes) is not wired up anywhere — every command still exits `0`/`4` only~~
+  — built: `run`/`report` now exit per `cli.report_format.compute_exit_code`
+  (see docs/CHANGELOG.md). `2` stays permanently unreachable until task
+  assertions are wired into `RunResult` (the next bullet above); `score` stays
+  `0`/`4`-only since it has no `RunResult` to compute a verdict-exit-code from.
 
 ## v1.5
 

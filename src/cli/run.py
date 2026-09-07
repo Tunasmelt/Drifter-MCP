@@ -191,6 +191,7 @@ def run_mutation_comparison(
         effect=effect,
         mutation_log=mutation_log,
         safety=safety,
+        budget_exceeded=tracker.exceeded(),
     )
 
 
@@ -211,7 +212,7 @@ def run_run(
     dry_run: bool = False,
     budget: int | None = None,
     max_wall_time_s: float | None = None,
-) -> None:
+) -> RunResult | None:
     """F-31's own "Done when" bar, reframed honestly for what this command
     actually does today (no live MCP server mode exists — see
     `policy/blast_radius.py`'s own module docstring): the real, un-deferred
@@ -229,6 +230,12 @@ def run_run(
     that function's own docstring and `policy/budget.py` for the real,
     stated shape of what "budget" means here (a tool-call ceiling, not a
     literal model-call count, which this codebase cannot observe at all).
+
+    Returns the `RunResult` on a completed comparison, or `None` when
+    nothing ran (`--dry-run`, or the interactive confirmation was
+    declined) — `cli/app.py` uses this to compute docs/SPEC.md §12's
+    verdict-specific exit code via `cli.report_format.compute_exit_code`,
+    which needs a real `RunResult` to read.
     """
     config = load_config(config_path)
     if config.agent is None:
@@ -254,7 +261,7 @@ def run_run(
 
     if dry_run:
         output_stream.write("Dry run — no agent runs were started.\n")
-        return
+        return None
 
     if not assume_yes:
         output_stream.write("Continue? [y/N] ")
@@ -262,7 +269,7 @@ def run_run(
         answer = input_stream.readline().strip().lower()
         if answer not in ("y", "yes"):
             output_stream.write("Aborted — no agent runs were started.\n")
-            return
+            return None
 
     result = run_mutation_comparison(
         task_id=task_id,
@@ -283,3 +290,4 @@ def run_run(
         max_wall_time_s=max_wall_time_s,
     )
     output_stream.write(render_run_result(result))
+    return result

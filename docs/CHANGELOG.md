@@ -6,6 +6,53 @@ not just a diff.
 
 ---
 
+## docs/SPEC.md §12 exit-code scheme wired up for `run`/`report`
+
+The last item in "v1 — remaining scope" that didn't need a design decision first
+(unlike F-27, which is blocked on a real scoping question about multi-mutation
+orchestration `drifter run` doesn't have yet): every command exited `0`/`4` only,
+even though `drifter run`/`drifter report` were already computing real
+BEHAVIOR/TASK/SAFETY verdicts and just throwing the exit-code opportunity away.
+
+Added `cli.report_format.compute_exit_code(RunResult) -> int`, shared by both
+commands since both produce the same `RunResult` shape: `3` (safety violation)
+outranks everything else — the highest-value finding class per docs/SPEC.md §8,
+never gated by the other axes; `5` (budget exceeded) outranks `1` (behavior
+regression) because a budget-exhausted run's remaining repeats were skipped, not
+completed, so a REGRESSION verdict computed from it may rest on less data than
+it looks like; `0` covers NO_REGRESSION and the honestly-uncertain
+INCONCLUSIVE/UNKNOWN alike, since this scheme should flag genuine problems, not
+"we don't know." `2` (assertion failure) is real, wired code with nothing that
+can trigger it: TASK is unconditionally UNKNOWN today (`render_run_result`
+hardcodes it — no assertion engine reads into `RunResult` yet), so there's no
+signal to read. Documented as staying that way until task assertions become a
+first-class authored feature, not silently left to look implemented.
+
+`drifter score` deliberately was NOT touched — it produces a bare
+`BaselineResult` from an ungrouped corpus, not a `RunResult`; there is no
+BEHAVIOR/TASK/SAFETY verdict for it to report an exit code about. Wiring
+something in there would mean inventing a verdict for a command that doesn't
+have one, not connecting an existing signal.
+
+Budget-exceeded detection needed two different mechanisms, honestly, not one
+papered over: `drifter run` has a live `policy.budget.BudgetTracker` on hand
+(new `BudgetTracker.exceeded()` method, `check()`'s condition without raising),
+so its `RunResult.budget_exceeded` is exact. `drifter report` reconstructs a
+`RunResult` purely from disk, with no tracker to ask — its
+`budget_exceeded_from_excluded_runs()` instead greps already-recorded
+`ExcludedRun.reason` text for `BudgetExceededError`'s own message substring
+("budget exhausted"). This is stringly-typed and stated as such in the
+function's own docstring: a differently-worded failure containing that
+substring would be misclassified, though nothing else in this codebase raises
+with it today. Also added `cli/app.py` exit-code integration tests
+(`tests/cli/test_app.py`) confirming `main()` itself raises `SystemExit` with
+the right code, not just that `compute_exit_code` returns the right number in
+isolation — the earlier F-36 work already had that gap (report_format.py's
+render logic was unit-tested, but nothing exercised `cli/app.py`'s actual
+dispatch-and-exit wiring end to end).
+
+---
+
 ## F-19 audit: build-status table was wrong, the "fix" was real-protocol-ineffective, documented instead
 
 Continuing the edge-case pass onto F-17 through F-24, F-19 (cache-busting on mutated

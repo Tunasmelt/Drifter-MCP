@@ -87,6 +87,17 @@ class BudgetTracker:
                 f"wall-time budget exhausted: {self.elapsed_s:.0f}s/{self.max_wall_time_s:.0f}s elapsed"
             )
 
+    def exceeded(self) -> bool:
+        """Same condition as `check()`, without raising — used after a
+        comparison finishes to report exit code 5 (docs/SPEC.md §12)
+        without threading exceptions back out through `run_baseline`'s
+        own exclusion-recording loop."""
+        try:
+            self.check()
+        except BudgetExceededError:
+            return True
+        return False
+
     def record(self, session_path: Path) -> None:
         self.spent_tool_calls += _count_tool_calls(session_path)
 
