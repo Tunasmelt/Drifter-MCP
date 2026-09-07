@@ -87,6 +87,19 @@ def _build_parser() -> argparse.ArgumentParser:
         "--yes", "-y", dest="assume_yes", action="store_true",
         help="Skip the blast-radius preview confirmation prompt (F-31, docs/SPEC.md §10)",
     )
+    run_parser.add_argument(
+        "--dry-run", dest="dry_run", action="store_true",
+        help="Show the blast-radius preview and exit without running anything (F-32)",
+    )
+    run_parser.add_argument(
+        "--budget", type=int, default=None,
+        help="Max total tool calls across both arms before remaining repeats are skipped (F-32) — "
+             "not a literal model-call count, see policy/budget.py",
+    )
+    run_parser.add_argument(
+        "--max-wall-time", type=float, default=None, dest="max_wall_time_s",
+        help="Max wall-clock seconds across both arms before remaining repeats are skipped (F-32)",
+    )
 
     replay_serve_parser = subparsers.add_parser("replay-serve", help="Serve a replayed manifest over real stdio, for a real agent to connect to")
     replay_serve_parser.add_argument("--fixture", type=Path, required=True, help="Already-recorded session JSONL to replay from")
@@ -157,6 +170,9 @@ def main() -> None:
                 repeats=args.repeats,
                 timeout_s=args.timeout,
                 assume_yes=args.assume_yes,
+                dry_run=args.dry_run,
+                budget=args.budget,
+                max_wall_time_s=args.max_wall_time_s,
             )
         except ConfigError as e:
             print(f"drifter run: {e}", file=sys.stderr)

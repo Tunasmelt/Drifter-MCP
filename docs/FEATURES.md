@@ -46,7 +46,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-29 | Frequent subsequence mining (PrefixSpan) | ❌ Not built | **Needs building** — depends on F-28 |
 | F-30 | Task candidate generation + approval | ❌ Not built | **Needs building** — depends on F-29; blocks F-24's real authoring UX |
 | F-31 | Blast-radius preview | ✅ Built, reframed | `policy/blast_radius.py`, gates real agent-process spawning (drifter run's actual real-cost path today), not a live-server mode that doesn't exist. "Estimated replay coverage" is a real, documented gap — see docs/SPEC.md §10's implementation-status note |
-| F-32 | Budget and hard limits | ❌ Not built | **Needs building** — v1 scope (`drifter run`'s `--budget`/`--dry-run`) |
+| F-32 | Budget and hard limits | ✅ Built, reframed | `policy/budget.py`; `--budget` is a TOOL-CALL ceiling (not literally "model calls" — unobservable, docs/SPEC.md §15 limitation 2), checked before each repeat starts, never mid-run. `--dry-run` reuses F-31's preview |
 | F-33 | `drifter init` | ⚠️ Built narrower than spec, deliberate | F-26 now exists but `init` still doesn't call it — done-when bar doesn't require it, wiring classification into `init` itself is separate, unrequested scope |
 | F-34 | Subprocess agent adapter (stdio) | ✅ Built | Gate 2 scope, deliberately narrower than original spec text (now widened by F-38, not replaced) |
 | F-35 | `drifter run` | ✅ Built | Gate 3 minimal scope, deliberate (no `--budget`, no adaptive scheduling, no full report format) |
@@ -81,7 +81,10 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    run` now requiring `--yes` or interactive confirmation. See F-31's own entry for
    why "live mode" and "estimated replay coverage" from docs/SPEC.md §10's mockup don't
    map onto this codebase's actual architecture.
-7. **F-32** — budget/hard limits (`--budget`, `--dry-run`, wall-time cap).
+7. ~~**F-32**~~ — **built, reframed.** `policy/budget.py`, `policy/` module now
+   complete. `--budget` is a tool-call ceiling (not a literal model-call count —
+   see F-32's own entry), checked before each repeat starts, never mid-run.
+   `--dry-run` reuses F-31's blast-radius preview with zero new computation.
 8. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
    multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
    first place, still true).
@@ -542,9 +545,11 @@ guess.
 user confirmation — confirmed against a real server (`tests/fixtures/fake_server.py`'s
 add/echo/fail, none matching any known tier, all correctly reported `[WARN]
 ...unresolved`) and a real clean pass (`classifiable_server.py`'s get_status/
-delete_record). Literal "before any live-mode run is possible" blocking is not yet
+delete_record). Literal "before any live-mode run is possible" blocking is not
 wired — no live-mode invocation path exists in this codebase at all (F-31/F-32 are
-still unbuilt) — a real, narrower-than-spec scope decision, not silently dropped;
+now built, but against `drifter run`'s real agent-spawning cost, not a live-server
+mode that was never real to begin with — see their own entries) — a real,
+narrower-than-spec scope decision, not silently dropped;
 see `cli/doctor.py`'s own module docstring.
 
 ### F-27 Adaptive repeat scheduling
@@ -647,13 +652,36 @@ running_the_agent`.
 
 **Technical:** `--budget N` (model calls), `--dry-run` (plan without executing),
 `baseline.max_calls`, wall-time cap. Aborts cleanly with partial results reportable.
+**Built, `--budget` honestly reframed** (`policy/budget.py`): "model calls" isn't
+observable at all from what this proxy sees (docs/SPEC.md §15 limitation 2 — MCP
+traffic is tool calls, never prompts or model reasoning), so `--budget N` counts
+TOOL calls instead, the one real, countable proxy for cost Drifter actually has.
+`BudgetTracker` is checked BEFORE each repeat starts, never mid-run — a real,
+stated limitation, not silently glossed: a real agent subprocess, once spawned, is
+never preemptively killed partway through for exceeding budget (that would need
+this feature to reach into `cli/subprocess_adapter.py`'s live process management,
+separate work not attempted here). The repeat that crosses the threshold still
+completes and counts; every repeat after that is skipped before it's ever spawned.
+One `BudgetTracker` is shared across BOTH arms (baseline + mutated) deliberately —
+the budget is for the whole `drifter run` invocation's real cost, not per-arm.
+`--dry-run` needed zero new computation: it's F-31's blast-radius preview, shown,
+with execution simply never started. `baseline.max_calls` (SPEC.md §11's example)
+and a true wall-time-based ABORT mid-agent-run remain unbuilt in their literal
+form — `max_wall_time_s` here is the same before-each-repeat check as the
+tool-call budget, not a mid-run timeout (a per-run `timeout_s` already existed,
+separately, since F-34).
 
 **Simple:** Hard ceilings so a test run can never quietly burn through your entire
 daily API quota (or bill) without you knowing in advance roughly what it'll cost.
 
 **Depends on:** all execution paths (F-21, mutation runner).
 **Done when:** a run exceeding budget stops cleanly mid-execution and still produces a
-report on the partial data collected.
+report on the partial data collected — confirmed through the real end-to-end
+pipeline: `tests/cli/test_run.py`'s `test_run_mutation_comparison_budget_limits_
+the_number_of_real_agent_runs` runs a real replay-served agent with a budget of
+exactly one successful run's worth of tool calls, and confirms the baseline arm
+gets 1 valid run + 4 budget-exhausted exclusions while the shared tracker leaves
+zero budget for the mutated arm at all — a real partial report, not a crash.
 
 ---
 

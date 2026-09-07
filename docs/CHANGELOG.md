@@ -54,6 +54,65 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-32 (budget and hard limits) built: the `policy/` module is now complete
+
+Following the priority list: `policy/budget.py` builds docs/SPEC.md §11/§13's
+budget and hard-limits feature, the last unbuilt item in `policy/` (F-26, F-25,
+F-31 were already built). Following the exact same discipline as F-31's own two
+reframings: check what's actually observable/buildable before building it, and
+say so plainly when a spec phrase doesn't map onto this codebase's real
+architecture.
+
+**"`--budget N` (model calls)"** — Drifter cannot observe model calls at all.
+The proxy sees only MCP traffic (docs/SPEC.md §15 limitation 2: "no prompts, no
+system prompt, no model reasoning" — a fact this project has stated since Gate 0
+and re-confirmed independently several times since). `--budget N` is built
+instead as a TOOL-CALL ceiling — the one real, countable proxy for cost this
+project's own recorded data actually gives it.
+
+**Enforcement shape, stated precisely rather than glossed over:** `BudgetTracker.
+check()` runs BEFORE each repeat starts, never during. A real agent subprocess,
+once spawned, is never preemptively killed partway through for exceeding
+budget — that would require reaching into `cli/subprocess_adapter.py`'s live
+process management, real, separate design work not attempted here. The repeat
+that crosses the threshold still completes and its calls count toward the
+total; every repeat after that is skipped before ever being spawned. This is
+the honest, buildable version of "aborts cleanly, stops mid-execution": stops
+starting NEW work, not stops IN-FLIGHT work.
+
+A genuinely elegant fit, not a coincidence: `BudgetTracker`'s `check()` raises
+`BudgetExceededError` from inside a wrapped `run_once` callable
+(`budget_limited`), and `evaluate.baseline.run_baseline`'s existing repeat loop
+already catches any `run_once()` exception and records it as a normal
+`ExcludedRun`, continuing to aggregate whatever repeats DID complete. This gives
+"partial results reportable" for free — zero changes to `evaluate/baseline.py`
+were needed. One `BudgetTracker` is shared across BOTH arms (baseline +
+mutated) in `cli/run.py`'s `run_mutation_comparison`, deliberately: the budget
+is for the whole `drifter run` invocation's real cost, not accounted per-arm.
+
+**`--dry-run`** needed zero new computation at all — it's F-31's blast-radius
+preview, shown, with `run_run` simply returning before the confirmation prompt
+or any execution. **`baseline.max_calls`/`execution.budget_calls`**
+(docs/SPEC.md §11's own YAML example) remain unbuilt as config KEYS — the real
+limits shipped as `drifter run` CLI flags (`--budget`/`--max-wall-time`/
+`--dry-run`) instead, matching this project's own existing precedent
+(`--repeats`/`--seed`/`--timeout` are all flags, not `drifter.yaml` keys, for
+the same reason: these vary per invocation, not per project).
+
+Confirmed through the real end-to-end pipeline, not just `policy/budget.py`'s
+own unit tests: `tests/cli/test_run.py` gains a test that runs a real
+replay-served agent with a budget of exactly one successful run's worth of
+tool calls, and confirms the baseline arm reports 1 valid run plus 4
+budget-exhausted exclusions while the mutated arm — sharing the same tracker —
+gets zero budget left at all. 10 new tests total across `tests/policy/
+test_budget.py` and `tests/cli/test_run.py`. docs/SPEC.md §11/§13,
+docs/FEATURES.md's F-32 entry, and docs/PHASES.md all gain a full account of
+what's built vs. reframed vs. genuinely deferred (`baseline.cache`,
+`mutations.profile`/`exclude_tools`, `execution.mode`, `tasks: [...]` all
+remain unrelated, unbuilt speculative config surface).
+
+---
+
 ## F-31 (blast-radius preview) built, honestly reframed against two premises that don't hold
 
 Following the priority list: `policy/blast_radius.py` builds docs/SPEC.md §10's

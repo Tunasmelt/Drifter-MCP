@@ -709,6 +709,57 @@ wrong, not just incomplete — that's the point at which this needs a real count
 not a placeholder that happens to already read as a real number. Not encountered
 yet; `drifter run` is still Gate 3's one-task-one-operator minimal scope.
 
+### v1 — Budget and hard limits (F-32)
+
+**Depends on:** all execution paths (F-21, mutation runner) — both already built.
+`policy/` is now a complete module (F-26, F-25, F-31, F-32 all built). See
+`docs/SPEC.md` §11/§13's implementation-status note and docs/FEATURES.md's F-32
+entry for the full technical/simple breakdown and the reframing this required.
+
+#### Tasks
+
+- [x] `policy/budget.py`: `BudgetTracker`/`budget_limited`/`BudgetExceededError` —
+  `--budget` reframed as a TOOL-CALL ceiling, not literal "model calls" (unobservable
+  from this proxy at all, docs/SPEC.md §15 limitation 2). Checked BEFORE each repeat
+  starts, never mid-run — a real, stated limitation: a spawned agent subprocess is
+  never preemptively killed partway through (would need reaching into
+  `cli/subprocess_adapter.py`'s live process management, not attempted here). Wraps
+  `evaluate.baseline.run_baseline`'s existing `run_once` callable — zero changes to
+  `evaluate/baseline.py` itself, since its existing exception-handling loop already
+  turns a raised `BudgetExceededError` into a normal `ExcludedRun`, giving "partial
+  results reportable" for free
+- [x] `cli/run.py`: `run_mutation_comparison` gains `budget`/`max_wall_time_s`,
+  sharing ONE `BudgetTracker` across both arms deliberately (the budget is for the
+  whole invocation's real cost, not per-arm). `run_run` gains `dry_run` — reuses
+  F-31's blast-radius preview with zero new computation, returns before the
+  confirmation prompt or any execution
+- [x] `cli/app.py`: `--budget`, `--max-wall-time`, `--dry-run` flags on the `run`
+  subcommand — CLI flags, not new `drifter.yaml` keys, matching the existing
+  `--repeats`/`--seed`/`--timeout` precedent for per-invocation execution options
+
+Full new-test count: 8 (`test_budget.py`) + 2 (`test_run.py`: dry-run, and a real
+end-to-end budget-limited run) = 10.
+
+#### Exit test
+
+A run exceeding budget stops cleanly mid-execution and still produces a report on
+the partial data collected. **Met**: `tests/cli/test_run.py`'s
+`test_run_mutation_comparison_budget_limits_the_number_of_real_agent_runs` runs the
+real end-to-end pipeline with a budget of exactly one successful run's worth of
+tool calls, and confirms the baseline arm reports 1 valid run + 4 budget-exhausted
+exclusions while the mutated arm (sharing the same tracker) gets zero budget left
+at all — a real, structured partial report, not a crash or a silent truncation.
+
+#### Kill criterion
+
+If a real workload's per-run tool-call count varies too widely for a single
+before-each-repeat budget check to be a meaningful ceiling (e.g. a mutation that
+sometimes causes a 2-call run and sometimes a 200-call run) — the "check before
+starting, not during" shape stops being a useful approximation of "never exceed N
+calls," and this would need real mid-run cancellation (reaching into the
+subprocess/proxy layer directly) instead. Not encountered yet — every real fixture
+tested against so far has a small, stable per-run call count.
+
 ### v1 — remaining scope
 
 - Synthetic replay provenance surfaced fully in reports
@@ -716,7 +767,6 @@ yet; `drifter run` is still Gate 3's one-task-one-operator minimal scope.
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
   candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be
   hand-written; mining matters once there's a real multi-week corpus
-- F-32 (budget and hard limits), now the only unbuilt item in the `policy/` module
 - Task assertions as a first-class authored feature, not just the engine (F-24 was
   built in Gate 3; the authoring UX around it is v1)
 - Adaptive scheduling tuning based on Gate 1–4 real usage data

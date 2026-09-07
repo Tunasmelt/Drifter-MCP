@@ -61,6 +61,7 @@ from evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
 from mutate.description_update import MutationLogEntry, mutate_tool_manifest
 from mutate.tool_addition import add_tool
 from policy.blast_radius import compute_blast_radius, render_blast_radius
+from policy.budget import BudgetTracker, budget_limited
 from policy.safety import SafetyFinding, SafetyResult, evaluate_safety_for_session
 from record.calibration import Calibration, load_calibration
 from replay.replay_proxy import tools_served_from_session
@@ -130,6 +131,8 @@ def run_mutation_comparison(
     agent_mode: str = "subprocess",
     agent_env_var: str = "DRIFTER_PROXY_URL",
     policy: PolicyConfig | None = None,
+    budget: int | None = None,
+    max_wall_time_s: float | None = None,
 ) -> RunResult:
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
@@ -146,6 +149,14 @@ def run_mutation_comparison(
     loaded config pass `config.policy` through; this function never loads
     config itself (same "caller owns configuration" shape as
     `evaluate.baseline.run_baseline`).
+
+    `budget` (F-32, docs/SPEC.md §11/§13) is a TOOL-CALL ceiling, not a literal
+    "model call" count — see `policy/budget.py`'s own module docstring for
+    why. `max_wall_time_s` is a wall-clock ceiling across the WHOLE
+    comparison (both arms combined), not per-run. Both default to `None`
+    (unlimited). One `BudgetTracker` is shared across BOTH arms
+    deliberately — the budget is for this invocation's real cost as a
+    whole, not accounted per-arm.
     """
     if operator not in OPERATORS:
         raise ValueError(f"unknown operator {operator!r} — must be one of {OPERATORS}")
@@ -155,17 +166,21 @@ def run_mutation_comparison(
     store.index_session(fixture_path)
     original_tools = tools_served_from_session(fixture_path)
     command = _template_command(agent_command, prompt)
+    tracker = BudgetTracker(max_tool_calls=budget, max_wall_time_s=max_wall_time_s)
 
-    baseline_run_once = make_run_once(
-        command=command,
-        replay_store=store,
-        server_name=server_name,
-        tools_served=original_tools,
-        session_dir=session_dir / "baseline",
-        raw_dir=raw_dir / "baseline",
-        timeout_s=timeout_s,
-        agent_mode=agent_mode,
-        env_var=agent_env_var,
+    baseline_run_once = budget_limited(
+        make_run_once(
+            command=command,
+            replay_store=store,
+            server_name=server_name,
+            tools_served=original_tools,
+            session_dir=session_dir / "baseline",
+            raw_dir=raw_dir / "baseline",
+            timeout_s=timeout_s,
+            agent_mode=agent_mode,
+            env_var=agent_env_var,
+        ),
+        tracker,
     )
     baseline_result = run_baseline(task_id, baseline_run_once, repeats=repeats, calibration=calibration)
 
@@ -178,17 +193,20 @@ def run_mutation_comparison(
         mutation_log = [entry]
         synthetic_tool_names = frozenset({new_tool.name})
 
-    mutated_run_once = make_run_once(
-        command=command,
-        replay_store=store,
-        server_name=server_name,
-        tools_served=mutated_tools,
-        session_dir=session_dir / "mutated",
-        raw_dir=raw_dir / "mutated",
-        timeout_s=timeout_s,
-        synthetic_tool_names=synthetic_tool_names,
-        agent_mode=agent_mode,
-        env_var=agent_env_var,
+    mutated_run_once = budget_limited(
+        make_run_once(
+            command=command,
+            replay_store=store,
+            server_name=server_name,
+            tools_served=mutated_tools,
+            session_dir=session_dir / "mutated",
+            raw_dir=raw_dir / "mutated",
+            timeout_s=timeout_s,
+            synthetic_tool_names=synthetic_tool_names,
+            agent_mode=agent_mode,
+            env_var=agent_env_var,
+        ),
+        tracker,
     )
     mutated_result = run_baseline(f"{task_id}__mutated_{operator}", mutated_run_once, repeats=repeats, calibration=calibration)
 
@@ -272,6 +290,9 @@ def run_run(
     output_stream: TextIO = sys.stdout,
     input_stream: TextIO = sys.stdin,
     assume_yes: bool = False,
+    dry_run: bool = False,
+    budget: int | None = None,
+    max_wall_time_s: float | None = None,
 ) -> None:
     """F-31's own "Done when" bar, reframed honestly for what this command
     actually does today (no live MCP server mode exists — see
@@ -281,6 +302,15 @@ def run_run(
     architecturally unreachable without the blast-radius preview being
     shown and either `assume_yes=True` (the CLI's `--yes` flag) or an
     interactive `y`/`yes` confirmation on `input_stream`.
+
+    `dry_run` (F-32, `--dry-run`) shows the same preview and returns
+    immediately — no confirmation prompt, no agent ever spawned. Needed no
+    new computation: F-31's blast-radius preview already IS "plan without
+    executing." `budget`/`max_wall_time_s` (F-32) are passed straight
+    through to `run_mutation_comparison`'s shared `BudgetTracker` — see
+    that function's own docstring and `policy/budget.py` for the real,
+    stated shape of what "budget" means here (a tool-call ceiling, not a
+    literal model-call count, which this codebase cannot observe at all).
     """
     config = load_config(config_path)
     if config.agent is None:
@@ -303,6 +333,10 @@ def run_run(
     original_tools = tools_served_from_session(fixture_path)
     preview = compute_blast_radius(fixture_path, original_tools, effective_repeats, config.policy.destructive)
     output_stream.write(render_blast_radius(preview) + "\n")
+
+    if dry_run:
+        output_stream.write("Dry run — no agent runs were started.\n")
+        return
 
     if not assume_yes:
         output_stream.write("Continue? [y/N] ")
@@ -327,5 +361,7 @@ def run_run(
         agent_mode=config.agent.mode,
         agent_env_var=config.agent.env_var,
         policy=config.policy,
+        budget=budget,
+        max_wall_time_s=max_wall_time_s,
     )
     output_stream.write(render_run_result(result))

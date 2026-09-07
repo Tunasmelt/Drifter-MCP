@@ -239,6 +239,67 @@ def test_run_run_interactive_yes_confirmation_proceeds(tmp_path):
     assert "BEHAVIOR" in output
 
 
+# --- F-32: --dry-run and budget/wall-time limits -----------------------------
+
+
+def test_run_run_dry_run_shows_preview_and_never_spawns_the_agent(tmp_path):
+    """F-32's own docs/FEATURES.md text: --dry-run means "plan without
+    executing". Uses a deliberately nonexistent agent command -- if
+    dry_run somehow still executed, this would fail with a spawn error
+    instead of a clean, preview-only exit, and needs no input_stream at
+    all (no prompt is ever shown)."""
+    text = VALID_YAML_NO_AGENT + "\nagent:\n  command: ['this-executable-does-not-exist-anywhere-xyz']\n"
+    config_path = _write_config(tmp_path, text)
+
+    out = io.StringIO()
+    run_run(
+        config_path=config_path,
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        task_id="dry_run_task",
+        runs_dir=tmp_path / "runs",
+        output_stream=out,
+        dry_run=True,
+    )
+    output = out.getvalue()
+    assert "Planned:" in output
+    assert "Dry run" in output
+    assert "Continue?" not in output  # no confirmation prompt at all
+    assert "BEHAVIOR" not in output
+    assert not (tmp_path / "runs" / "run" / "dry_run_task").exists()
+
+
+def test_run_mutation_comparison_budget_limits_the_number_of_real_agent_runs(tmp_path):
+    """F-32's own docs/FEATURES.md 'Done when' bar, through the REAL end-to-end
+    pipeline: a tight tool-call budget must cause some repeats to be
+    excluded with a 'budget exhausted' reason, while the ones that did run
+    are still aggregated -- a real partial report, not a crash."""
+    calls = _golden_calls()[:3]  # 3 real tool calls per successful run
+    command = [sys.executable, str(SCRIPTED_AGENT), *(_spec(c.tool_name, c.arguments) for c in calls)]
+
+    result = run_mutation_comparison(
+        task_id="budget_task",
+        prompt="",
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        agent_command=command,
+        operator="description_update",
+        session_dir=tmp_path / "runs",
+        raw_dir=tmp_path / "raw",
+        repeats=5,
+        timeout_s=30.0,
+        budget=3,  # exactly one successful run's worth -- everything after must be skipped
+    )
+
+    assert result.baseline.valid_runs == 1
+    assert len(result.baseline.excluded_runs) == 4
+    assert all("budget exhausted" in e.reason for e in result.baseline.excluded_runs)
+    # the mutated arm shares the SAME tracker -- budget was already spent
+    # entirely by the baseline arm, so every mutated repeat is skipped too.
+    assert result.mutated.valid_runs == 0
+    assert len(result.mutated.excluded_runs) == 5
+
+
 # --- real end-to-end: description_update ------------------------------------
 
 

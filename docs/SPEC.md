@@ -415,6 +415,19 @@ docstring: "adding an unused field now would be exactly the kind of speculative
 surface CLAUDE.md's simplicity principle warns against") — F-38 is the point at which
 a second real mode exists and the field earns its place, not before.
 
+*Implementation status (F-32, docs/CHANGELOG.md):* `execution.budget_calls` and
+`baseline.max_calls` above are still unbuilt as YAML config keys — F-32's real
+budget/wall-time limits shipped as `drifter run` CLI flags instead
+(`--budget`/`--max-wall-time`/`--dry-run`), matching this project's existing
+precedent for per-invocation execution-shaping options (`--repeats`/`--seed`/
+`--timeout` are all flags, not `drifter.yaml` keys, for the same reason: these
+vary per run, not per project). `--budget` counts TOOL calls, not literal "model
+calls" — unobservable from this proxy at all, docs/SPEC.md §15 limitation 2 — and is
+checked before each repeat starts, never mid-run; see `policy/budget.py`'s own
+module docstring for the full, honest account of what's built vs. deferred.
+`mutations.profile`/`exclude_tools`, `execution.mode`, `tasks: [...]`, and
+`baseline.cache` all remain unbuilt speculative surface, unrelated to F-32.
+
 ## 12. CLI
 
 ```

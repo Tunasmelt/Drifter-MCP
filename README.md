@@ -154,7 +154,10 @@ before trusting a `REGRESSION`/`NO_REGRESSION` result.
 
 `drifter run` shows a blast-radius preview (planned agent runs, estimated tool calls
 by risk level) and asks for confirmation before spawning any real agent process —
-pass `--yes`/`-y` to skip the prompt for scripted/non-interactive use.
+pass `--yes`/`-y` to skip the prompt for scripted/non-interactive use, `--dry-run` to
+see the preview without running anything, or `--budget N` (a tool-call ceiling, not
+literally model calls — this proxy can't see those) / `--max-wall-time SECONDS` to
+cap real cost, checked before each repeat starts.
 
 ## Design principles
 
