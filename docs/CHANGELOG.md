@@ -54,6 +54,62 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-36's second half built: `drifter report`, and a real import-cleanliness refactor along the way
+
+`drifter score` met F-36's own Gate 2 exit test long ago (re-analyze a whole runs
+directory with zero new execution), but the other named command — rendering the
+FULL docs/SPEC.md §13 report format (BEHAVIOR/TASK/SAFETY, the exact shape
+`drifter run` prints) from a specific PRIOR run's stored sessions, not a whole
+undifferentiated directory — never got built. It's the last item on the v1
+priority list besides F-27 (adaptive scheduling, still deliberately deferred).
+
+Reusing `cli/run.py`'s existing `RunResult`/`render_run_result` directly (by
+importing `cli.run` from the new `cli/report.py`) looked like the obvious,
+minimal approach — and was caught and rejected before landing: `cli.run` imports
+`cli.subprocess_adapter`, which imports real subprocess-spawning code. Merely
+importing `cli.run` for its dataclass would have transitively loaded that
+machinery into `drifter report`'s own process, quietly breaking the "genuinely
+zero execution, structurally" guarantee `cli/score.py` already established as
+this project's own standard for this class of command — even though
+`drifter report` itself would never call any of it.
+
+Fixed properly, not worked around: `RunResult`/`render_run_result`/`_path_str`
+are split out of `cli/run.py` into a new `cli/report_format.py`, checked to have
+zero execution-capable imports of its own. `cli/run.py` re-exports both names
+unchanged, so every existing caller and test kept working with no changes needed.
+`policy/safety.py`'s `evaluate_safety_across_arms` (also needed by both `cli/run.py`
+and the new `cli/report.py`) moved there too, for the same sharing reason — and
+because `policy/` sits below `cli/` in this project's own module dependency order
+(CLAUDE.md), it can't import `cli.config.PolicyConfig` to receive one directly;
+it takes plain `destructive_override`/`confirmation_required` sequences instead,
+matching this file's own existing functions exactly.
+
+`cli/report.py`'s `build_report_result` reconstructs a `RunResult` purely from a
+prior run's `session_dir/{baseline,mutated}` JSONL files — the same
+`aggregate_baseline_runs`/`compute_behavior_effect_size`/
+`evaluate_safety_across_arms` pure functions `run_mutation_comparison` itself
+uses, just fed already-recorded paths instead of freshly-run ones. Raises an
+actionable `ConfigError` (naming the expected directory) if the task was never
+run at all. One real, stated gap, not silently glossed: `RunResult.mutation_log`
+is always empty in a reconstructed report — nothing in the recorded session
+schema, or anywhere `run_mutation_comparison` writes, persists which operator or
+seed actually produced a given `session_dir`, so it's genuinely not recoverable,
+not merely unbuilt.
+
+Confirmed through the real end-to-end pipeline, not just fixture-built sessions:
+`tests/cli/test_report.py` gains a test that runs a genuine `drifter run` (a real
+replay-served agent) and then confirms `drifter report` reconstructs an identical
+`effect.verdict`, both arms' `dominant_path`, and `safety.verdict` from those same
+recorded sessions alone. 10 new tests total, including an AST-based no-live-
+connection check applied to BOTH new modules (`cli/report.py` AND `cli/
+report_format.py` — the former's own cleanliness would have been worthless if the
+module it depends on secretly wasn't clean too), matching `cli/score.py`'s own
+established precedent for this class of guarantee. `cli/app.py` gains the
+`report` subcommand; its module docstring's stale references (`--budget`/
+`--dry-run` as "not yet built," `report` as "lands in later gates") are corrected.
+
+---
+
 ## Limitation 16 re-examined after F-13/F-15: still open, not fixed by association
 
 Explicit re-check, not an assumption: F-13 (semantic key resolution) and F-15's

@@ -1,0 +1,92 @@
+"""`drifter run`'s report shape and rendering (docs/SPEC.md §13), split out
+from `cli/run.py` so it can be shared with `cli/report.py` (F-36) without
+either pulling in the other's concerns.
+
+`RunResult`/`render_run_result` describe and render a comparison's result —
+they say nothing about HOW that comparison happened. `cli/run.py` builds a
+`RunResult` by actually running real agent subprocesses; `cli/report.py`
+(F-36's "drifter report") builds an equivalent `RunResult` purely by reading
+already-recorded sessions off disk, zero new execution. Keeping this module
+free of any execution-capable import (`cli.subprocess_adapter`,
+`replay.replay_proxy`, `mcp.client`/`mcp.server`, anything spawning a process
+or opening a connection) is the whole point of the split: `cli/report.py`
+needs `RunResult`/`render_run_result` to be genuinely, structurally
+execution-free to import, not just conceptually so — importing `cli.run`
+directly would transitively pull in `cli.subprocess_adapter`'s real
+subprocess-spawning code merely by importing the module, even though
+`cli/report.py` would never call any of it. `test_report.py` asserts this
+module's own imports stay clean by inspecting its AST directly, matching
+`cli/score.py`'s established precedent for the same class of guarantee.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from evaluate.baseline import BaselineResult
+from evaluate.effect_size import EffectSizeResult
+from mutate.description_update import MutationLogEntry
+from policy.safety import SafetyResult
+
+
+@dataclass(frozen=True)
+class RunResult:
+    task_id: str
+    operator: str
+    baseline: BaselineResult
+    mutated: BaselineResult
+    effect: EffectSizeResult
+    mutation_log: list[MutationLogEntry]
+    safety: SafetyResult
+
+
+def _path_str(path: tuple[str, ...] | None) -> str:
+    if path is None:
+        return "N/A"
+    return " → ".join(path) if path else "(no tool calls)"
+
+
+def render_run_result(result: RunResult) -> str:
+    lines: list[str] = []
+    lines.append(f"DRIFTER RUN — {result.task_id}  (mutation: {result.operator})")
+    lines.append("")
+    lines.append(f"BASELINE  {result.baseline.valid_runs}/{result.baseline.total_runs} valid runs")
+    lines.append(f"          dominant path: {_path_str(result.baseline.dominant_path)}")
+    lines.append(f"MUTATED   {result.mutated.valid_runs}/{result.mutated.total_runs} valid runs")
+    lines.append(f"          dominant path: {_path_str(result.mutated.dominant_path)}")
+    lines.append("")
+
+    lines.append(f"BEHAVIOR  {result.effect.verdict}")
+    if result.effect.deviation_rate is not None:
+        lines.append(f"          deviation from baseline: {result.effect.deviation_rate * 100:.0f}%")
+    if result.effect.effect_size is not None:
+        lines.append(f"          effect size: {result.effect.effect_size:.2f}×")
+    elif result.effect.verdict != "UNKNOWN":
+        lines.append("          effect size: undefined (baseline had zero natural variation)")
+
+    lines.append("")
+    lines.append("TASK      UNKNOWN — no oracle configured")
+    lines.append("")
+
+    # F-25: reported even when Behavior shows NO_REGRESSION (docs/SPEC.md §8's
+    # own text) -- this is the highest-value finding class, so it's never
+    # folded into or gated by the Behavior/Task verdicts above.
+    lines.append(f"SAFETY    {result.safety.verdict.replace('_', ' ')}")
+    for finding in result.safety.findings:
+        lines.append(f"          {finding.detail}")
+    lines.append("")
+
+    for run, label in ((result.baseline, "baseline"), (result.mutated, "mutated")):
+        if run.excluded_runs:
+            lines.append(f"{label.upper()} EXCLUSIONS:")
+            for excluded in run.excluded_runs:
+                who = excluded.session_id or (str(excluded.path) if excluded.path is not None else "<no session>")
+                lines.append(f"  {who}: {excluded.reason}")
+            lines.append("")
+
+    if result.mutation_log:
+        lines.append("MUTATION LOG:")
+        for entry in result.mutation_log:
+            lines.append(f"  {entry.tool_name} ({entry.operator}), seed={entry.seed}, inverse={entry.inverse}")
+
+    return "\n".join(lines) + "\n"

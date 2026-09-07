@@ -20,11 +20,14 @@ non-negotiable "verdict defaults to UNKNOWN" invariant, not a stub
 standing in for something unbuilt.
 
 Safety axis (F-25/F-26, docs/CHANGELOG.md) IS wired, added once both existed:
-`_evaluate_safety_across_arms` evaluates every recorded session from both
-arms (not just "valid" ones — Safety has no fidelity gate, docs/SPEC.md §8's
-own text: "evaluated on every run regardless of configuration") against
-`config.policy`'s destructive-override/confirmation-required lists via
-`policy.safety.evaluate_safety_for_session`.
+`policy.safety.evaluate_safety_across_arms` evaluates every recorded session
+from both arms (not just "valid" ones — Safety has no fidelity gate,
+docs/SPEC.md §8's own text: "evaluated on every run regardless of
+configuration") against `config.policy`'s destructive-override/confirmation-
+required lists. Lives in `policy/safety.py`, not here — `cli/report.py`
+(F-36) needs the identical from-disk logic and `policy/` sits below `cli/`
+in this project's module order, so the shared piece has to live on the
+`policy/` side.
 
 STOP-AND-CHECK findings, load-bearing for this module's design (not
 re-derived here — see the session record for the full investigation):
@@ -49,20 +52,20 @@ this command does not record one.
 from __future__ import annotations
 
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
 
 from cli.config import ConfigError, PolicyConfig, load_config
+from cli.report_format import RunResult, render_run_result
 from cli.stats import resolve_runs_dir
 from cli.subprocess_adapter import make_run_once
-from evaluate.baseline import BaselineResult, run_baseline
-from evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
-from mutate.description_update import MutationLogEntry, mutate_tool_manifest
+from evaluate.baseline import run_baseline
+from evaluate.effect_size import compute_behavior_effect_size
+from mutate.description_update import mutate_tool_manifest
 from mutate.tool_addition import add_tool
 from policy.blast_radius import compute_blast_radius, render_blast_radius
 from policy.budget import BudgetTracker, budget_limited
-from policy.safety import SafetyFinding, SafetyResult, evaluate_safety_for_session
+from policy.safety import evaluate_safety_across_arms
 from record.calibration import Calibration, load_calibration
 from replay.replay_proxy import tools_served_from_session
 from replay.replay_store import ReplayStore
@@ -72,47 +75,11 @@ OPERATORS = ("description_update", "tool_addition")
 DEFAULT_TIMEOUT_S = 60.0
 
 
-@dataclass(frozen=True)
-class RunResult:
-    task_id: str
-    operator: str
-    baseline: BaselineResult
-    mutated: BaselineResult
-    effect: EffectSizeResult
-    mutation_log: list[MutationLogEntry]
-    safety: SafetyResult
-
-
 def _template_command(command: list[str], prompt: str) -> list[str]:
     """`{task.prompt}` substitution per-token — see cli/config.py's
     AgentConfig docstring for why this is list-of-tokens, not a shell
     string requiring shlex parsing."""
     return [token.replace("{task.prompt}", prompt) for token in command]
-
-
-def _evaluate_safety_across_arms(session_dir: Path, policy: PolicyConfig) -> SafetyResult:
-    """Safety (docs/SPEC.md §8) is evaluated on EVERY recorded run, not just
-    "valid" ones — unlike Behavior/Task, it has no fidelity gate at all
-    (SPEC.md §8's own text: "Evaluated on every run regardless of
-    configuration"). A destructive call in a low-fidelity or otherwise
-    excluded run is still a real destructive call. Globs every session
-    JSONL under both arms directly, rather than reusing BaselineResult's
-    `valid_runs` accounting, which deliberately excludes runs this check
-    must still see.
-    """
-    findings: list[SafetyFinding] = []
-    for arm_dir in (session_dir / "baseline", session_dir / "mutated"):
-        if not arm_dir.exists():
-            continue
-        for session_path in sorted(arm_dir.glob("*.jsonl")):
-            result = evaluate_safety_for_session(
-                session_path,
-                destructive_override=policy.destructive,
-                confirmation_required=policy.confirmation_required,
-            )
-            findings.extend(result.findings)
-    verdict = "VIOLATION" if findings else "NO_VIOLATION"
-    return SafetyResult(verdict=verdict, findings=tuple(findings))
 
 
 def run_mutation_comparison(
@@ -141,7 +108,7 @@ def run_mutation_comparison(
     between them is which manifest (`tools_served`) the replay proxy
     serves, exactly matching what docs/SPEC.md §7/§8 mean by "same task,
     mutation active vs. not." Also evaluates the Safety axis (F-25) across
-    every recorded run from both arms — see `_evaluate_safety_across_arms`.
+    every recorded run from both arms — see `evaluate_safety_across_arms`.
 
     `policy` defaults to an empty `PolicyConfig()` (no overrides, nothing
     requires confirmation) when not given, matching `cli.config.
@@ -211,7 +178,10 @@ def run_mutation_comparison(
     mutated_result = run_baseline(f"{task_id}__mutated_{operator}", mutated_run_once, repeats=repeats, calibration=calibration)
 
     effect = compute_behavior_effect_size(baseline_result, mutated_result, calibration=calibration)
-    safety = _evaluate_safety_across_arms(session_dir, policy or PolicyConfig())
+    effective_policy = policy or PolicyConfig()
+    safety = evaluate_safety_across_arms(
+        session_dir, effective_policy.destructive, effective_policy.confirmation_required
+    )
 
     return RunResult(
         task_id=task_id,
@@ -222,58 +192,6 @@ def run_mutation_comparison(
         mutation_log=mutation_log,
         safety=safety,
     )
-
-
-def _path_str(path: tuple[str, ...] | None) -> str:
-    if path is None:
-        return "N/A"
-    return " → ".join(path) if path else "(no tool calls)"
-
-
-def render_run_result(result: RunResult) -> str:
-    lines: list[str] = []
-    lines.append(f"DRIFTER RUN — {result.task_id}  (mutation: {result.operator})")
-    lines.append("")
-    lines.append(f"BASELINE  {result.baseline.valid_runs}/{result.baseline.total_runs} valid runs")
-    lines.append(f"          dominant path: {_path_str(result.baseline.dominant_path)}")
-    lines.append(f"MUTATED   {result.mutated.valid_runs}/{result.mutated.total_runs} valid runs")
-    lines.append(f"          dominant path: {_path_str(result.mutated.dominant_path)}")
-    lines.append("")
-
-    lines.append(f"BEHAVIOR  {result.effect.verdict}")
-    if result.effect.deviation_rate is not None:
-        lines.append(f"          deviation from baseline: {result.effect.deviation_rate * 100:.0f}%")
-    if result.effect.effect_size is not None:
-        lines.append(f"          effect size: {result.effect.effect_size:.2f}×")
-    elif result.effect.verdict != "UNKNOWN":
-        lines.append("          effect size: undefined (baseline had zero natural variation)")
-
-    lines.append("")
-    lines.append("TASK      UNKNOWN — no oracle configured")
-    lines.append("")
-
-    # F-25: reported even when Behavior shows NO_REGRESSION (docs/SPEC.md §8's
-    # own text) -- this is the highest-value finding class, so it's never
-    # folded into or gated by the Behavior/Task verdicts above.
-    lines.append(f"SAFETY    {result.safety.verdict.replace('_', ' ')}")
-    for finding in result.safety.findings:
-        lines.append(f"          {finding.detail}")
-    lines.append("")
-
-    for run, label in ((result.baseline, "baseline"), (result.mutated, "mutated")):
-        if run.excluded_runs:
-            lines.append(f"{label.upper()} EXCLUSIONS:")
-            for excluded in run.excluded_runs:
-                who = excluded.session_id or (str(excluded.path) if excluded.path is not None else "<no session>")
-                lines.append(f"  {who}: {excluded.reason}")
-            lines.append("")
-
-    if result.mutation_log:
-        lines.append("MUTATION LOG:")
-        for entry in result.mutation_log:
-            lines.append(f"  {entry.tool_name} ({entry.operator}), seed={entry.seed}, inverse={entry.inverse}")
-
-    return "\n".join(lines) + "\n"
 
 
 def run_run(

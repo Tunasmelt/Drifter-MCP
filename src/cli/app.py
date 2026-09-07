@@ -1,21 +1,23 @@
 """`drifter` CLI dispatch (docs/SPEC.md §12).
 
-`init`, `observe`, `stats`, `score`, `run`, `replay-serve`, and `doctor`
-(connectivity checks only, per docs/PHASES.md Gate 1) are wired up — the
-rest of docs/SPEC.md §12's command list (`tasks mine`, `tasks
-approve`, `report`, doctor's classification-sanity checks) lands in
-later gates. `init` is F-33, deliberately narrower than its own spec
-text (see cli/init.py's docstring for why — found missing while
-sanity-checking Gate 4's own handoff checklist, not planned this way).
-`run` is F-35's deliberately minimal Gate 3 scope (see
-cli/run.py's own docstring) — baseline + one mutation operator +
-behavior comparison, not the full v1 orchestration (`--budget`/
-`--dry-run`, adaptive scheduling, task/safety verdicts). `replay-serve`
-is not itself an F-number — it's the real-agent connection mechanism
-`run` needed but never had (see cli/replay_serve.py's own docstring
-for why: found blocking the real Gate 0 dogfood run, not planned
-in advance). Unregistered subcommands fail with argparse's own
-"invalid choice" error rather than a stub pretending to be implemented.
+`init`, `observe`, `stats`, `score`, `report`, `run`, `replay-serve`, and
+`doctor` are wired up — the rest of docs/SPEC.md §12's command list (`tasks
+mine`, `tasks approve`, doctor's classification-sanity checks) lands in later
+gates. `init` is F-33, deliberately narrower than its own spec text (see
+cli/init.py's docstring for why — found missing while sanity-checking Gate 4's
+own handoff checklist, not planned this way). `run` is F-35's orchestration,
+widened since Gate 3 (see cli/run.py's own docstring) with F-31's blast-radius
+preview/confirmation gate and F-32's `--budget`/`--dry-run`/`--max-wall-time`,
+though still not the full v1 report format (adaptive scheduling, F-27, is
+still unbuilt). `report` (F-36's own second half, `cli/report.py`) re-renders
+a prior `run`'s full BEHAVIOR/TASK/SAFETY report from stored sessions alone,
+zero new execution — `score` already met F-36's own Gate 2 exit test
+(re-analyze with zero execution) but never rendered this fuller format.
+`replay-serve` is not itself an F-number — it's the real-agent connection
+mechanism `run` needed but never had (see cli/replay_serve.py's own docstring
+for why: found blocking the real Gate 0 dogfood run, not planned in advance).
+Unregistered subcommands fail with argparse's own "invalid choice" error
+rather than a stub pretending to be implemented.
 """
 
 from __future__ import annotations
@@ -71,6 +73,13 @@ def _build_parser() -> argparse.ArgumentParser:
     score_parser = subparsers.add_parser("score", help="Re-analyze recorded sessions, zero new execution")
     score_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
     score_parser.add_argument("--runs-dir", type=Path, default=None, help="Corpus directory to read directly, bypassing drifter.yaml")
+
+    report_parser = subparsers.add_parser(
+        "report", help="Re-render a prior `drifter run`'s full report from stored sessions, zero new execution (F-36)"
+    )
+    report_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+    report_parser.add_argument("--runs-dir", type=Path, default=None, help="Corpus directory to read directly, bypassing drifter.yaml")
+    report_parser.add_argument("--task-id", default="task", help="The --task-id a prior `drifter run` was invoked with")
 
     run_parser = subparsers.add_parser("run", help="Baseline + one mutation operator, replay mode (F-35, Gate 3 minimal scope)")
     run_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml (needs an agent: block)")
@@ -153,6 +162,14 @@ def main() -> None:
             run_score(config_path=args.config, runs_dir=args.runs_dir)
         except ConfigError as e:
             print(f"drifter score: {e}", file=sys.stderr)
+            raise SystemExit(4) from None
+    elif args.command == "report":
+        from cli.report import run_report
+
+        try:
+            run_report(config_path=args.config, runs_dir=args.runs_dir, task_id=args.task_id)
+        except ConfigError as e:
+            print(f"drifter report: {e}", file=sys.stderr)
             raise SystemExit(4) from None
     elif args.command == "run":
         from cli.run import run_run

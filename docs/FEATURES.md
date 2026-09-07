@@ -50,7 +50,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-33 | `drifter init` | ⚠️ Built narrower than spec, deliberate | F-26 now exists but `init` still doesn't call it — done-when bar doesn't require it, wiring classification into `init` itself is separate, unrequested scope |
 | F-34 | Subprocess agent adapter (stdio) | ✅ Built | Gate 2 scope, deliberately narrower than original spec text (now widened by F-38, not replaced) |
 | F-35 | `drifter run` | ✅ Built | Gate 3 minimal scope, deliberate (no `--budget`, no adaptive scheduling, no full report format) |
-| F-36 | `drifter score` / `drifter report` | ⚠️ `score` built, `report` not separate | `drifter report` (render from stored records without re-scoring) not built as its own command |
+| F-36 | `drifter score` / `drifter report` | ✅ Both built | `cli/report_format.py` split out of `cli/run.py` so `cli/report.py` stays genuinely execution-free — `mutation_log` is a real, stated gap (not reconstructable from disk, see F-36's own entry) |
 | F-37 | `drifter doctor` | ⚠️ Gate 1 scope + F-38's http check + F-26 classification | Surfaces unresolved classifications as `[WARN]`, not yet a hard live-mode gate (F-31/F-32 don't exist to gate against) |
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
@@ -89,11 +89,17 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    complete. `--budget` is a tool-call ceiling (not a literal model-call count —
    see F-32's own entry), checked before each repeat starts, never mid-run.
    `--dry-run` reuses F-31's blast-radius preview with zero new computation.
-8. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
+8. ~~**F-36's `drifter report`**~~ — **built.** `cli/report.py` re-renders a prior
+   `drifter run`'s full BEHAVIOR/TASK/SAFETY report from stored sessions alone,
+   zero new execution — `render_run_result`/`RunResult` split into a new,
+   deliberately execution-free `cli/report_format.py` shared with `cli/run.py`,
+   rather than `report.py` importing `cli.run` directly (which would have
+   transitively pulled in real subprocess-spawning code just by being imported).
+9. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
    multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
    first place, still true).
-9. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
-   no blocking dependents.
+10. **F-27** (adaptive scheduling) — lower urgency, no blocking dependents. All other
+    v1 priority-list items are now built.
 
 ---
 
@@ -843,13 +849,46 @@ agent that wasn't previously known.
 
 **Technical:** Re-runs F-21–F-25 evaluation logic against already-stored JSONL with
 zero new agent execution or API calls; renders the report format from SPEC.md §13.
+**Both built.** `drifter score` met Gate 2's own exit test long ago (aggregate a
+whole runs directory as one undifferentiated group, zero execution). `drifter
+report` (`cli/report.py`) is the other half — `build_report_result` reconstructs a
+`RunResult` from a specific prior `drifter run`'s `session_dir/{baseline,mutated}`
+layout (`aggregate_baseline_runs` on each arm, `compute_behavior_effect_size`
+between them, `policy.safety.evaluate_safety_across_arms` for Safety), and
+`render_run_result` prints the exact same BEHAVIOR/TASK/SAFETY format `drifter run`
+itself would. `RunResult`/`render_run_result` were split out of `cli/run.py` into a
+new `cli/report_format.py` specifically so `report.py` never has to import
+`cli.run` (which transitively pulls in `cli.subprocess_adapter`'s real
+subprocess-spawning code merely by being imported) — checked by the same
+AST-based no-live-connection test `cli/score.py` already established, applied to
+both new modules, not just `report.py` itself. `policy.safety.
+evaluate_safety_across_arms` moved from `cli/run.py` into `policy/safety.py` for
+the same sharing reason, taking plain `destructive_override`/
+`confirmation_required` sequences rather than a `cli.config.PolicyConfig` object,
+since `policy/` sits below `cli/` in this project's module dependency order and
+can't import from it.
+
+Real, stated scope gap, not silently glossed: `RunResult.mutation_log` (which tool
+was mutated, old→after description) is genuinely not reconstructable from disk —
+nothing in the recorded session schema, or anywhere `run_mutation_comparison`
+writes, persists which operator or seed produced a given `session_dir`. A
+reconstructed report always has an empty `mutation_log` (so `render_run_result`'s
+"MUTATION LOG:" section is simply omitted, no special-casing needed) and an
+`operator` field that says explicitly it wasn't verified, rather than guessing.
 
 **Simple:** Lets you re-analyze old test results instantly and for free — the whole
-point of recording everything in the first place.
+point of recording everything in the first place. `drifter report` specifically
+gets you back the SAME full report a `drifter run` printed once, any time later,
+without spending anything to re-generate it.
 
 **Depends on:** any prior `drifter run` output.
 **Done when:** re-scoring a week-old corpus produces output in seconds with zero
-network calls. **This is Gate 2's exit test.**
+network calls. **This is Gate 2's exit test.** For `drifter report` specifically:
+reconstructing a report from an existing `drifter run`'s stored sessions produces
+the same BEHAVIOR/TASK/SAFETY verdicts as the original run did — confirmed by
+`tests/cli/test_report.py`'s `test_report_reconstructs_the_same_verdict_a_real_
+drifter_run_produced`, which runs a real `drifter run` end to end, then confirms
+`drifter report` reconstructs an identical verdict from those same sessions alone.
 
 ### F-37 `drifter doctor`
 

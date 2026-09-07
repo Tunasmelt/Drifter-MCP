@@ -760,6 +760,63 @@ calls," and this would need real mid-run cancellation (reaching into the
 subprocess/proxy layer directly) instead. Not encountered yet — every real fixture
 tested against so far has a small, stable per-run call count.
 
+### v1 — `drifter report` (F-36's second half)
+
+**Depends on:** any prior `drifter run` output. `drifter score` already met F-36's
+own Gate 2 exit test (re-analyze with zero execution); this is the other named
+command that never got built alongside it. See docs/SPEC.md §12's implementation-
+status note and docs/FEATURES.md's F-36 entry for the full technical/simple
+breakdown.
+
+#### Tasks
+
+- [x] `cli/report_format.py`: `RunResult`/`render_run_result`/`_path_str` split
+  out of `cli/run.py` into their own module, deliberately execution-free — needed
+  so `cli/report.py` could reuse them without transitively importing
+  `cli.subprocess_adapter`'s real subprocess-spawning code merely by importing
+  `cli.run` for the dataclass. `cli/run.py` re-exports both names unchanged
+  (`from cli.report_format import RunResult, render_run_result`), so every
+  existing caller/test kept working with zero changes
+- [x] `policy/safety.py`: `evaluate_safety_across_arms` moved here from
+  `cli/run.py` for the same sharing reason — `policy/` sits below `cli/` in this
+  project's module dependency order, so it takes plain `destructive_override`/
+  `confirmation_required` sequences rather than importing `cli.config.
+  PolicyConfig` directly
+- [x] `cli/report.py`: `build_report_result`/`run_report` — reconstructs a
+  `RunResult` purely from a prior run's `session_dir/{baseline,mutated}` JSONL
+  files (`aggregate_baseline_runs` per arm, `compute_behavior_effect_size`
+  between them, `evaluate_safety_across_arms` for Safety), raises an actionable
+  `ConfigError` if the task was never run at all. `mutation_log` is always empty
+  in a reconstructed report — genuinely not recoverable from disk, a real, stated
+  gap, not silently glossed
+- [x] `cli/app.py`: `report` subcommand (`--config`/`--runs-dir`/`--task-id`)
+
+Full new-test count: 10 (`tests/cli/test_report.py`, including an AST-based
+no-live-connection check applied to BOTH new modules, matching `cli/score.py`'s
+own established precedent, and a real end-to-end test that runs a genuine
+`drifter run` then confirms `drifter report` reconstructs an identical verdict
+from the same sessions alone).
+
+#### Exit test
+
+Reconstructing a report from an existing `drifter run`'s stored sessions produces
+the same BEHAVIOR/TASK/SAFETY verdicts as the original run did, with zero new
+execution. **Met**: `tests/cli/test_report.py`'s
+`test_report_reconstructs_the_same_verdict_a_real_drifter_run_produced` runs a
+real `drifter run` end to end (a real replay-served agent), then confirms
+`drifter report` reconstructs the identical `effect.verdict`,
+`baseline`/`mutated.dominant_path`, and `safety.verdict` from those same
+recorded sessions alone.
+
+#### Kill criterion
+
+If a future feature needs `mutation_log` reconstructable from disk (e.g. a
+report consumer that wants to show exactly what was mutated, not just the
+resulting verdict), this feature's "always empty, a stated gap" scope stops
+being sufficient, and persisting mutation metadata alongside a run's sessions
+becomes real, necessary work — not an enhancement to defer indefinitely. Not
+encountered yet; no current consumer needs it.
+
 ### v1 — remaining scope
 
 - Synthetic replay provenance surfaced fully in reports
@@ -769,7 +826,10 @@ tested against so far has a small, stable per-run call count.
   hand-written; mining matters once there's a real multi-week corpus
 - Task assertions as a first-class authored feature, not just the engine (F-24 was
   built in Gate 3; the authoring UX around it is v1)
-- Adaptive scheduling tuning based on Gate 1–4 real usage data
+- Adaptive scheduling tuning based on Gate 1–4 real usage data (F-27, the last
+  unbuilt v1 priority-list item)
+- The docs/SPEC.md §12 exit-code scheme (`1`/`2`/`3`/`5` for verdict-specific
+  outcomes) is not wired up anywhere — every command still exits `0`/`4` only
 
 ## v1.5
 

@@ -159,6 +159,12 @@ see the preview without running anything, or `--budget N` (a tool-call ceiling, 
 literally model calls — this proxy can't see those) / `--max-wall-time SECONDS` to
 cap real cost, checked before each repeat starts.
 
+Want that report again later without spending anything? `drifter report --task-id
+my-task` re-renders the exact same BEHAVIOR/TASK/SAFETY output from the sessions
+`drifter run` already recorded — zero new agent execution. It can't show what was
+actually mutated (that detail isn't persisted to disk yet), but everything else is
+identical to the original run's own output.
+
 ## Design principles
 
 The short version (full list in [`docs/SPEC.md` §3](docs/SPEC.md)):

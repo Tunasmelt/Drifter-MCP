@@ -445,6 +445,14 @@ drifter doctor          connectivity, config, classification sanity
 Exit codes: `0` clean · `1` behavior regression · `2` assertion failure ·
 `3` safety violation · `4` config/connectivity error · `5` budget exceeded.
 
+*Implementation status:* `init`/`observe`/`stats`/`score`/`report`/`run`/
+`replay-serve`/`doctor` are all built. `tasks mine`/`tasks approve` remain unbuilt
+(F-28/F-29/F-30, deliberately deferred past Gate 3 — no real multi-week corpus
+exists yet to mine). The exit-code scheme above is NOT wired up — every command
+currently exits `0`/`4` only (clean vs. config/connectivity error); a verdict-
+specific exit code (`1`/`2`/`3`/`5`) is real, unbuilt scope, not attempted as part
+of any feature built so far.
+
 ## 13. Report format
 
 ```
