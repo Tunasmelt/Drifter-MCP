@@ -163,7 +163,20 @@ anything:
 
 ```
 REPLAY CORPUS  20 of 83 session(s) recorded against 'filesystem', 15 call(s) indexed
+REPLAY COVERAGE  ~27% projected (exact 4, semantic 0, missed 11 of 15 calls
+                 across 5 sessions, leave-one-out)
+                 WARNING: below the 0.70 fidelity floor — most runs are likely to be
+                 EXCLUDED and the verdict to come back UNKNOWN.
+                 worst-covered tools:
+                   list_allowed_directories: 0% (1/1 calls unresolved)
 ```
+
+That coverage number is an honest estimate of how well your recordings answer a run
+they've *never seen* (each session held out in turn and resolved against the others),
+not a self-scoring of the calls that built the index — so it tells you whether to
+record more before spending agent runs, and which tools to go exercise.
+`drifter doctor` reports the same figure per server, so you can check readiness
+without setting up a run.
 
 `drifter run`'s current scope is deliberately minimal (see its own module docstring)
 — one task, one operator, a behavioral comparison. It is not yet the full orchestrated

@@ -76,6 +76,7 @@ from policy.budget import BudgetTracker, budget_limited
 from policy.safety import evaluate_safety_across_arms
 from record.calibration import Calibration, load_calibration
 from replay.corpus import load_corpus, render_corpus_summary
+from replay.coverage import estimate_coverage, render_coverage
 from replay.replay_store import ReplayStore
 
 OPERATORS = ("description_update", "tool_addition", "parameter_rename")
@@ -307,7 +308,15 @@ def run_run(
     # most likely reason a verdict later comes back UNKNOWN, and the user can
     # only act on that if they learn it here rather than afterwards.
     corpus = load_corpus(_as_corpus_inputs(fixture), server_name)
-    output_stream.write(render_corpus_summary(corpus, server_name) + "\n\n")
+    output_stream.write(render_corpus_summary(corpus, server_name) + "\n")
+
+    # DEC-027(c): the projected MISS rate, BEFORE anything is spent. This is
+    # the number limitation 16's real test only learned after twenty real
+    # agent runs. Leave-one-out over the corpus, so it estimates how well
+    # these recordings answer a session they have never seen rather than
+    # self-congratulating on the calls that built the index.
+    coverage = estimate_coverage(corpus.session_paths, server_name)
+    output_stream.write(render_coverage(coverage, fidelity_floor=calibration.fidelity_floor) + "\n\n")
 
     original_tools = list(corpus.tools_served)
     # Blast radius estimates the cost of ONE agent run, so it samples a

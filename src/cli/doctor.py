@@ -48,11 +48,21 @@ import anyio
 import httpx2
 from mcp import ClientSession
 
-from cli.config import AgentConfig, ConfigError, PolicyConfig, ServerConfig, load_config, server_target
+from cli.config import (
+    AgentConfig,
+    ConfigError,
+    DrifterConfig,
+    PolicyConfig,
+    ServerConfig,
+    load_config,
+    server_target,
+)
+from cli.stats import resolve_runs_dir
 from policy.classify import Classification, classify_manifest
-from record.calibration import load_calibration
+from record.calibration import Calibration, load_calibration
 from record.proxy import connect_to_server
 from record.schema import ToolDescriptor
+from replay.coverage import estimate_coverage
 
 
 @dataclass
@@ -279,4 +289,48 @@ def run_doctor(config_path: Path | None = None, output_stream: TextIO = sys.stdo
         output_stream.write(f"{marker} {agent_check.name}: {agent_check.detail}\n")
         all_ok = all_ok and agent_check.ok
 
+    _report_replay_coverage(config, calibration, output_stream)
+
     return all_ok
+
+
+def _report_replay_coverage(config: DrifterConfig, calibration: Calibration, output_stream: TextIO) -> None:
+    """DEC-027(c): projected replay coverage per configured server, from the
+    recorded corpus alone (docs/CHANGELOG.md).
+
+    Reported as [WARN]/[ OK ]/[INFO] and deliberately NEVER counted against
+    `run_doctor`'s own return value: a thin corpus is a real, actionable
+    finding but not a broken configuration, and doctor's boolean drives
+    docs/SPEC.md §12's exit code 4 ("config/connectivity error"), which this
+    is not. Same "surfaced, not fatal" precedent F-26's unresolved-
+    classification warning above already set.
+
+    Doctor is where this belongs for standalone use: `drifter run` shows the
+    same estimate in its own pre-flight, but only once a user is already
+    committed to a run and has a fixture argument in hand. A user asking
+    "is my setup ready?" should be able to learn their corpus can't support
+    a verdict without constructing a run to find out.
+    """
+    runs_dir = resolve_runs_dir(config)
+    if not runs_dir.exists():
+        output_stream.write(f"[INFO] replay corpus: nothing recorded yet at {runs_dir} — run `drifter observe` first\n")
+        return
+
+    session_paths = sorted(runs_dir.glob("*.jsonl"))
+    for server in config.servers:
+        estimate = estimate_coverage(session_paths, server.name)
+        if not estimate.estimable:
+            output_stream.write(f"[INFO] replay coverage {server.name!r}: {estimate.reason}\n")
+            continue
+        coverage = estimate.coverage or 0.0
+        marker = "[WARN]" if coverage < calibration.fidelity_floor else "[ OK ]"
+        detail = (
+            f"~{coverage * 100:.0f}% projected from {estimate.sessions} recorded session(s) "
+            f"({estimate.misses}/{estimate.total_calls} calls would MISS)"
+        )
+        if coverage < calibration.fidelity_floor:
+            detail += (
+                f" — below the {calibration.fidelity_floor:.2f} fidelity floor, so most "
+                f"`drifter run` repeats would be excluded and the verdict UNKNOWN"
+            )
+        output_stream.write(f"{marker} replay coverage {server.name!r}: {detail}\n")

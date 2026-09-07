@@ -286,10 +286,23 @@ UNION of many sessions actually recorded from real agent behavior, which accumul
 coverage empirically instead of by anticipation. That distinction is why DEC-027 chose
 it as the honest lever. It is emphatically NOT a claim that it suffices: this
 section's own combinatorial argument applies with undiminished force to any finite
-corpus, and nothing has yet measured how the MISS rate actually moves as a corpus
-grows. Treat corpus replay as the only honest direction available, with its
-sufficiency an open empirical question — which is precisely what DEC-027(c)
-(projected coverage, measured and reported) exists to answer rather than assume.
+corpus.
+
+*Measured, as of DEC-027(c).* `replay/coverage.py`'s leave-one-out estimator answered
+the "how does the MISS rate move as a corpus grows" question this paragraph previously
+left open. Against this repository's own recordings (5 sessions carrying `filesystem`
+calls), mean projected coverage rose monotonically with corpus size — 10.0% at 2
+sessions, 17.1% at 3, 22.2% at 4, 26.7% at 5. Corpus replay therefore does help, and
+the direction DEC-027 chose is empirically real rather than merely plausible. It is
+also visibly insufficient on its own at this scale: ~27% against a 0.70 fidelity floor,
+with per-step gains shrinking (7.1, 5.1, 4.5 points). Coverage is a real lever with an
+unknown and possibly distant plateau — treat the curve as directional evidence, not a
+calibrated growth model (the corpus behind it is small and heterogeneous). Two
+independent corroborations of limitation 16 fell out of the same measurement: the
+estimate (~27%) lands inside the 0.25-0.60 band of real fidelities recorded above
+across 9 real agent attempts, and the estimator's per-tool breakdown independently
+flags `list_allowed_directories` at 0% coverage — the exact near-universal first move
+this section's own root-cause analysis identified by hand.
 
 This reframes a prior Gate 3 scoping decision. Tier 3 (semantic matching) was
 deferred from F-16/F-17 on the reasoning that neither operator's own mutation changes
@@ -398,9 +411,16 @@ blast_radius.py`, but honestly reframed against two premises above that don't ho
 in this codebase's actual architecture. "Live-mode run" doesn't exist — no code
 path anywhere connects to a real MCP server during evaluation (`drifter run`
 replays exclusively; confirmed independently by F-25/F-26/F-37 already, not a new
-claim here). "Estimated replay coverage" presupposes a live-server FALLBACK for a
-replay MISS, which also doesn't exist (a MISS synthesizes a placeholder or reports
-MISS outright, never falls through to a real call) — not built, a real gap. What
+claim here). "Estimated replay coverage" as this section's own mockup meant it presupposes a
+live-server FALLBACK for a replay MISS, which doesn't exist (a MISS synthesizes a
+placeholder or reports MISS outright, never falls through to a real call) — that
+reading remains unbuilt. *A different and more useful reading of the same phrase IS
+built as of DEC-027(c)*: `replay/coverage.py` projects, before any agent run is
+spent, what fraction of an agent's calls the recorded corpus can actually answer
+(leave-one-out over the corpus, so it estimates generalization rather than scoring
+the calls that built the index). It is reported alongside the blast-radius preview
+rather than inside `BlastRadiusPreview` itself, since it describes the CORPUS's
+adequacy, not this run's blast radius. What
 IS gated, required, and real: `drifter run`'s actual un-deferred cost today —
 spawning real agent subprocesses — is architecturally unreachable without a
 preview (workflow count fixed at 1, matching `drifter run`'s current one-task

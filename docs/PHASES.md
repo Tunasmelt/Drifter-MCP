@@ -830,9 +830,14 @@ encountered yet; no current consumer needs it.
     printed before anything is spent. **Not** a claim that it closes limitation 16 —
     docs/SPEC.md §7's combinatorial argument applies to any finite corpus, and how the
     MISS rate actually moves as a corpus grows is unmeasured. That is (c)'s job.
-  - (c) **projected replay coverage, pre-flight** — report a corpus's expected MISS
-    rate before real agent runs are spent, not after. Belongs in F-31's blast-radius
-    preview, which already carries "estimated replay coverage" as a stated gap.
+  - ~~(c) projected replay coverage, pre-flight~~ — built (`replay/coverage.py`):
+    leave-one-out estimate shown in `drifter run`'s pre-flight and by `drifter
+    doctor`, with a per-tool worst-covered breakdown and a warning when the
+    projection falls below `calibration.fidelity_floor`. This also answered (b)'s
+    open question: coverage rises monotonically with corpus size (10% → 27% over
+    2 → 5 sessions on this repo's own recordings), so the lever is real — and
+    visibly insufficient alone at that scale, with shrinking per-step gains. See
+    docs/CHANGELOG.md and docs/SPEC.md §7.
   - Explicitly NOT doing: a fuzzy/partial value-matching tier (rejected on the
     merits — see DEC-027). F-14 general synthesis stays on the roadmap for session
     quality but is not credited as closing limitation 16.

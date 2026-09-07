@@ -6,6 +6,89 @@ not just a diff.
 
 ---
 
+## DEC-027(c): projected replay coverage — and the first real measurement of whether (b) helps
+
+The last of DEC-027's three pieces, and the one that turns limitation 16 from a thing
+users discover *after* twenty real agent runs into a number shown before any are spent.
+`replay/coverage.py` estimates what fraction of an agent's calls will actually resolve
+from a corpus; `drifter run` shows it in its pre-flight and `drifter doctor` reports it
+per configured server. Zero execution, zero API cost — same discipline as
+`cli/score.py`.
+
+**The obvious implementation would have been worthless, which shaped the design.**
+Resolving a corpus's own recorded calls against a store built from that corpus reports
+~100% by construction: every call is in the index because it *is* what built the index.
+That number would be self-congratulation, not measurement. The real question is a
+GENERALIZATION question — how well does this corpus answer a session it has never seen
+— so this uses leave-one-out cross-validation: each session is held out in turn and its
+calls resolved against the others only. A dedicated test pins this down
+(`test_coverage_is_not_measured_in_sample`), asserting 0% where an in-sample check
+would have reported 100%.
+
+Computed in one pass rather than N. Naive leave-one-out means building N stores over
+N sessions each — O(N²) file reads, far too slow to gate a pre-flight on an 80-session
+corpus. Instead each key is indexed once to the SET of sessions containing it, and a
+held-out call resolves exactly when some *other* session also carries that key. Same
+answer, O(N) reads.
+
+Two caveats are stated in the output rather than buried, because both change how the
+number should be read. It is biased LOW (the simulated store has one fewer session than
+a real run's would), negligibly so for a large corpus and severely for a tiny one —
+which is why a single-session corpus is reported as *not estimable* rather than as 0%:
+with nothing to hold out against, cross-validation has no meaning, and printing "0%"
+would read as a measurement when it is an artifact of the method. And it measures only
+the exact and semantic tiers; inverse (F-12) depends on a specific active mutation's
+inverse map, which is not a property of the corpus at all, so including it would
+inflate a number meant to describe the recordings.
+
+**The empirical answer DEC-027(b) explicitly left open.** That entry stated plainly
+that whether corpus size actually improves the MISS rate was unmeasured, and that this
+piece existed to answer it rather than assume it. Measured against this repository's
+own accumulated recordings (5 sessions carrying calls for `filesystem`, 15 calls),
+mean projected coverage by corpus size:
+
+| sessions | mean projected coverage |
+|---|---|
+| 2 | 10.0% |
+| 3 | 17.1% |
+| 4 | 22.2% |
+| 5 | 26.7% |
+
+So corpus replay **does** help, monotonically — the direction DEC-027 bet on is real
+rather than merely plausible. It is also sobering: at five sessions the projection is
+~27% against a 0.70 fidelity floor, and the per-step gains are shrinking (7.1, 5.1,
+4.5 points). Nothing here supports a claim that adding sessions closes the gap on its
+own; the honest reading is that coverage is a real lever with an unknown and possibly
+distant plateau. This corpus is also small and heterogeneous (test fixtures plus the
+golden fixture, not repeated real runs of one task), so treat the curve as directional
+evidence, not a calibrated growth model.
+
+Two independent corroborations of limitation 16 fell out of this, neither sought.
+The estimator put this corpus at ~27%, squarely inside the 0.25–0.60 band of real
+fidelities docs/SPEC.md §7 recorded across 9 real agent attempts — an estimate derived
+purely from recordings landing on the same number real runs produced. And its
+per-tool breakdown named `list_allowed_directories` at 0% coverage: precisely the
+"near-universal first move absent from both recorded fixtures" that §7's root-cause
+analysis identified by hand. The mechanism now surfaces automatically what previously
+took reading nine transcripts to find.
+
+The per-tool breakdown is the actionable half generally — a user who can see which
+tools their corpus answers worst can go record those, which is the one lever DEC-027
+left open. `drifter doctor` reports coverage as `[WARN]`/`[ OK ]`/`[INFO]` but never
+counts it against its own return value: a thin corpus is a real finding, not a
+config/connectivity error, and doctor's boolean drives docs/SPEC.md §12's exit code 4.
+
+One test-design bug worth recording, since it was instructive rather than careless.
+The first version of the "coverage grows with corpus size" test used a fixed shared
+call set plus one unique call per session, and asserted a rising curve. It produced a
+dead-FLAT 66.7% at every size — correctly, since the shared calls always resolve and
+the unique ones never do, at any N. The estimator was right and the test's model of
+reality was wrong: real exploration overlaps *partially*, which is exactly why the
+measured curve above climbs rather than sitting flat. Rewritten with partial overlap
+(session `i` visits paths `{i, i+1}`), it rises 50% → 75% → 100% as designed.
+
+---
+
 ## DEC-027(b): corpus replay — `drifter run` reads a corpus, not one fixture
 
 The second of DEC-027's three pieces. `drifter run --fixture <one.jsonl>` replayed

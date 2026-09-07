@@ -376,3 +376,89 @@ def test_calibration_doctor_timeout_has_a_default():
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+# --- DEC-027(c): projected replay coverage ----------------------------------
+
+
+def _record_dir_config(tmp_path: Path, runs_dir: Path) -> Path:
+    config_path = _drifter_yaml(tmp_path, [("srv", [sys.executable, FIXTURE_SERVER])])
+    text = config_path.read_text(encoding="utf-8")
+    text += f"\nrecord:\n  dir: '{runs_dir.as_posix()}'\n"
+    config_path.write_text(text, encoding="utf-8")
+    return config_path
+
+
+def _session(dir_path: Path, session_id: str, paths: list[str], server: str = "srv") -> None:
+    from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+
+    dir_path.mkdir(parents=True, exist_ok=True)
+    served = [ToolDescriptor(name="read_file", description="d", input_schema={})]
+    lines = [
+        SessionStart(
+            session_id=session_id, seq=0, started_at="2026-08-25T00:00:00Z",
+            environment=Environment(tool_manifest_hash="h"), raw_frame_offset=0,
+        ).model_dump_json(),
+        ToolsList(
+            session_id=session_id, seq=1, timestamp="2026-08-25T00:00:00Z", server=server,
+            tools_raw=served, tools_served=served, raw_frame_offset=1,
+        ).model_dump_json(),
+    ]
+    for i, path_arg in enumerate(paths, start=2):
+        lines.append(
+            ToolCall(
+                session_id=session_id, seq=i, timestamp="2026-08-25T00:00:01Z", server=server,
+                tool_name="read_file", arguments={"path": path_arg},
+                result_shape={"type": "object", "keys": []},
+                is_error=False, duration_ms=1.0, fault=False, raw_frame_offset=i * 100,
+            ).model_dump_json()
+        )
+    (dir_path / f"{session_id}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def test_doctor_warns_when_projected_replay_coverage_is_below_the_floor(tmp_path):
+    """DEC-027(c): a user asking "is my setup ready?" learns their corpus
+    can't support a verdict WITHOUT having to construct a run to find out."""
+    runs_dir = tmp_path / "runs"
+    _session(runs_dir, "a", ["/x"])
+    _session(runs_dir, "b", ["/y"])  # wholly disjoint -> 0% projected
+
+    out = io.StringIO()
+    run_doctor(config_path=_record_dir_config(tmp_path, runs_dir), output_stream=out)
+
+    output = out.getvalue()
+    assert "[WARN] replay coverage 'srv'" in output
+    assert "fidelity floor" in output
+
+
+def test_doctor_reports_ok_when_projected_coverage_clears_the_floor(tmp_path):
+    runs_dir = tmp_path / "runs"
+    _session(runs_dir, "a", ["/x"])
+    _session(runs_dir, "b", ["/x"])  # identical -> 100% projected
+
+    out = io.StringIO()
+    run_doctor(config_path=_record_dir_config(tmp_path, runs_dir), output_stream=out)
+
+    assert "[ OK ] replay coverage 'srv'" in out.getvalue()
+
+
+def test_doctor_coverage_never_counts_against_the_exit_code(tmp_path):
+    """A thin corpus is a real finding but not a config/connectivity error,
+    and run_doctor's boolean drives docs/SPEC.md §12's exit code 4. The
+    server here is genuinely reachable, so a 0%-coverage corpus must not
+    flip the result to False."""
+    runs_dir = tmp_path / "runs"
+    _session(runs_dir, "a", ["/x"])
+    _session(runs_dir, "b", ["/y"])
+
+    out = io.StringIO()
+    ok = run_doctor(config_path=_record_dir_config(tmp_path, runs_dir), output_stream=out)
+
+    assert "[WARN] replay coverage" in out.getvalue()
+    assert ok is True
+
+
+def test_doctor_says_so_when_nothing_has_been_recorded_yet(tmp_path):
+    out = io.StringIO()
+    run_doctor(config_path=_record_dir_config(tmp_path, tmp_path / "never_recorded"), output_stream=out)
+    assert "nothing recorded yet" in out.getvalue()
