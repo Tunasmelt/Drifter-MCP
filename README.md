@@ -20,8 +20,10 @@ generically, not this specific triangle.
 Drifter does that: it wraps whatever MCP server you already use, records what your
 agent actually does with it, then reruns the same tasks against a deliberately
 mutated version of that server's interface — a reworded tool description, an added
-tool — replayed from the recording, at zero marginal cost per run. If your agent's
-behavior changes, Drifter tells you, with a real effect size, not a vibe.
+tool — replayed from your recordings, at zero marginal cost per replayed call. If
+your agent's behavior changes, Drifter tells you, with a real effect size, not a
+vibe — and when your recordings don't cover enough of what your agent actually does
+to support a verdict, it tells you that instead of guessing.
 
 ## How it works
 
@@ -34,9 +36,16 @@ agent ──MCP──▶ drifter (replayed, mutated)        (drifter replay-serv
    and a real MCP server. Records the trajectory (which tools, in what order, with
    what shapes of arguments and results) to a local JSONL corpus. Payloads are never
    written by default — only shapes — and secrets are pattern-matched and redacted.
-2. **Replay** — an already-recorded session becomes a offline stand-in for the real
-   server: exact-match tool calls resolve instantly from the recording, for free,
-   with no live connection and no API cost.
+2. **Replay** — your recorded sessions become an offline stand-in for the real
+   server: matching tool calls resolve instantly from the recording, for free, with
+   no live connection and no API cost. **How much you need to record is the catch,
+   and Drifter is honest about it:** a real agent explores, so one recorded session
+   rarely covers what it does on the next run. Calls Drifter has no recording for
+   MISS, those runs are excluded for low fidelity, and if too few survive you get
+   `UNKNOWN` with the counts shown — never a confident verdict resting on two
+   surviving runs. See [`docs/SPEC.md` §15, limitation 16](docs/SPEC.md) for the real
+   measurements behind that, and DEC-027 in
+   [`docs/CHANGELOG.md`](docs/CHANGELOG.md) for what is and isn't being done about it.
 3. **Mutate** — three structural operators, all closed-set: `description_update`
    (bounded synonym substitution and sentence reordering, never touches a tool's
    name or schema), `tool_addition` (a small, fixed pool of generic tool

@@ -819,6 +819,22 @@ encountered yet; no current consumer needs it.
 
 ### v1 — remaining scope
 
+- **Limitation 16 follow-on (DEC-027, docs/CHANGELOG.md)** — the decision is made and
+  its first piece is built; the other two are the highest-priority remaining v1 work,
+  ahead of everything below them on this list:
+  - ~~(a) minimum-evidence gate on the Behavior verdict~~ — built
+    (`calibration.min_valid_runs`, default 3; UNKNOWN with a rendered reason below it).
+  - (b) **corpus-based replay** — `drifter run` indexes every recorded session for a
+    task rather than a single `--fixture`. Attacks the MISS rate with coverage, the
+    only honest lever. `ReplayStore.index_session` is already additive per file, so
+    this is mostly CLI/orchestration surface, not new matching logic.
+  - (c) **projected replay coverage, pre-flight** — report a corpus's expected MISS
+    rate before real agent runs are spent, not after. Belongs in F-31's blast-radius
+    preview, which already carries "estimated replay coverage" as a stated gap.
+  - Explicitly NOT doing: a fuzzy/partial value-matching tier (rejected on the
+    merits — see DEC-027). F-14 general synthesis stays on the roadmap for session
+    quality but is not credited as closing limitation 16.
+
 - ~~Synthetic replay provenance surfaced fully in reports~~ — built:
   `BaselineResult.provenance_breakdown` (exact/semantic/synthetic/unresolved
   call counts across valid runs) and a CONFIDENCE section in `render_run_result`

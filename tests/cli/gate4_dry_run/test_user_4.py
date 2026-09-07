@@ -90,7 +90,7 @@ def test_user_4_tool_addition_regression_via_last_tool_selection(tmp_path):
         operator="tool_addition",
         runs_dir=home / "run_sessions",
         seed=42,
-        repeats=1,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
         output_stream=out,
         assume_yes=True,  # F-31: no interactive stdin in a test

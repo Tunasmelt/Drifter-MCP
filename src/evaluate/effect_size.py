@@ -63,6 +63,14 @@ class EffectSizeResult:
     deviation_rate: float | None
     effect_size: float | None
     verdict: Verdict
+    # Why the verdict is UNKNOWN, in a form a cold reader can act on --
+    # `None` for every other verdict. Added for docs/SPEC.md §15
+    # limitation 16's second half ("the report gives no visible signal to
+    # a cold reader that its verdict rests on mostly-excluded runs"): a
+    # bare UNKNOWN reproduces that same problem in a quieter form, since
+    # "not enough surviving runs" and "no data at all" are different
+    # situations calling for different fixes from the user.
+    reason: str | None = None
 
 
 def compute_behavior_effect_size(
@@ -70,10 +78,53 @@ def compute_behavior_effect_size(
     mutated: BaselineResult,
     calibration: Calibration | None = None,
 ) -> EffectSizeResult:
-    if not baseline.has_data or not mutated.has_data:
-        return EffectSizeResult(deviation_rate=None, effect_size=None, verdict="UNKNOWN")
+    """docs/SPEC.md §8's Behavior axis, with §15 limitation 16's
+    minimum-evidence gate applied FIRST: below `calibration.min_valid_runs`
+    valid runs in either arm, no verdict is computed at all.
 
+    That gate is not a conservatism tweak — it closes a structural defect
+    found by the real Gate 4 blind-agent test. With one surviving valid
+    baseline run, `natural_variation` is 0.0 (a lone run trivially matches
+    its own dominant path) and `baseline_spread` is 0.0 (pstdev of one
+    sample). Both are artifacts of n=1, not measurements, and together they
+    made the zero-spread branch below report a confident `REGRESSION` for
+    ANY nonzero deviation in the mutated arm. That is exactly the
+    "BEHAVIOR REGRESSION at 100% deviation" the real test saw while 85% of
+    its runs had been silently excluded for low fidelity. Same failure
+    shape as the "verdict defaults to UNKNOWN, never PASS" invariant
+    CLAUDE.md names, pointed the other way: a confident FAILURE claim on
+    evidence that cannot support any claim.
+    """
     calibration = calibration or load_calibration()
+
+    if not baseline.has_data or not mutated.has_data:
+        return EffectSizeResult(
+            deviation_rate=None,
+            effect_size=None,
+            verdict="UNKNOWN",
+            reason=(
+                f"no valid runs to compare "
+                f"(baseline {baseline.valid_runs}/{baseline.total_runs}, "
+                f"mutated {mutated.valid_runs}/{mutated.total_runs} survived exclusion)"
+            ),
+        )
+
+    minimum = calibration.min_valid_runs
+    if baseline.valid_runs < minimum or mutated.valid_runs < minimum:
+        return EffectSizeResult(
+            deviation_rate=None,
+            effect_size=None,
+            verdict="UNKNOWN",
+            reason=(
+                f"too few valid runs to measure natural variation: "
+                f"baseline {baseline.valid_runs}/{baseline.total_runs}, "
+                f"mutated {mutated.valid_runs}/{mutated.total_runs} survived exclusion, "
+                f"below the {minimum} per arm calibration.min_valid_runs requires. "
+                f"Record more sessions for this task, or check the exclusion "
+                f"reasons below — a thin arm usually means replay fidelity, "
+                f"not agent behavior."
+            ),
+        )
 
     matching = mutated.variant_frequencies.get(baseline.dominant_path, 0)
     deviation_rate = 1.0 - (matching / mutated.valid_runs)

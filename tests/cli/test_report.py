@@ -145,16 +145,26 @@ def test_build_report_result_handles_a_missing_arm_gracefully(tmp_path):
 
 def test_render_run_result_output_matches_what_a_real_drifter_run_would_show(tmp_path):
     """The actual point of F-36: this must be indistinguishable in shape
-    from drifter run's own live report -- same render_run_result call."""
+    from drifter run's own live report -- same render_run_result call.
+
+    Three sessions per arm, not one: `calibration.min_valid_runs` (3,
+    docs/SPEC.md §15 limitation 16's minimum-evidence gate) is the floor for
+    a real Behavior verdict, so a one-run-per-arm fixture would now
+    correctly render UNKNOWN and this test would be asserting against a
+    shape no legitimate run produces. Raised rather than opting out of the
+    gate, precisely because this test's job is "what a real report looks
+    like."
+    """
     session_dir = tmp_path / "run" / "shape_task"
-    _write_session(session_dir / "baseline", "b0", ["a"])
-    _write_session(session_dir / "mutated", "m0", ["a"])
+    for i in range(3):
+        _write_session(session_dir / "baseline", f"b{i}", ["a"])
+        _write_session(session_dir / "mutated", f"m{i}", ["a"])
 
     result = build_report_result("shape_task", tmp_path)
     output = render_run_result(result)
 
     assert "DRIFTER RUN — shape_task" in output
-    assert "BASELINE  1/1 valid runs" in output
+    assert "BASELINE  3/3 valid runs" in output
     assert "BEHAVIOR  NO_REGRESSION" in output
     assert "SAFETY    NO VIOLATION" in output
     assert "MUTATION LOG:" not in output  # genuinely nothing to show

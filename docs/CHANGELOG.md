@@ -6,6 +6,108 @@ not just a diff.
 
 ---
 
+## DEC-027: limitation 16 decided — the premise is wrong, not the matching
+
+docs/SPEC.md §15 limitation 16 (exact-match replay collapsing against a real,
+unscripted agent) has been the one open architectural finding since Gate 4's real
+blind-agent test, carried explicitly in `.drifter/GATE_STATUS` with the instruction
+that whoever picks up v1 "needs to decide, explicitly, how to respond to this before
+trusting `drifter run`'s verdicts." Deciding it here, with the scrutiny CLAUDE.md
+reserves for an architectural-invariant finding rather than a calibration tweak.
+
+**The causal chain, traced before choosing anything.** A real agent makes a call the
+recording doesn't contain → `ReplayStore` MISS → the MISS is served as a JSON-RPC
+protocol error → the agent's session degrades (the real test's transcripts show
+agents reporting tools "aren't returning results," several abandoning MCP for their
+own native file tools) → that run's calls are mostly `fault=True` → fidelity falls
+below the 0.70 floor → the run is excluded → few runs survive → a verdict is computed
+from the survivors anyway. That is five distinct failure points, not one, and the two
+fixes docs/SPEC.md previously named each attack only one of them.
+
+**Rejected: a fuzzy/partial value-matching tier.** Two independent reasons. First, it
+would make the fidelity metric lie exactly where it is most load-bearing: a fuzzy hit
+is recorded as a hit, so a session resolved by guessing that `read_file("/a/b.txt")`'s
+recorded shape is an acceptable answer for `read_file("/x/y.txt")` would report HIGHER
+fidelity than one that honestly missed — inverting the meaning of the number the
+fidelity floor gates on. Second, and decisively, it does not address the root cause
+limitation 16 actually documented: the real agent called tools with NO recording at
+all (`list_allowed_directories`, never recorded) and escalated through combinatorial,
+unenumerable argument values. There is no near-match to loosen toward. A combinatorial
+gap cannot be closed by looser matching against a finite recording — only by more
+recording.
+
+**Rejected as "the fix": F-14 general structural synthesis on MISS.** This one is
+worth building eventually, but it treats the wrong link in the chain and would be
+actively dangerous if sold as the answer. It changes what a MISS DOES to the session
+(a structurally valid empty response instead of a protocol error, so the agent
+continues and the task completes) — genuinely valuable. But the run is still
+correctly 15% faithful, and still correctly excluded. Fidelity is not the bug here;
+it is the honest measurement OF the bug. F-14 alone converts a loud failure into a
+quiet one unless the floor is also weakened, and weakening the floor to make reports
+appear is precisely the dishonesty this project exists to avoid. Kept on the roadmap
+for session quality; explicitly NOT credited as closing limitation 16.
+
+**The actual finding: docs/SPEC.md §3 principle 2's unstated premise is too strong.**
+"Replay-first" is sound and stays. What is unsupportable is the assumption underneath
+it — carried most visibly in README's "record once, replay for free" — that ONE
+recorded session is a sufficient stand-in for a live server across repeated runs of a
+task. That is false for any non-deterministic, exploratory agent, and no matching
+strategy makes it true. Corrected, not deleted: replay adequacy is a property of the
+CORPUS, and Drifter's job is to measure and report that adequacy rather than assume
+it. Drifter is a measurement tool; when its own input is inadequate the correct
+behavior is to say so, not to paper over it with guesses.
+
+Three pieces follow, in dependency order:
+
+**(a) Minimum-evidence gate — built in this change.** Below `calibration.
+min_valid_runs` (3, a guess, per this project's calibration discipline) valid runs in
+EITHER arm, the Behavior verdict is UNKNOWN with a stated reason, never a computed
+verdict. This was not merely conservatism: with one surviving valid baseline run,
+`natural_variation` is 0.0 (a lone run trivially matches its own dominant path) and
+`baseline_spread` is 0.0 (pstdev of one sample) — both artifacts of n=1, not
+measurements — and their combination made `compute_behavior_effect_size`'s zero-spread
+branch report a confident REGRESSION for ANY nonzero deviation in the mutated arm.
+The real test's "BEHAVIOR REGRESSION at 100% deviation from baseline" was therefore
+structurally guaranteed by its own 1-valid-run input, not bad luck. Reproduced as a
+red unit test against that exact shape (1 valid baseline / 2 valid mutated out of 10
+each) and confirmed to return `REGRESSION` before the gate existed. Same failure shape
+as the "verdict defaults to UNKNOWN, never PASS" invariant CLAUDE.md names, pointed
+the other way: a confident FAILURE claim on evidence that cannot support any claim.
+The reason string is rendered in the BEHAVIOR block itself, not only in the exclusions
+list further down — limitation 16's second half was that a cold reader got no visible
+signal, and a bare UNKNOWN reproduces that in a quieter form.
+
+**Unplanned corroboration, worth recording rather than quietly fixing.** Adding the
+gate turned 12 existing end-to-end tests red — every real-pipeline test that asserted
+a Behavior verdict, across `test_run.py`, `test_kill_criterion_brittle_agent.py`, the
+Gate 4 dry-run personas, and `test_report.py`. All of them ran 1–2 repeats per arm for
+speed and then asserted a confident verdict. So the defect limitation 16 recorded from
+one real agent session was not an unlucky edge case reached only by a degraded run: it
+was the condition this project's own integration suite had been validating the
+pipeline under all along, and every one of those green assertions was resting on
+evidence the pipeline could not legitimately produce a verdict from. Fixed by raising
+those tests to `repeats=3` (the scripted agents are deterministic, so the verdicts are
+unchanged — only the evidence under them is now legitimate), not by exempting them
+from the gate. Notably this includes Gate 3's own kill-criterion test, whose
+"the harness detects a real, planted mutation effect" claim is load-bearing evidence
+in `.drifter/GATE_STATUS` and was being demonstrated at n=1.
+
+**(b) Corpus-based replay, not single-fixture — next, not built here.** `drifter run`
+takes one `--fixture`. `ReplayStore.index_session` is already additive per file, and
+`drifter observe` already accumulates a corpus. Indexing every recorded session for a
+task attacks the MISS rate with COVERAGE — the only honest lever, and the "more
+exhaustive fixture" option Gate 3's own note named and never decided between.
+
+**(c) Coverage measured before spending — after (b).** A pre-flight projected-MISS-rate
+check, so a user learns their corpus is too thin BEFORE twenty real agent runs rather
+than after. F-31's blast-radius preview already carries "estimated replay coverage" as
+a documented unbuilt gap; that is its home.
+
+README's claim is corrected to match in this change: not "record once, replay for
+free" but record ENOUGH — with Drifter being the thing that tells you what enough is.
+
+---
+
 ## parameter_rename (F-40) built, finally giving F-12 a real inverse to resolve against
 
 Next item down "v1 — remaining scope": a third Level 0/1 mutation operator, on the

@@ -62,6 +62,22 @@ class Calibration(BaseModel):
     semantic_weight: float = 0.8
     fidelity_floor: float = 0.70
     fidelity_flag_threshold: float = 0.90
+    # Minimum VALID (post-exclusion) runs required in EACH arm before the
+    # Behavior axis will report anything but UNKNOWN -- docs/SPEC.md §15
+    # limitation 16's minimum-evidence gate. Not in docs/SPEC.md §9's
+    # original constant table; added here per CLAUDE.md's rule that a new
+    # invented constant belongs in this file rather than hardcoded.
+    #
+    # 3 is a guess with a stated floor under it, not a research value: at
+    # 1 valid run, `baseline_spread` is 0.0 as an ARTIFACT of n=1 (pstdev
+    # of one sample) and `natural_variation` is 0.0 because a lone run
+    # trivially matches its own dominant path -- neither is a measurement,
+    # and their combination makes any nonzero mutated-arm deviation report
+    # a confident REGRESSION. At 2 they are real but cannot distinguish
+    # "genuinely stable" from "we only looked twice." 3 is the smallest n
+    # where a zero spread is weak evidence rather than no evidence.
+    # Re-derive against real corpus data before defending this number.
+    min_valid_runs: int = 3
     effect_size: EffectSize = EffectSize()
     segmentation: Segmentation = Segmentation()
     baseline: Baseline = Baseline()

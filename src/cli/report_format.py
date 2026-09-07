@@ -21,6 +21,7 @@ module's own imports stay clean by inspecting its AST directly, matching
 
 from __future__ import annotations
 
+import textwrap
 from dataclasses import dataclass
 
 from evaluate.baseline import BaselineResult
@@ -100,10 +101,9 @@ def _path_str(path: tuple[str, ...] | None) -> str:
 def _provenance_str(breakdown: dict[str, int] | None) -> str:
     """Renders `BaselineResult.provenance_breakdown` as docs/SPEC.md §13's
     CONFIDENCE line's own parenthetical (`exact 71% · inverse 23% ·
-    synthetic 6%` in that section's illustrative text) -- "inverse" is
-    omitted here since F-12 is still unbuilt (see the field's own
-    docstring), and a zero-count bucket is omitted too rather than
-    printing a misleading "unresolved 0%" for every clean run."""
+    synthetic 6%` in that section's illustrative text) -- all three replay
+    tiers are real buckets as of F-12/F-40. A zero-count bucket is omitted
+    rather than printing a misleading "unresolved 0%" on every clean run."""
     if breakdown is None:
         return "N/A (no valid runs)"
     total = sum(breakdown.values())
@@ -124,6 +124,13 @@ def render_run_result(result: RunResult) -> str:
     lines.append("")
 
     lines.append(f"BEHAVIOR  {result.effect.verdict}")
+    # docs/SPEC.md §15 limitation 16: an UNKNOWN with no stated cause is the
+    # same "no visible signal to a cold reader" failure in a quieter form.
+    # Wrapped rather than printed as one long line -- this is the sentence
+    # a user most needs to actually read.
+    if result.effect.reason:
+        for chunk in textwrap.wrap(result.effect.reason, width=68):
+            lines.append(f"          {chunk}")
     if result.effect.deviation_rate is not None:
         lines.append(f"          deviation from baseline: {result.effect.deviation_rate * 100:.0f}%")
     if result.effect.effect_size is not None:

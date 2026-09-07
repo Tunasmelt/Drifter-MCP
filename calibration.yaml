@@ -9,6 +9,14 @@ semantic_weight: 0.8
 fidelity_floor: 0.70
 fidelity_flag_threshold: 0.90
 
+# Minimum VALID (post-exclusion) runs required in EACH arm before the
+# Behavior axis reports anything but UNKNOWN (SPEC.md §15 limitation 16).
+# At 1 valid run, baseline_spread and natural_variation are both 0.0 as
+# artifacts of n=1, not measurements -- which made any deviation at all
+# report a confident REGRESSION. See record/calibration.py for the full
+# reasoning. A guess, like everything else here.
+min_valid_runs: 3
+
 effect_size:
   inconclusive: 1.0
   regression: 2.0

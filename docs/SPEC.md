@@ -33,6 +33,13 @@ These survived a full audit and are not open for casual revision.
    authored against, a real recorded trajectory.
 2. **Replay-first.** Mutation testing runs against recorded/synthetic responses by
    default. Live servers are opt-in, previewed, and never run under a mutated schema.
+   *Amended by DEC-027 (docs/CHANGELOG.md), on real evidence — the principle stands,
+   its unstated premise does not:* replay adequacy is a property of the CORPUS, not a
+   given. One recorded session is NOT a sufficient stand-in for a live server across
+   repeated runs of a task, because a real, exploratory agent diverges from any single
+   trajectory in combinatorially many ways (§15 limitation 16). Drifter's obligation is
+   to MEASURE and REPORT that adequacy — never to close the gap by guessing, and never
+   to report a verdict the surviving evidence cannot support.
 3. **Proxy-based mutation.** Mutations rewrite the `tools/list` response the agent sees.
    Server code is never touched.
 4. **Three independent verdicts.** Behavior / Task / Safety. Never collapsed into one
@@ -798,3 +805,32 @@ when*.
     reason to have improved. A real fix (general structural response synthesis on
     MISS, F-14, still not built; or a genuinely fuzzy/partial value-matching tier
     beyond F-13's exact-value semantic tier) remains the open, undecided work.
+
+    **DECIDED — DEC-027 (docs/CHANGELOG.md), which supersedes the "open, undecided"
+    sentence above.** Both candidate fixes named there were examined and rejected as
+    the answer. A fuzzy/partial value-matching tier is rejected outright: it would
+    record a guess as a HIT, inverting the meaning of the very fidelity number the
+    floor gates on, and it cannot address a root cause that is calls with NO recording
+    at all plus combinatorially unenumerable argument values — there is no near-match
+    to loosen toward. F-14 general synthesis is kept on the roadmap but explicitly
+    NOT credited as the fix: it changes what a MISS does to the SESSION (valid empty
+    shape instead of a protocol error, so the agent can continue) without changing the
+    MISS rate, so the run remains correctly low-fidelity and correctly excluded —
+    valuable for session quality, dangerous if mistaken for a resolution.
+
+    The finding instead reframes §3 principle 2's unstated premise (now amended
+    there): replay adequacy is a property of the corpus, and one recorded session is
+    not a sufficient stand-in for a live server against an exploratory agent. Three
+    consequent pieces, in order: **(a) a minimum-evidence gate — BUILT**
+    (`calibration.min_valid_runs`, default 3): below that many valid runs in either
+    arm the Behavior verdict is UNKNOWN with a stated, rendered reason, never a
+    computed verdict. This closes the specific defect this limitation recorded — the
+    "confident BEHAVIOR REGRESSION at 100% deviation" was structurally guaranteed by
+    its own 1-valid-run input (`natural_variation` and `baseline_spread` are both 0.0
+    as artifacts of n=1), not bad luck. **(b) corpus-based replay** rather than a
+    single `--fixture`, attacking the MISS rate with coverage (the only honest lever)
+    — not built. **(c) projected replay coverage surfaced pre-flight**, so a thin
+    corpus is known before real agent runs are spent — not built; F-31's blast-radius
+    preview is its home. The headline MISS rate against a real agent remains real and
+    unimproved until (b); what has changed is that Drifter no longer reports a
+    confident verdict on top of it.

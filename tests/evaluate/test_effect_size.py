@@ -6,6 +6,8 @@ logic given two already-computed results, not the aggregation that
 produces them (already covered in tests/evaluate/test_baseline.py).
 """
 
+import dataclasses
+
 import pytest
 
 from evaluate.baseline import BaselineResult
@@ -117,3 +119,93 @@ def test_verdict_thresholds_use_calibration_constants_not_hardcoded():
     result = compute_behavior_effect_size(baseline, mutated, calibration=calibration)
     assert result.effect_size == pytest.approx(3.0)
     assert result.verdict == "REGRESSION"
+
+
+# --- minimum-evidence gate (docs/SPEC.md §15 limitation 16) -----------------
+# Written and confirmed to FAIL against the pre-gate implementation (which
+# returned a confident REGRESSION for the 1-valid-baseline-run shape below)
+# BEFORE the gate was added, per CLAUDE.md's required procedure.
+
+
+def test_a_single_surviving_baseline_run_is_unknown_not_a_confident_regression():
+    """The exact shape docs/SPEC.md §15 limitation 16 recorded from the real
+    blind-agent Gate 4 test: 10 repeats per arm, 9/10 baseline and 8/10
+    mutated runs excluded for low fidelity, leaving 1 valid baseline and 2
+    valid mutated runs -- which the report then presented as a confident
+    "BEHAVIOR REGRESSION at 100% deviation from baseline."
+
+    That verdict was structurally guaranteed, not bad luck: with one valid
+    baseline run, `natural_variation` is 0.0 (a single run always matches
+    its own dominant path) and `baseline_spread` is 0.0 (pstdev of one
+    sample), so the zero-spread branch reports REGRESSION for ANY nonzero
+    deviation in the mutated arm. One run cannot measure natural variation,
+    so there is nothing for a deviation to be "beyond."
+    """
+    baseline = _result(("a", "b"), {("a", "b"): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
+    baseline = dataclasses.replace(baseline, total_runs=10)
+    mutated = _result(("a", "c"), {("a", "c"): 2}, natural_variation=0.0, baseline_spread=0.0, valid_runs=2)
+    mutated = dataclasses.replace(mutated, total_runs=10)
+
+    result = compute_behavior_effect_size(baseline, mutated)
+
+    assert result.verdict == "UNKNOWN"
+    assert result.effect_size is None
+    assert result.deviation_rate is None
+
+
+def test_two_valid_runs_are_still_too_few_to_measure_natural_variation():
+    """Two identical runs give baseline_spread == 0.0 legitimately, but
+    still cannot distinguish "genuinely stable" from "we only looked
+    twice" -- below the calibrated minimum, the honest answer is UNKNOWN."""
+    baseline = _result(("a",), {("a",): 2}, natural_variation=0.0, baseline_spread=0.0, valid_runs=2)
+    mutated = _result(("b",), {("b",): 2}, natural_variation=0.0, baseline_spread=0.0, valid_runs=2)
+
+    result = compute_behavior_effect_size(baseline, mutated)
+    assert result.verdict == "UNKNOWN"
+
+
+def test_the_unknown_verdict_states_why_rather_than_being_bare():
+    """Limitation 16's other half: the report gave "no visible signal to a
+    cold reader that its verdict rests on mostly-excluded runs." An UNKNOWN
+    that doesn't say why reproduces exactly that problem in a quieter
+    form."""
+    baseline = _result(("a",), {("a",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
+    mutated = _result(("b",), {("b",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
+
+    result = compute_behavior_effect_size(baseline, mutated)
+    assert result.verdict == "UNKNOWN"
+    assert result.reason is not None
+    assert "1" in result.reason  # names the actual surviving-run count
+
+
+def test_a_thin_arm_is_gated_even_when_the_other_arm_is_healthy():
+    """Only ONE arm needs to be too thin for the comparison between them to
+    be unsupportable -- the gate is on both, not on their average."""
+    healthy = _result(("a",), {("a",): 10}, natural_variation=0.0, baseline_spread=0.1, valid_runs=10)
+    thin = _result(("b",), {("b",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
+
+    assert compute_behavior_effect_size(healthy, thin).verdict == "UNKNOWN"
+    assert compute_behavior_effect_size(thin, healthy).verdict == "UNKNOWN"
+
+
+def test_at_the_minimum_a_real_verdict_is_still_computed_not_gated_away():
+    """The gate must not be so conservative it swallows legitimate small-N
+    results: exactly at min_valid_runs, a real verdict is still produced."""
+    calibration = Calibration()
+    n = calibration.min_valid_runs
+    baseline = _result(("a",), {("a",): n}, natural_variation=0.0, baseline_spread=0.0, valid_runs=n)
+    mutated = _result(("b",), {("b",): n}, natural_variation=0.0, baseline_spread=0.0, valid_runs=n)
+
+    result = compute_behavior_effect_size(baseline, mutated, calibration=calibration)
+    assert result.verdict != "UNKNOWN"
+    assert result.deviation_rate == pytest.approx(1.0)
+
+
+def test_min_valid_runs_is_calibration_driven_not_hardcoded():
+    calibration = Calibration()
+    calibration.min_valid_runs = 1  # a caller who genuinely wants N=1 results
+    baseline = _result(("a",), {("a",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
+    mutated = _result(("b",), {("b",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
+
+    result = compute_behavior_effect_size(baseline, mutated, calibration=calibration)
+    assert result.verdict == "REGRESSION"  # the old, ungated behavior, now opt-in

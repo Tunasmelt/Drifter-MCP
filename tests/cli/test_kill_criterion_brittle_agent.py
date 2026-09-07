@@ -89,7 +89,7 @@ def test_harness_reports_regression_against_a_known_planted_break(tmp_path):
         session_dir=tmp_path / "runs",
         raw_dir=tmp_path / "raw",
         seed=BRITTLE_SEED,
-        repeats=1,  # the scripted agent is fully deterministic -- no natural variation to average over
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
     )
 

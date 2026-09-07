@@ -117,7 +117,7 @@ def test_user_1_happy_path_end_to_end(tmp_path):
         task_id="test_user_1",
         operator="description_update",
         runs_dir=home / "run_sessions",
-        repeats=1,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
         output_stream=out,
         assume_yes=True,  # F-31: no interactive stdin in a test

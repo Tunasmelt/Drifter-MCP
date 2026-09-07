@@ -28,7 +28,7 @@ from cli.run import (
     run_run,
 )
 from evaluate.baseline import BaselineResult
-from evaluate.effect_size import EffectSizeResult
+from evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
 from mutate.tool_addition import add_tool
 from policy.safety import SafetyResult
 from record.reader import read_session
@@ -365,7 +365,7 @@ def test_run_mutation_comparison_description_update_end_to_end(tmp_path):
         operator="description_update",
         session_dir=tmp_path / "runs",
         raw_dir=tmp_path / "raw",
-        repeats=2,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
     )
 
@@ -408,7 +408,7 @@ def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_over
         operator="description_update",
         session_dir=tmp_path / "runs",
         raw_dir=tmp_path / "raw",
-        repeats=2,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
         policy=PolicyConfig(destructive=[forced_destructive]),
     )
@@ -450,7 +450,7 @@ def test_run_mutation_comparison_parameter_rename_end_to_end(tmp_path):
         operator="parameter_rename",
         session_dir=tmp_path / "runs",
         raw_dir=tmp_path / "raw",
-        repeats=2,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
     )
 
@@ -486,7 +486,7 @@ def test_run_run_end_to_end_via_config_with_agent_mode_http(tmp_path):
         task_id="http_mode_task",
         operator="description_update",
         runs_dir=tmp_path / "runs",
-        repeats=1,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
         output_stream=out,
         assume_yes=True,  # F-31: no interactive stdin in a test
@@ -530,7 +530,7 @@ def test_run_mutation_comparison_tool_addition_end_to_end_over_http(tmp_path):
         session_dir=tmp_path / "runs",
         raw_dir=tmp_path / "raw",
         seed=42,
-        repeats=1,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
         agent_mode="http",
     )
@@ -563,7 +563,7 @@ def test_run_mutation_comparison_reports_a_real_regression_over_http(tmp_path):
         session_dir=tmp_path / "runs",
         raw_dir=tmp_path / "raw",
         seed=42,
-        repeats=1,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
         agent_mode="http",
     )
@@ -608,7 +608,7 @@ def test_run_mutation_comparison_tool_addition_end_to_end(tmp_path):
         session_dir=tmp_path / "runs",
         raw_dir=tmp_path / "raw",
         seed=42,
-        repeats=1,
+        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
         timeout_s=30.0,
     )
 
@@ -625,3 +625,34 @@ def test_run_mutation_comparison_tool_addition_end_to_end(tmp_path):
     assert result.mutation_log[0].tool_name == added_tool.name
     assert result.mutation_log[0].before is None
     assert result.mutation_log[0].inverse is None
+
+
+def test_render_run_result_shows_why_a_thin_verdict_is_unknown(tmp_path):
+    """docs/SPEC.md §15 limitation 16's second half, at the report layer: the
+    real Gate 4 failure printed a confident verdict with no visible signal
+    that 85% of its runs had been excluded. The minimum-evidence gate now
+    makes that verdict UNKNOWN -- and the report must say WHY, in the
+    BEHAVIOR block where the verdict itself appears, not only in the
+    exclusions list further down that a cold reader may not connect to it.
+    """
+    thin_baseline = BaselineResult(
+        task_id="t", total_runs=10, valid_runs=1, dominant_path=("a",),
+        variant_frequencies={("a",): 1}, natural_variation=0.0, baseline_spread=0.0,
+        baseline_fidelity=0.9, excluded_runs=[],
+    )
+    thin_mutated = BaselineResult(
+        task_id="t", total_runs=10, valid_runs=2, dominant_path=("b",),
+        variant_frequencies={("b",): 2}, natural_variation=0.0, baseline_spread=0.0,
+        baseline_fidelity=0.9, excluded_runs=[],
+    )
+    effect = compute_behavior_effect_size(thin_baseline, thin_mutated)
+    result = RunResult(
+        task_id="t", operator="description_update", baseline=thin_baseline, mutated=thin_mutated,
+        effect=effect, mutation_log=[], safety=NO_VIOLATION,
+    )
+
+    output = render_run_result(result)
+    assert "BEHAVIOR  UNKNOWN" in output
+    assert "too few valid runs" in output
+    assert "1/10" in output and "2/10" in output  # the real surviving counts, visible
+    assert "REGRESSION" not in output  # the pre-gate output said exactly this
