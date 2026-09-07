@@ -193,6 +193,68 @@ def test_run_doctor_clean_pass_against_a_valid_gate1_config(tmp_path):
     assert "[FAIL]" not in text
 
 
+# --- F-26: tool risk classification, surfaced via doctor --------------------
+
+CLASSIFIABLE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "classifiable_server.py")
+
+
+def test_run_doctor_surfaces_unresolved_classifications_against_a_real_server(tmp_path):
+    """fake_server.py's real tools (add/echo/fail) match no MCP annotation
+    and no name-heuristic prefix -- a real, honest "we don't know" result,
+    not a hypothetical. F-26's own "Done when" bar: doctor surfaces every
+    one for review, still an overall clean pass (ok is True — no live-mode
+    gate exists yet to hard-block on this, see doctor.py's own docstring).
+    """
+    config_path = _drifter_yaml(tmp_path, [("fake", [sys.executable, FIXTURE_SERVER])])
+
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    text = out.getvalue()
+
+    assert ok is True
+    assert "[WARN] server 'fake': 3 of 3 tool(s) have unresolved risk classification" in text
+    assert "add" in text
+    assert "echo" in text
+    assert "fail" in text
+
+
+def test_run_doctor_reports_a_clean_classification_pass_when_nothing_is_unresolved(tmp_path):
+    """classifiable_server.py's tools (get_status, delete_record) both
+    resolve via the name heuristic -- a real, clean [ OK ] classification
+    line, not just the absence of a [WARN]."""
+    config_path = _drifter_yaml(tmp_path, [("classifiable", [sys.executable, CLASSIFIABLE_SERVER])])
+
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    text = out.getvalue()
+
+    assert ok is True
+    assert "[ OK ] server 'classifiable': all 2 tool(s) classified" in text
+    assert "[WARN]" not in text
+
+
+def test_run_doctor_honors_the_destructive_policy_override(tmp_path):
+    """A tool the heuristic would call read-only (get_status) but the
+    USER has explicitly listed under policy.destructive must not appear
+    as unresolved -- it resolved, just to something the user, not an
+    automated tier, decided."""
+    config_path = tmp_path / "drifter.yaml"
+    config_path.write_text(
+        "version: 1\n"
+        f"servers:\n  - name: classifiable\n    command: ['{sys.executable}', '{CLASSIFIABLE_SERVER}']\n"
+        "policy:\n  destructive: [get_status]\n",
+        encoding="utf-8",
+    )
+
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    text = out.getvalue()
+
+    assert ok is True
+    assert "[ OK ] server 'classifiable': all 2 tool(s) classified" in text
+    assert "[WARN]" not in text
+
+
 def test_run_doctor_against_the_real_repo_drifter_yaml():
     """The actual drifter.yaml at the repo root (Gate 0 item 5's dogfood
     pairing: Claude Code + the filesystem MCP server) — confirms doctor

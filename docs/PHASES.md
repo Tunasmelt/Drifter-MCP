@@ -544,6 +544,66 @@ as a special case bolted onto `connect_to_server`. Not encountered: the real
 end-to-end test above round-trips a full session with zero `_pump` awareness of
 which transport is underneath.
 
+### v1 — Tool risk classification (F-26)
+
+**Depends on:** F-02 (manifest data), F-09 (observed behavior) — both already built.
+Unblocks F-25 (safety verdict engine), F-31/F-32 (blast-radius preview, budget
+limits). See `docs/SPEC.md` §10 for the six-level taxonomy and `docs/FEATURES.md`'s
+F-26 entry for the full technical/simple breakdown.
+
+#### Tasks
+
+- [x] `record/schema.py`: `ToolDescriptor.annotations: dict | None` — the real wire
+  `tools/list` annotations block, feeding tier 1. `ClassificationSource` gains
+  `"unresolved"`, distinct from `"heuristic"` (an unresolved result is not the same
+  claim as "the heuristic tier answered")
+- [x] `record/writer.py`: `_write_tools_list` captures `annotations` unmodified
+  (camelCase wire keys, matching what tier 1 reads)
+- [x] `cli/config.py`: `PolicyConfig` (`destructive`, `confirmation_required`),
+  `DrifterConfig.policy` defaulting to an empty `PolicyConfig()`
+- [x] `policy/classify.py`: `classify_tool`/`classify_manifest`, 4-tier resolution —
+  user override (checked FIRST; docs/SPEC.md §10's own prose ambiguity about override's
+  priority resolved explicitly, see that module's docstring) → MCP annotations
+  (explicit hint values only) → name heuristics (a small, fixed, reviewed prefix
+  table) → observed behavior (a documented, deliberate stub — always declines, no
+  founded signal exists yet). 21 tests (`tests/policy/test_classify.py`), including a
+  real sanity check against the golden fixture's 14 real tools (2 legitimate
+  `"unknown"` results — `directory_tree`, `move_file` — the safe fallback working as
+  designed, not a bug)
+- [x] `cli/doctor.py`: `_fetch_manifest`/`_classify_server`/`_check_and_classify_all` —
+  a second real connection per server (after connectivity already passed) fetches
+  `tools/list` and classifies it, surfacing unresolved tools as `[WARN]`, a clean
+  pass as `[ OK ]`. 3 new tests, including one against a real fixture server whose
+  tools (add/echo/fail) genuinely resolve nothing (an honest, non-hypothetical
+  "unknown" case) and one confirming the policy override
+
+Full new-test count: 21 (`test_classify.py`) + 3 (`test_doctor.py` classification) +
+3 (`test_config.py` policy) + 2 (`test_writer.py` annotations capture) = 29.
+
+#### Exit test
+
+`drifter doctor` surfaces every ambiguous classification for one-time user
+confirmation. **Met**: `tests/cli/test_doctor.py`'s
+`test_run_doctor_surfaces_unresolved_classifications_against_a_real_server` confirms
+this against `fake_server.py`'s real, unclassifiable tools (add/echo/fail), and
+`test_run_doctor_reports_a_clean_classification_pass_when_nothing_is_unresolved`
+confirms the honest converse — a real server whose tools DO resolve cleanly reports
+no warning at all, not a warning suppressed by accident.
+
+#### Kill criterion
+
+If the name-heuristic tier's false-positive/false-negative rate against a real,
+varied tool-name corpus (beyond the golden fixture's 14 filesystem tools) turns out
+too unreliable to be worth the "plausible but wrong" risk this project explicitly
+guards against elsewhere (CLAUDE.md's testing-discipline note) — e.g. a real
+published server's tools it confidently misclassifies in the dangerous direction
+(destructive read as read-only) — the heuristic tier should be narrowed to fewer,
+higher-confidence prefixes or removed in favor of falling through to `"unknown"`
+more often, not tuned into an ever-larger, less-reviewable table. Not encountered
+yet — only tested against the golden fixture and two hand-built fixture servers, a
+real gap worth someone picking up before this tier is trusted for a genuine
+live-mode gate (F-31/F-32).
+
 ### v1 — remaining scope
 
 - Synthetic replay provenance surfaced fully in reports
@@ -551,6 +611,7 @@ which transport is underneath.
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
   candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be
   hand-written; mining matters once there's a real multi-week corpus
+- F-25 (safety verdict engine), now unblocked by F-26 above
 - Full safety policy engine and blast-radius preview for live mode (F-31 in full)
 - Task assertions as a first-class authored feature, not just the engine (F-24 was
   built in Gate 3; the authoring UX around it is v1)

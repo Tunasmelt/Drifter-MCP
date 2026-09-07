@@ -172,3 +172,24 @@ def test_server_target_returns_the_url_string_for_a_url_entry():
     target = server_target(server)
     assert target == "https://mcp.example.com/mcp"
     assert isinstance(target, str)
+
+
+# --- policy: (F-26) -----------------------------------------------------------
+
+
+def test_policy_defaults_to_empty_lists_when_not_specified(tmp_path):
+    config = load_config(_write(tmp_path, VALID_YAML))
+    assert config.policy.destructive == []
+    assert config.policy.confirmation_required == []
+
+
+def test_policy_destructive_is_honored_when_specified(tmp_path):
+    text = VALID_YAML + "\npolicy:\n  destructive: [delete_all, wipe_db]\n"
+    config = load_config(_write(tmp_path, text))
+    assert config.policy.destructive == ["delete_all", "wipe_db"]
+
+
+def test_policy_confirmation_required_is_honored_when_specified(tmp_path):
+    text = VALID_YAML + "\npolicy:\n  confirmation_required: [send_email]\n"
+    config = load_config(_write(tmp_path, text))
+    assert config.policy.confirmation_required == ["send_email"]

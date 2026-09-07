@@ -316,9 +316,14 @@ The verified operator weights (C5) are separate — they are cited research, not
 
 ## 10. Safety model
 
-**Tool risk taxonomy**, classified from (in priority order) MCP annotations (explicitly
-untrusted per spec — hints, not guarantees) → name/schema heuristics → observed behavior
-→ user policy override:
+**Tool risk taxonomy**, classified from (in fallback order — the first tier able to
+produce a confident answer wins) MCP annotations (explicitly untrusted per spec —
+hints, not guarantees) → name/schema heuristics → observed behavior. **User policy
+override wins over all three unconditionally when set** (`policy.destructive` in
+`drifter.yaml`, docs/SPEC.md §11) — clarified explicitly (docs/CHANGELOG.md, F-26):
+this list's own enumeration order names the fallback CASCADE among the three
+automated tiers, not override's priority — an "override" that could itself be
+outranked by a heuristic guess wouldn't be one:
 
 ```
 unknown              → unsafe by default, never mutated, never live-invoked

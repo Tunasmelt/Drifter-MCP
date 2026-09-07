@@ -1,8 +1,20 @@
-"""`drifter doctor` (F-37), Gate 1 scope only: config parsing + server
-connectivity. Classification-sanity checks (unclassified destructive
-tools, missing task assertions) are explicitly later-gate scope per
-docs/PHASES.md — they need `policy/` (F-26) and `tasks/` (F-33), neither of
-which exists yet — and are not attempted here.
+"""`drifter doctor` (F-37): config parsing + server connectivity (Gate 1),
+`agent.mode: http` loopback-binding check (F-38), and tool risk
+classification (F-26, this round). Missing-task-assertion checks are still
+later-gate scope per docs/PHASES.md — `tasks/` (F-33's full spec) doesn't
+exist yet.
+
+F-26's own "Done when" bar: `drifter doctor` surfaces every ambiguous
+("unknown") classification for one-time user confirmation. Literal
+"before any live-mode run is possible" blocking isn't wired here — no
+live-mode invocation path exists yet in this codebase at all (F-31/F-32
+are still unbuilt) — so this is surfaced as a visible report, not (yet) a
+hard gate; a real, narrower-than-spec scope decision, not silently
+dropped. `doctor` connects a SECOND time per server (after the existing
+connectivity check already succeeded) specifically to call `tools/list`
+and classify the result — a real, accepted cost (a `drifter doctor` run
+is infrequent, not a hot path) rather than reworking `_check_server`'s
+existing, already-tested connect-and-`initialize`-only contract.
 
 The point (CLAUDE.md, F-37's "Done when"): every common misconfiguration
 gets a specific, actionable message instead of a raw stack trace. `drifter
@@ -36,9 +48,11 @@ import anyio
 import httpx2
 from mcp import ClientSession
 
-from cli.config import AgentConfig, ConfigError, ServerConfig, load_config, server_target
+from cli.config import AgentConfig, ConfigError, PolicyConfig, ServerConfig, load_config, server_target
+from policy.classify import Classification, classify_manifest
 from record.calibration import load_calibration
 from record.proxy import connect_to_server
+from record.schema import ToolDescriptor
 
 
 @dataclass
@@ -120,11 +134,68 @@ async def _check_server(server: ServerConfig, timeout_seconds: float) -> ServerC
     return ServerCheck(server.name, True, "initialize handshake succeeded")
 
 
-async def _check_all_servers(servers: list[ServerConfig], timeout_seconds: float) -> list[ServerCheck]:
-    # Sequential, deliberately: Gate 1's real config has exactly one
-    # server, and interleaved subprocess spawns/output would only make a
-    # failure's cause harder to read for no real speed benefit here.
-    return [await _check_server(server, timeout_seconds) for server in servers]
+async def _fetch_manifest(server: ServerConfig, timeout_seconds: float) -> list[ToolDescriptor] | None:
+    """A real `tools/list` call, wire shape (camelCase `annotations`,
+    matching `record/writer.py`'s own `_write_tools_list` capture) fed
+    straight into a `ToolDescriptor` — F-26's classification input. `None`
+    on any failure: connectivity already has its own, separately-reported
+    check (`_check_server`) — this function's caller only invokes it after
+    that one already succeeded, so a failure here would be a DIFFERENT,
+    rarer problem (e.g. the server dropped between the two connections);
+    reported as its own classification-section failure line, not silently
+    swallowed, but without re-deriving `_check_server`'s own actionable
+    per-failure-type messages a second time.
+    """
+    try:
+        with anyio.fail_after(timeout_seconds):
+            async with connect_to_server(server_target(server)) as (read, write):
+                async with ClientSession(read, write) as session:
+                    await session.initialize()
+                    result = await session.list_tools()
+                    return [
+                        ToolDescriptor(
+                            name=t.name,
+                            description=t.description or "",
+                            input_schema=t.input_schema or {},
+                            annotations=t.annotations.model_dump(mode="json", by_alias=True, exclude_none=True)
+                            if t.annotations is not None
+                            else None,
+                        )
+                        for t in result.tools
+                    ]
+    except Exception:
+        return None
+
+
+def _classify_server(server: ServerConfig, tools: list[ToolDescriptor], policy: PolicyConfig) -> dict[str, Classification]:
+    return classify_manifest(tools, destructive_override=policy.destructive)
+
+
+async def _check_and_classify_all(
+    servers: list[ServerConfig], timeout_seconds: float, policy: PolicyConfig
+) -> list[tuple[ServerCheck, dict[str, Classification] | None]]:
+    """One `anyio.run` for the whole doctor pass (connectivity + F-26
+    classification together), rather than a separate `anyio.run` call per
+    concern — classification is only even attempted for a server whose
+    connectivity check already passed, and `None` distinguishes "not
+    attempted, server unreachable" from "attempted, manifest fetch itself
+    failed" (an empty dict) for `run_doctor`'s own reporting.
+
+    Sequential, deliberately (kept from the previous connectivity-only
+    version of this loop): Gate 1's real config has exactly one server,
+    and interleaved subprocess spawns/output would only make a failure's
+    cause harder to read for no real speed benefit here.
+    """
+    results: list[tuple[ServerCheck, dict[str, Classification] | None]] = []
+    for server in servers:
+        check = await _check_server(server, timeout_seconds)
+        if not check.ok:
+            results.append((check, None))
+            continue
+        tools = await _fetch_manifest(server, timeout_seconds)
+        classifications = _classify_server(server, tools, policy) if tools is not None else None
+        results.append((check, classifications))
+    return results
 
 
 def _check_http_agent_mode(agent: AgentConfig) -> ServerCheck:
@@ -177,12 +248,30 @@ def run_doctor(config_path: Path | None = None, output_stream: TextIO = sys.stdo
     calibration = load_calibration()
     timeout_seconds = calibration.doctor.connectivity_timeout_seconds
 
-    checks = anyio.run(_check_all_servers, config.servers, timeout_seconds)
+    results = anyio.run(_check_and_classify_all, config.servers, timeout_seconds, config.policy)
     all_ok = True
-    for check in checks:
+    for check, classifications in results:
         marker = "[ OK ]" if check.ok else "[FAIL]"
         output_stream.write(f"{marker} server {check.name!r}: {check.detail}\n")
         all_ok = all_ok and check.ok
+
+        # F-26: only attempted when connectivity already succeeded (see
+        # _check_and_classify_all) — reported as its own line(s), never
+        # counted against all_ok (docs/PHASES.md's F-26 note: no live-mode
+        # gate exists yet to actually block on this, only a surfaced
+        # review, matching the http-agent-mode env_var-collision warning's
+        # own precedent just above for "worth surfacing, not fatal").
+        if check.ok and classifications is None:
+            output_stream.write(f"[WARN] server {check.name!r}: could not fetch tool manifest for classification\n")
+        elif classifications is not None:
+            unresolved = sorted(name for name, c in classifications.items() if c.source == "unresolved")
+            if unresolved:
+                output_stream.write(
+                    f"[WARN] server {check.name!r}: {len(unresolved)} of {len(classifications)} tool(s) have "
+                    f"unresolved risk classification — review before live-mode use: {', '.join(unresolved)}\n"
+                )
+            else:
+                output_stream.write(f"[ OK ] server {check.name!r}: all {len(classifications)} tool(s) classified\n")
 
     if config.agent is not None and config.agent.mode == "http":
         agent_check = _check_http_agent_mode(config.agent)

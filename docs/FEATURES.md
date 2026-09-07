@@ -39,19 +39,19 @@ table and docs/PHASES.md for gate-level narrative.
 | F-22 | Baseline fidelity gating | ✅ Built | Gate 2 |
 | F-23 | Behavior effect-size scoring | ✅ Built | Gate 2, zero-spread edge case is a stated design decision |
 | F-24 | Task assertion engine | ⚠️ UNKNOWN-default only | No real assertion authoring exists — **needs building** for v1 (depends on F-30) |
-| F-25 | Safety verdict engine | ❌ Not built | **Needs building** — v1 scope, depends on F-26 |
-| F-26 | Tool risk classification | ❌ Not built | **Needs building** — `policy/` is empty; blocks F-25, F-33's full scope, F-37's classification checks |
+| F-25 | Safety verdict engine | ❌ Not built | **Needs building** — v1 scope, F-26 now unblocks it |
+| F-26 | Tool risk classification | ✅ Built | `policy/classify.py`'s 4-tier resolution (user override → MCP annotations → name heuristics → observed behavior), wired into `drifter doctor`. Tier 4 (observed behavior) is a documented, deliberate stub — no signal currently recorded can honestly distinguish write from read-only |
 | F-27 | Adaptive repeat scheduling | ❌ Not built | **Needs building** — v1 scope |
 | F-28 | Signature grouping | ❌ Not built | **Needs building** — `mine/` is empty; deferred past Gate 3 deliberately (no real multi-week corpus yet) |
 | F-29 | Frequent subsequence mining (PrefixSpan) | ❌ Not built | **Needs building** — depends on F-28 |
 | F-30 | Task candidate generation + approval | ❌ Not built | **Needs building** — depends on F-29; blocks F-24's real authoring UX |
 | F-31 | Blast-radius preview | ❌ Not built | **Needs building** — v1 scope, live-mode safety |
 | F-32 | Budget and hard limits | ❌ Not built | **Needs building** — v1 scope (`drifter run`'s `--budget`/`--dry-run`) |
-| F-33 | `drifter init` | ⚠️ Built narrower than spec, deliberate | No F-26 classification (doesn't exist yet) — done-when bar still met |
+| F-33 | `drifter init` | ⚠️ Built narrower than spec, deliberate | F-26 now exists but `init` still doesn't call it — done-when bar doesn't require it, wiring classification into `init` itself is separate, unrequested scope |
 | F-34 | Subprocess agent adapter (stdio) | ✅ Built | Gate 2 scope, deliberately narrower than original spec text (now widened by F-38, not replaced) |
 | F-35 | `drifter run` | ✅ Built | Gate 3 minimal scope, deliberate (no `--budget`, no adaptive scheduling, no full report format) |
 | F-36 | `drifter score` / `drifter report` | ⚠️ `score` built, `report` not separate | `drifter report` (render from stored records without re-scoring) not built as its own command |
-| F-37 | `drifter doctor` | ⚠️ Gate 1 scope + F-38's http check | Classification-sanity checks explicitly deferred — need F-26 first |
+| F-37 | `drifter doctor` | ⚠️ Gate 1 scope + F-38's http check + F-26 classification | Surfaces unresolved classifications as `[WARN]`, not yet a hard live-mode gate (F-31/F-32 don't exist to gate against) |
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
 
@@ -68,12 +68,16 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    transport by the target's own type (`StdioServerParameters` vs. a bare `str`
    URL); `cli/config.py`'s `ServerConfig.url` is mutually exclusive with `command`.
    Confirmed against a real Streamable HTTP server, not just unit-level.
-4. **F-26 → F-25 → F-31/F-32** — the `policy/` module, in that dependency order (risk
-   classification unblocks the safety verdict engine and blast-radius preview).
-5. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
+4. ~~**F-26**~~ — **built.** `policy/classify.py`'s 4-tier resolution (user override
+   → MCP annotations → name heuristics → observed behavior — the last a documented
+   stub, see F-26's own entry), wired into `drifter doctor`. Now unblocks F-25 →
+   F-31/F-32.
+5. **F-25 → F-31/F-32** — the rest of the `policy/` module (safety verdict engine,
+   then blast-radius preview / budget limits, both depending on F-25).
+6. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
    multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
    first place, still true).
-6. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
+7. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
    no blocking dependents.
 
 ---
@@ -477,17 +481,42 @@ caught as a SAFETY VIOLATION even when Behavior shows NO_REGRESSION.
 
 ### F-26 Tool risk classification
 
-**Technical:** Six-level taxonomy (SPEC.md §10), derived in priority order from MCP
-annotations (untrusted hints) → name/schema heuristics → observed behavior → user
-policy override. `classification_source` recorded per tool.
+**Technical:** Six-level taxonomy (SPEC.md §10). **Built** (`policy/classify.py`):
+`classify_tool`/`classify_manifest` resolve a `ToolDescriptor` through 4 tiers —
+user policy override (`drifter.yaml`'s `policy.destructive`, `cli/config.py`'s new
+`PolicyConfig`) wins UNCONDITIONALLY when set, then MCP annotations (only explicit
+`True`/`False` hint values used as signal — an absent hint is never assumed to carry
+the MCP SDK's own client-facing default), then a small, fixed, reviewable name-prefix
+table (closed-set, same spirit as `mutate/description_update.py`'s synonym table —
+a calibration-register-style heuristic, not a validated boundary), then observed
+behavior. `classification_source` recorded per tool via a new `ClassificationSource`
+value, `"unresolved"` — distinct from `"heuristic"`, since labeling an unresolved
+result as if a tier had actually answered would be exactly the "plausible but wrong
+value" pattern CLAUDE.md's testing discipline warns against.
+
+Real, documented scope boundary, not a silent gap: the observed-behavior tier is a
+deliberate stub that always declines — no signal Drifter currently records
+(`result_shape`/`is_error`/`fault`) can honestly distinguish a write from a
+read-only call, and inventing an unfounded heuristic here would violate this
+project's own "verified, not assumed" discipline. `record/schema.py`'s
+`ToolDescriptor` gains an `annotations: dict | None` field (the real wire
+`tools/list` annotations block, captured by `record/writer.py`) to feed tier 1 —
+cannot be added retroactively, same class of field as `is_error`/`timestamp`.
 
 **Simple:** Sorts every tool into a danger level, and is honest about *why* it made
 that call — a guess from the tool's name is treated with less trust than something
-Drifter actually watched happen.
+Drifter actually watched happen, and an explicit user decision beats every automated
+guess.
 
 **Depends on:** F-02 (manifest data), F-09 (observed behavior).
 **Done when:** `drifter doctor` surfaces every ambiguous classification for one-time
-user confirmation before any live-mode run is possible.
+user confirmation — confirmed against a real server (`tests/fixtures/fake_server.py`'s
+add/echo/fail, none matching any known tier, all correctly reported `[WARN]
+...unresolved`) and a real clean pass (`classifiable_server.py`'s get_status/
+delete_record). Literal "before any live-mode run is possible" blocking is not yet
+wired — no live-mode invocation path exists in this codebase at all (F-31/F-32 are
+still unbuilt) — a real, narrower-than-spec scope decision, not silently dropped;
+see `cli/doctor.py`'s own module docstring.
 
 ### F-27 Adaptive repeat scheduling
 

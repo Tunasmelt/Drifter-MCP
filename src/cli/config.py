@@ -121,6 +121,29 @@ class AgentConfig(BaseModel):
         return v
 
 
+class PolicyConfig(BaseModel):
+    """F-26/F-25 (docs/SPEC.md §10/§11): `destructive` is the tier-4 USER
+    OVERRIDE `policy/classify.py` reads — a tool name listed here is
+    classified `destructive` unconditionally, regardless of what MCP
+    annotations, name heuristics, or observed behavior would otherwise
+    say. Deliberately the highest-priority tier, not the lowest, despite
+    being listed last in docs/SPEC.md §10's own prose ("MCP annotations →
+    name/schema heuristics → observed behavior → user policy override") —
+    a real ambiguity in that text, resolved explicitly (docs/CHANGELOG.md):
+    "override" only means something if it wins over the automated tiers,
+    not if it's itself the last, weakest fallback. `confirmation_required`
+    is a separate, later (F-25) safety control, not a classification
+    input — parsed here now so both fields exist together, matching
+    docs/SPEC.md §11's own example, but not yet consumed by anything
+    (`policy/` doesn't have a safety-verdict module until F-25).
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    destructive: list[str] = []
+    confirmation_required: list[str] = []
+
+
 class DrifterConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
@@ -134,6 +157,11 @@ class DrifterConfig(BaseModel):
     # when it's needed but missing, rather than a bare validation
     # traceback (same reasoning as ConfigError's own docstring below).
     agent: AgentConfig | None = None
+    # Unlike `agent`, a real, sensible default (empty overrides, nothing
+    # requires confirmation) exists and is exactly what "no policy: block
+    # written" should mean -- so this stays a default PolicyConfig(), not
+    # None, matching RecordConfig's own precedent rather than AgentConfig's.
+    policy: PolicyConfig = PolicyConfig()
 
     @field_validator("servers")
     @classmethod

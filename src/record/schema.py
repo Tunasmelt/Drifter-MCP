@@ -34,6 +34,13 @@ ClassificationSource = Literal[
     "heuristic",
     "observed_behavior",
     "user_override",
+    # F-26 (docs/CHANGELOG.md): none of the four tiers above produced a
+    # confident answer -- distinct from "heuristic," which means the
+    # heuristic tier DID produce one. Labeling an unresolved "unknown"
+    # classification as "heuristic" would claim a tier ran and answered
+    # when none did, exactly the "plausible but wrong value" pattern
+    # CLAUDE.md's testing-discipline note warns against.
+    "unresolved",
 ]
 
 ResultProvenance = Literal["real", "synthetic"]
@@ -93,6 +100,22 @@ class ToolDescriptor(BaseModel):
     name: str
     description: str
     input_schema: dict = {}
+    # F-26 (docs/CHANGELOG.md): the tool's raw MCP annotations block from the
+    # `tools/list` wire response (`readOnlyHint`/`destructiveHint`/
+    # `idempotentHint`/`openWorldHint`), if the server sent one -- the input
+    # to classification tier 1 (docs/SPEC.md §10). Cannot be added
+    # retroactively: this is real wire data only ever available at the
+    # moment `tools/list`'s response is observed, same class of field as
+    # `timestamp`/`is_error` above. `None` means the server sent no
+    # `annotations` key at all (a real, common case -- the field is
+    # optional in the spec), not "unknown due to a schema gap"; a record
+    # from before this field existed is indistinguishable from that at
+    # read time, which is fine here specifically -- unlike `is_error`/
+    # `fault`, nothing downstream needs to tell "genuinely absent" apart
+    # from "recorded before this existed" for classification purposes,
+    # since either way tier 1 has nothing to work with and falls through
+    # to tier 2 identically.
+    annotations: dict | None = None
     # F-26. Populated once policy/ exists; None at Gate 1.
     risk: RiskLevel | None = None
     classification_source: ClassificationSource | None = None

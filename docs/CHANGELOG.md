@@ -54,6 +54,79 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-26 (tool risk classification) built: the `policy/` module's first feature
+
+Following the priority list: `policy/classify.py` resolves a `ToolDescriptor`
+through the four-tier scheme docs/SPEC.md §10 describes — user policy override,
+MCP annotations, name heuristics, observed behavior — and is wired into `drifter
+doctor`, which now surfaces every tool whose classification couldn't be resolved
+by any tier.
+
+A real, resolved ambiguity in the locked spec text, not a silent judgment call:
+docs/SPEC.md §10's own prose lists the four tiers as "MCP annotations → name/schema
+heuristics → observed behavior → user policy override," in that order. Read
+literally as a strict priority order, that would make the user's own explicit
+override the LOWEST-priority tier — outranked by a guess from the tool's name. That
+can't be the intended meaning of "override": something a human explicitly decided
+must win over an automated guess, not be beaten by one. Resolved explicitly (not
+assumed silently): `classify_tool` checks the override list FIRST, and docs/SPEC.md
+§10's own text is amended to say so plainly, crediting the enumeration order as
+describing the fallback CASCADE among the three automated tiers, not override's
+actual priority.
+
+`record/schema.py`'s `ToolDescriptor` gains `annotations: dict | None` (the real
+wire `tools/list` annotations block — `readOnlyHint`/`destructiveHint`/
+`idempotentHint`/`openWorldHint` — captured unmodified by `record/writer.py`); this
+is real "cannot be added retroactively" data, same class as `timestamp`/`is_error`.
+Tier 1 (`_classify_from_annotations`) only ever uses EXPLICIT `True`/`False` hint
+values as signal — an omitted hint is never assumed to carry the MCP SDK's own
+client-facing default (the SDK's `destructive_hint: Default: true` exists to tell a
+*client* how to behave when a hint is missing, not to tell a *safety classifier*
+what a server that sent no hint at all actually intended). Tier 2 is a small, fixed,
+reviewable name-prefix table (`get_`/`delete_`/`create_`/etc.), the same "closed-set,
+reviewable as data" spirit `mutate/description_update.py`'s synonym table already
+established — a calibration-register-style heuristic, not a validated boundary.
+
+Tier 3 (observed behavior) is a real, documented, deliberate stub — `_classify_from_
+observed_behavior` always returns `None`. Not an oversight: no signal Drifter
+currently records (`result_shape`/`is_error`/`fault`) can honestly distinguish a
+write from a read-only call from shape alone, and inventing an unfounded heuristic
+here would violate this project's own "verified, not assumed" discipline for
+exactly the reason `record/redact.py`'s own entropy heuristic is already careful to
+flag as tunable, not derived.
+
+A genuinely unresolved classification (`"unknown"`, no tier answered) needed its own
+`ClassificationSource` value — `record/schema.py` gains `"unresolved"`, distinct
+from `"heuristic"`: labeling an unresolved result as if the heuristic tier had
+actually run and answered would be exactly the "plausible but wrong value" pattern
+CLAUDE.md's testing-discipline note warns against.
+
+Sanity-checked against real data, not just synthetic fixtures: run against the
+golden fixture's 14 real filesystem-server tools, 12 classified cleanly via the name
+heuristic and 2 (`directory_tree`, `move_file`) correctly fell through to
+`"unknown"` — a real gap in heuristic coverage, and the taxonomy's own safe default
+working exactly as designed rather than a bug to paper over.
+
+`cli/doctor.py` connects a SECOND time per server (after connectivity already
+passed) specifically to fetch `tools/list` and classify it — an accepted, documented
+cost (doctor is not a hot path) rather than reworking `_check_server`'s existing,
+already-tested connect-and-`initialize`-only contract. F-26's own "Done when" bar
+("surfaces every ambiguous classification... before any live-mode run is possible")
+is met for the "surfaces" half; the "before any live-mode run is possible" half is
+explicitly NOT a hard gate yet, since no live-mode invocation path exists anywhere
+in this codebase (F-31/F-32 are still unbuilt) — a real, narrower-than-spec scope
+decision, stated plainly rather than silently dropped, matching this project's own
+established precedent for this class of decision.
+
+29 new tests total across `tests/policy/test_classify.py`,
+`tests/cli/test_doctor.py`, `tests/cli/test_config.py`, and `tests/record/
+test_writer.py`. `docs/PHASES.md` gains a full gate-shaped Tasks/Exit-test/
+Kill-criterion block for F-26, matching F-38/F-39's own rigor — including an honest
+kill criterion about the heuristic table's own real, untested false-positive risk
+against tool names beyond the golden fixture's 14.
+
+---
+
 ## F-39 (HTTP real-server connection) built: the other half of "+HTTP in v1"
 
 Following the priority list's next item: `record/proxy.py`'s real-server

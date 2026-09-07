@@ -244,6 +244,47 @@ def test_tools_list_arriving_after_the_first_tools_call_is_too_late_to_help(tmp_
     assert start.environment.tool_manifest_hash is None
 
 
+# --- F-26: raw MCP annotations captured on ToolDescriptor -------------------
+
+
+def test_tools_list_captures_the_raw_annotations_block(tmp_path):
+    """policy/classify.py's tier-1 (docs/SPEC.md §10) input: the real wire
+    `annotations` dict, camelCase keys as MCP actually sends them, captured
+    unmodified -- not renamed, not reinterpreted here."""
+    from record.schema import ToolsList
+
+    recorder = _recorder(tmp_path)
+    _initialize(recorder)
+    _tools_list(
+        recorder,
+        1,
+        [
+            {
+                "name": "get_customer",
+                "description": "d",
+                "inputSchema": {},
+                "annotations": {"readOnlyHint": True, "openWorldHint": True},
+            }
+        ],
+    )
+    records = _read(recorder)
+    tools_list = next(r for r in records if isinstance(r, ToolsList))
+    assert tools_list.tools_served[0].annotations == {"readOnlyHint": True, "openWorldHint": True}
+
+
+def test_tools_list_with_no_annotations_key_leaves_it_none(tmp_path):
+    """A real, common case (annotations is optional in the spec) -- must
+    stay None, not `{}` or some other falsy-but-present placeholder."""
+    from record.schema import ToolsList
+
+    recorder = _recorder(tmp_path)
+    _initialize(recorder)
+    _tools_list(recorder, 1, [{"name": "a", "description": "d", "inputSchema": {}}])
+    records = _read(recorder)
+    tools_list = next(r for r in records if isinstance(r, ToolsList))
+    assert tools_list.tools_served[0].annotations is None
+
+
 def test_a_purely_empty_session_still_gets_a_session_start_at_close(tmp_path):
     """Neither tools/list nor tools/call ever happens (a bare connectivity
     check) -- `close()`'s own documented safety net still flushes

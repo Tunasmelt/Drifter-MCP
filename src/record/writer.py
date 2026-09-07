@@ -418,6 +418,13 @@ class SessionRecorder:
                 name=t.get("name", ""),
                 description=t.get("description") or "",
                 input_schema=t.get("inputSchema") or {},
+                # F-26: the raw wire dict, camelCase keys as MCP sends them
+                # (readOnlyHint, not read_only_hint) -- kept as-received,
+                # not renamed to snake_case here, since this is a direct
+                # passthrough capture (matching result_shape's own "never
+                # reinterpreted" rule) and policy/classify.py reads the
+                # same camelCase keys the wire actually used.
+                annotations=t.get("annotations") or None,
             )
             for t in result.get("tools", [])
         ]

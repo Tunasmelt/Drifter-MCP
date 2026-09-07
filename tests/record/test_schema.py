@@ -40,6 +40,7 @@ MODELS = [
                 name="get_customer",
                 description="Look up a customer by ID.",
                 input_schema={"type": "object", "properties": {"customer_id": {"type": "string"}}},
+                annotations={"readOnlyHint": True, "openWorldHint": True},
                 risk="read_only_external",
                 classification_source="heuristic",
             )
@@ -49,6 +50,7 @@ MODELS = [
                 name="get_customer",
                 description="Look up a customer by ID.",
                 input_schema={"type": "object", "properties": {"customer_id": {"type": "string"}}},
+                annotations={"readOnlyHint": True, "openWorldHint": True},
                 risk="read_only_external",
                 classification_source="heuristic",
             )
@@ -173,6 +175,7 @@ def test_retroactive_fields_survive_with_real_values_not_just_defaults():
     restored_tools_list = ToolsList.model_validate_json(tools_list.model_dump_json())
     assert restored_tools_list.tools_raw[0].classification_source == "heuristic"
     assert restored_tools_list.tools_raw[0].risk == "read_only_external"
+    assert restored_tools_list.tools_raw[0].annotations == {"readOnlyHint": True, "openWorldHint": True}
 
 
 def test_extra_fields_allowed_for_forward_compatibility():
