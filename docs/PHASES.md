@@ -856,16 +856,21 @@ encountered yet; no current consumer needs it.
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
   candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be
   hand-written; mining matters once there's a real multi-week corpus
-- Task assertions as a first-class authored feature, not just the engine (F-24 was
-  built in Gate 3; the authoring UX around it is v1)
+- ~~Task assertions as a first-class authored feature~~ — built (F-24,
+  docs/CHANGELOG.md): `evaluate/assertions.py` plus a real `tasks:` block in
+  `drifter.yaml`, evaluated per arm over valid runs only. Note the premise in this
+  bullet was itself wrong — the engine had NOT been built in Gate 3; the Task axis was
+  a hardcoded `UNKNOWN` string. F-24's stated dependency on F-30 was also wrong (that
+  covers auto-DISCOVERING tasks, not authoring one), and had been holding a whole
+  verdict axis hostage. docs/SPEC.md §12's exit code `2` is reachable as a result.
 - Adaptive scheduling tuning based on Gate 1–4 real usage data (F-27, the last
   unbuilt v1 priority-list item)
 - ~~The docs/SPEC.md §12 exit-code scheme (`1`/`2`/`3`/`5` for verdict-specific
   outcomes) is not wired up anywhere — every command still exits `0`/`4` only~~
   — built: `run`/`report` now exit per `cli.report_format.compute_exit_code`
-  (see docs/CHANGELOG.md). `2` stays permanently unreachable until task
-  assertions are wired into `RunResult` (the next bullet above); `score` stays
-  `0`/`4`-only since it has no `RunResult` to compute a verdict-exit-code from.
+  (see docs/CHANGELOG.md). `2` became reachable once F-24 wired task
+  assertions into `RunResult`; `score` stays `0`/`4`-only since it has no `RunResult`
+  to compute a verdict-exit-code from.
 
 ## v1.5
 

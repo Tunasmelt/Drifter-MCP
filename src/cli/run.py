@@ -62,10 +62,11 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import TextIO
 
-from cli.config import ConfigError, PolicyConfig, load_config
+from cli.config import ConfigError, PolicyConfig, assertions_for, find_task, load_config
 from cli.report_format import RunResult, render_run_result
 from cli.stats import resolve_runs_dir
 from cli.subprocess_adapter import make_run_once
+from evaluate.assertions import TaskAssertions, evaluate_task
 from evaluate.baseline import run_baseline
 from evaluate.effect_size import compute_behavior_effect_size
 from mutate.description_update import mutate_tool_manifest
@@ -104,6 +105,7 @@ def _as_corpus_inputs(fixture: Path | Sequence[Path]) -> list[Path]:
     return [Path(p) for p in fixture]
 
 
+
 def run_mutation_comparison(
     task_id: str,
     prompt: str,
@@ -122,6 +124,7 @@ def run_mutation_comparison(
     policy: PolicyConfig | None = None,
     budget: int | None = None,
     max_wall_time_s: float | None = None,
+    assertions: TaskAssertions | None = None,
 ) -> RunResult:
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
@@ -227,6 +230,14 @@ def run_mutation_comparison(
         session_dir, effective_policy.destructive, effective_policy.confirmation_required
     )
 
+    # F-24: evaluated over each arm's VALID sessions only -- a run excluded
+    # for low replay fidelity is one where the agent couldn't do the task
+    # for harness reasons, and asserting on it would report a task failure
+    # that is really a fidelity failure (see evaluate/assertions.py).
+    effective_assertions = assertions or TaskAssertions()
+    baseline_task = evaluate_task(baseline_result.valid_session_paths, effective_assertions)
+    mutated_task = evaluate_task(mutated_result.valid_session_paths, effective_assertions)
+
     return RunResult(
         task_id=task_id,
         operator=operator,
@@ -236,6 +247,8 @@ def run_mutation_comparison(
         mutation_log=mutation_log,
         safety=safety,
         budget_exceeded=tracker.exceeded(),
+        baseline_task=baseline_task,
+        mutated_task=mutated_task,
     )
 
 
@@ -303,6 +316,17 @@ def run_run(
     calibration = load_calibration()
     effective_repeats = repeats if repeats is not None else calibration.baseline.repeats
 
+    # F-24: `--task-id` selects an authored task from `drifter.yaml`'s
+    # `tasks:` when one matches, supplying both its prompt and its
+    # assertions. An unmatched --task-id stays a bare label, exactly as it
+    # behaved before authored tasks existed -- so this widens what --task-id
+    # can mean without breaking the ad-hoc `--task-id X --prompt Y` usage
+    # every existing caller and test relies on.
+    task = find_task(config.tasks, task_id)
+    assertions = assertions_for(config.tasks, task_id)
+    if task is not None and not prompt:
+        prompt = task.prompt
+
     # DEC-027(b): resolve the corpus once, up front, and SHOW what it holds
     # before anything is spent -- a thin or wrong-server corpus is the single
     # most likely reason a verdict later comes back UNKNOWN, and the user can
@@ -345,6 +369,7 @@ def run_run(
     result = run_mutation_comparison(
         task_id=task_id,
         prompt=prompt,
+        assertions=assertions,
         fixture=fixture,
         server_name=server_name,
         agent_command=config.agent.command,

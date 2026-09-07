@@ -327,6 +327,25 @@ diagnosis.
 `calls_before`, `never_calls`, `result_contains`). No assertion configured → UNKNOWN.
 This is the expected default, not a failure of the tool.
 
+*Implementation status (F-24, docs/CHANGELOG.md).* Built and authored in
+`drifter.yaml`'s `tasks:` block (§11), evaluated per arm over each arm's VALID runs
+only — a run excluded for low replay fidelity is one where the agent couldn't do the
+task for harness reasons, and asserting on it would report a task failure that is
+really a fidelity failure. `calls`, `calls_before`, and `never_calls` are built as
+specified. **`result_contains` is not, and cannot be**: recording is shape-only
+(F-02/F-04, a §3 non-negotiable), so no recorded session carries the payload such an
+assertion would read. It is REJECTED at config-load time with an actionable message
+rather than silently accepted and never checked — silently ignoring an authored
+assertion is exactly the "doesn't crash, just calmly reports success" failure mode
+this axis's UNKNOWN-by-default rule exists to prevent. Two recordable checks are
+offered in its place: `result_has_keys` (the recorded result shape's keys, which is
+what "did the tool return the right kind of thing" reduces to under shape-only
+recording) and `no_errors` (the recorded `is_error` flag). Unlike Behavior, the Task
+axis is deliberately NOT subject to §15 limitation 16's minimum-evidence gate: that
+gate exists because `natural_variation`/`baseline_spread` are statistical estimates
+meaningless at n=1, whereas an assertion is a deterministic check on one real
+trajectory. Run counts are always reported so a reader can weigh the evidence.
+
 **Safety.** Evaluated on every run regardless of configuration: unexpected write/
 destructive tool invocation, capability outside `allowed_capabilities`, bypassed
 `confirmation_required` step, secrets detected in output, or observed behavior
@@ -469,8 +488,11 @@ vary per run, not per project). `--budget` counts TOOL calls, not literal "model
 calls" — unobservable from this proxy at all, docs/SPEC.md §15 limitation 2 — and is
 checked before each repeat starts, never mid-run; see `policy/budget.py`'s own
 module docstring for the full, honest account of what's built vs. deferred.
-`mutations.profile`/`exclude_tools`, `execution.mode`, `tasks: [...]`, and
-`baseline.cache` all remain unbuilt speculative surface, unrelated to F-32.
+`mutations.profile`/`exclude_tools`, `execution.mode`, and `baseline.cache` all remain
+unbuilt speculative surface, unrelated to F-32. `tasks: [...]` is REAL as of F-24
+(docs/CHANGELOG.md) — each entry is `{id, prompt, assert: {...}}`, selected by
+`drifter run --task-id`, which now supplies both the task's prompt and its Task-axis
+assertions (§8). An unmatched `--task-id` stays a bare label, exactly as before.
 
 ## 12. CLI
 

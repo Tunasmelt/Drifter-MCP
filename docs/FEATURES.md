@@ -38,7 +38,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-21 | Baseline calibration | ✅ Built | Gate 2 |
 | F-22 | Baseline fidelity gating | ✅ Built | Gate 2 |
 | F-23 | Behavior effect-size scoring | ✅ Built | Gate 2, zero-spread edge case is a stated design decision |
-| F-24 | Task assertion engine | ⚠️ UNKNOWN-default only | No real assertion authoring exists — **needs building** for v1 (depends on F-30) |
+| F-24 | Task assertion engine | ✅ Built | `evaluate/assertions.py` + `drifter.yaml`'s `tasks:` block. 3 of docs/SPEC.md §8's 4 named types built; `result_contains` is structurally unevaluable under shape-only recording and is rejected loudly, with `result_has_keys`/`no_errors` offered instead. Did NOT need F-30 — that dependency was about auto-DISCOVERING tasks, and was blocking a whole verdict axis |
 | F-25 | Safety verdict engine | ✅ Built | `policy/safety.py`, 2 of docs/SPEC.md §8's 5 check categories built (destructive invocation, confirmation_required bypass), 3 real documented gaps — wired into `drifter run`'s real report, evaluated with no fidelity gate |
 | F-26 | Tool risk classification | ✅ Built | `policy/classify.py`'s 4-tier resolution (user override → MCP annotations → name heuristics → observed behavior), wired into `drifter doctor`. Tier 4 (observed behavior) is a documented, deliberate stub — no signal currently recorded can honestly distinguish write from read-only |
 | F-27 | Adaptive repeat scheduling | ❌ Not built | **Needs building** — v1 scope |
@@ -522,9 +522,18 @@ verdict UNKNOWN.
 **Simple:** If you've told Drifter exactly what "success" looks like for a workflow, it
 checks for that. If you haven't, it honestly says it doesn't know rather than guessing.
 
-**Depends on:** task definitions (F-30).
+**Depends on:** ~~task definitions (F-30)~~ — **re-examined and found wrong.** F-30 is
+about generating task CANDIDATES automatically from a mined corpus; authoring one task
+by hand needs no mining at all. That dependency had been holding an entire verdict axis
+(Task, one of docs/SPEC.md §3's "three independent verdicts") hostage to an unrelated
+unbuilt feature. Authoring built directly against `drifter.yaml`'s `tasks:` block
+instead; F-30 remains real, later work for auto-discovery.
 **Done when:** a fixture with a planted assertion failure correctly reports FAIL; an
-unassessed fixture correctly reports UNKNOWN, never PASS by default.
+unassessed fixture correctly reports UNKNOWN, never PASS by default. **Both met**
+(`tests/evaluate/test_assertions.py`), plus exit code 2 (docs/SPEC.md §12) is reachable
+for the first time — fired only when the MUTATED arm fails assertions the baseline
+passed, since a baseline already failing its own assertions means the task or corpus is
+wrong rather than the mutation.
 
 ### F-25 Safety verdict engine
 

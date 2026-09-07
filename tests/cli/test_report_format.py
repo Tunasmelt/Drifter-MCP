@@ -11,6 +11,7 @@ import dataclasses
 from evaluate.baseline import BaselineResult, ExcludedRun
 from evaluate.effect_size import EffectSizeResult
 from cli.report_format import RunResult, budget_exceeded_from_excluded_runs, compute_exit_code
+from evaluate.assertions import AssertionFailure, TaskResult
 from policy.safety import SafetyResult
 
 _EMPTY_BASELINE = BaselineResult(
@@ -90,3 +91,62 @@ def test_budget_exceeded_from_excluded_runs_is_false_for_unrelated_exclusions():
     )
     result = _result(effect_verdict="NO_REGRESSION", baseline=baseline)
     assert budget_exceeded_from_excluded_runs(result) is False
+
+
+# --- F-24: exit code 2 (assertion failure) is reachable now -----------------
+
+
+def _task(verdict, failures=()):
+    return TaskResult(
+        verdict=verdict, runs_evaluated=3,
+        runs_passed=3 if verdict == "PASS" else 0,
+        failures=failures,
+    )
+
+
+def _with_tasks(baseline_verdict, mutated_verdict, effect_verdict="NO_REGRESSION", **kw):
+    base = _result(effect_verdict=effect_verdict, **kw)
+    return dataclasses.replace(
+        base, baseline_task=_task(baseline_verdict), mutated_task=_task(mutated_verdict)
+    )
+
+
+def test_a_mutation_breaking_the_task_exits_2():
+    """The case exit code 2 exists for: the baseline satisfied its
+    assertions and the mutated arm didn't, so the mutation broke the task."""
+    assert compute_exit_code(_with_tasks("PASS", "FAIL")) == 2
+
+
+def test_a_task_failing_in_both_arms_does_not_exit_2():
+    """A baseline that already fails its own assertions means the task or
+    the corpus is wrong, not that the mutation broke anything -- reporting
+    that as this run's headline failure would point the user at the wrong
+    thing."""
+    assert compute_exit_code(_with_tasks("FAIL", "FAIL")) == 0
+
+
+def test_assertion_failure_outranks_a_behavior_regression():
+    """A failed assertion is a DETERMINISTIC statement that the task broke;
+    a behavior regression is a statistical claim that the path shifted."""
+    assert compute_exit_code(_with_tasks("PASS", "FAIL", effect_verdict="REGRESSION")) == 2
+
+
+def test_safety_still_outranks_an_assertion_failure():
+    result = _with_tasks("PASS", "FAIL", safety_verdict="VIOLATION")
+    assert compute_exit_code(result) == 3
+
+
+def test_budget_exceeded_still_outranks_an_assertion_failure():
+    result = _with_tasks("PASS", "FAIL", budget_exceeded=True)
+    assert compute_exit_code(result) == 5
+
+
+def test_a_passing_task_alongside_a_regression_still_exits_1():
+    assert compute_exit_code(_with_tasks("PASS", "PASS", effect_verdict="REGRESSION")) == 1
+
+
+def test_unknown_task_verdicts_leave_the_behavior_verdict_in_charge():
+    """The default state for every task without an authored oracle -- must
+    not change any pre-F-24 exit code."""
+    assert compute_exit_code(_with_tasks("UNKNOWN", "UNKNOWN", effect_verdict="REGRESSION")) == 1
+    assert compute_exit_code(_with_tasks("UNKNOWN", "UNKNOWN")) == 0

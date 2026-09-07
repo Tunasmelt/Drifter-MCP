@@ -22,8 +22,9 @@ module's own imports stay clean by inspecting its AST directly, matching
 from __future__ import annotations
 
 import textwrap
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
+from evaluate.assertions import TaskResult
 from evaluate.baseline import BaselineResult
 from evaluate.effect_size import EffectSizeResult
 from mutate.description_update import MutationLogEntry
@@ -40,6 +41,23 @@ class RunResult:
     mutation_log: list[MutationLogEntry]
     safety: SafetyResult
     budget_exceeded: bool = False
+    # F-24's Task axis, per arm. Defaults to a bare UNKNOWN rather than
+    # `None` so every consumer has a real verdict object to render and the
+    # "no oracle configured" case stays a stated result rather than a
+    # missing one — the Task axis's own UNKNOWN-never-PASS invariant reads
+    # more safely as a value than as an absence.
+    baseline_task: TaskResult = field(
+        default_factory=lambda: TaskResult(
+            verdict="UNKNOWN", runs_evaluated=0, runs_passed=0, failures=(),
+            reason="no assertions configured for this task",
+        )
+    )
+    mutated_task: TaskResult = field(
+        default_factory=lambda: TaskResult(
+            verdict="UNKNOWN", runs_evaluated=0, runs_passed=0, failures=(),
+            reason="no assertions configured for this task",
+        )
+    )
 
 
 _BUDGET_EXCEEDED_REASON_MARKER = "budget exhausted"
@@ -75,21 +93,55 @@ def compute_exit_code(result: RunResult) -> int:
     gated by the other axes); a spent BUDGET (5) outranks BEHAVIOR (1)
     because a budget-exhausted run's remaining repeats were skipped, not
     completed, so its behavioral verdict may rest on less data than it
-    looks like. Exit code 2 (assertion failure) is defined here but can
-    never actually fire yet: TASK is unconditionally UNKNOWN today (no
-    assertion engine is wired into `RunResult` — see
-    `render_run_result`), so there's no assertion-failure signal to
-    read. `0` covers NO_REGRESSION and the honestly-uncertain
-    INCONCLUSIVE/UNKNOWN behavior verdicts alike — this scheme flags
-    genuine problems, not "we don't know."
+    looks like. Exit code 2 (assertion failure) became reachable with F-24
+    and outranks BEHAVIOR: a failed assertion is a DETERMINISTIC statement
+    that the task itself broke, which is a stronger and more specific
+    finding than a statistical claim that the agent's path shifted. It is
+    read from the MUTATED arm only — a baseline that already fails its own
+    assertions means the task or the corpus is wrong, not that the mutation
+    broke anything, and reporting that as this run's headline failure would
+    point the user at the wrong thing. `0` covers NO_REGRESSION and the
+    honestly-uncertain INCONCLUSIVE/UNKNOWN verdicts alike — this scheme
+    flags genuine problems, not "we don't know."
     """
     if result.safety.verdict == "VIOLATION":
         return 3
     if result.budget_exceeded:
         return 5
+    if result.mutated_task.verdict == "FAIL" and result.baseline_task.verdict != "FAIL":
+        return 2
     if result.effect.verdict == "REGRESSION":
         return 1
     return 0
+
+
+def _task_lines(result: RunResult) -> list[str]:
+    """docs/SPEC.md §8's Task axis (F-24), per arm.
+
+    Both arms are shown rather than one combined verdict, for the same
+    reason BEHAVIOR shows both dominant paths: "the mutation broke the
+    task" is precisely a baseline-vs-mutated difference, and collapsing it
+    would hide the one comparison this axis exists to make. Failure detail
+    is printed for the mutated arm specifically — a baseline failure means
+    the task or the corpus is wrong, a mutated-only failure is the finding.
+    """
+    baseline, mutated = result.baseline_task, result.mutated_task
+
+    if baseline.verdict == "UNKNOWN" and mutated.verdict == "UNKNOWN":
+        reason = baseline.reason or mutated.reason or "no oracle configured"
+        return [f"TASK      UNKNOWN — {reason}"]
+
+    lines = [
+        f"TASK      baseline {baseline.verdict}"
+        f" ({baseline.runs_passed}/{baseline.runs_evaluated} runs passed)",
+        f"          mutated  {mutated.verdict}"
+        f" ({mutated.runs_passed}/{mutated.runs_evaluated} runs passed)",
+    ]
+    if mutated.verdict == "FAIL":
+        for failure in mutated.failures:
+            for chunk in textwrap.wrap(f"{failure.kind}: {failure.detail}", width=64):
+                lines.append(f"            {chunk}")
+    return lines
 
 
 def _path_str(path: tuple[str, ...] | None) -> str:
@@ -139,7 +191,7 @@ def render_run_result(result: RunResult) -> str:
         lines.append("          effect size: undefined (baseline had zero natural variation)")
 
     lines.append("")
-    lines.append("TASK      UNKNOWN — no oracle configured")
+    lines.extend(_task_lines(result))
     lines.append("")
 
     # F-25: reported even when Behavior shows NO_REGRESSION (docs/SPEC.md §8's

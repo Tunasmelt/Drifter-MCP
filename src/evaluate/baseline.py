@@ -223,6 +223,17 @@ class BaselineResult:
     # `valid_runs == 0`, same convention as the other fields above.
     provenance_breakdown: dict[str, int] | None = None
 
+    # The sessions that actually counted — every run that passed all
+    # exclusion checks, in run order. Added for F-24's task assertions,
+    # which must be evaluated ONLY over valid runs: a run excluded because
+    # replay fidelity collapsed is one where the agent couldn't do the task
+    # for harness reasons, and asserting on it would report a task failure
+    # that is really a fidelity failure. Empty (not None) when nothing was
+    # valid — unlike the statistics above, "no valid sessions" and "an
+    # empty list of them" are the same fact here, with no third state to
+    # distinguish.
+    valid_session_paths: tuple[Path, ...] = ()
+
     @property
     def has_data(self) -> bool:
         """The one unambiguous "was anything computed" signal — prefer
@@ -381,6 +392,7 @@ def aggregate_baseline_runs(
     valid_paths: list[tuple[str, ...]] = []
     valid_fidelities: list[float] = []
     valid_provenance_counts: list[dict[str, int]] = []
+    valid_session_paths: list[Path] = []
     excluded_runs: list[ExcludedRun] = list(pre_excluded)
 
     for session_path in session_paths:
@@ -413,6 +425,7 @@ def aggregate_baseline_runs(
         valid_paths.append(_tool_path(records))
         valid_fidelities.append(fidelity)
         valid_provenance_counts.append(_provenance_counts(records))
+        valid_session_paths.append(session_path)
 
     if not valid_paths:
         return BaselineResult(
@@ -460,6 +473,7 @@ def aggregate_baseline_runs(
         baseline_fidelity=baseline_fidelity,
         excluded_runs=excluded_runs,
         provenance_breakdown=_merge_provenance_counts(valid_provenance_counts),
+        valid_session_paths=tuple(valid_session_paths),
     )
 
 

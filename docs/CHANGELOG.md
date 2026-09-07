@@ -6,6 +6,76 @@ not just a diff.
 
 ---
 
+## F-24: the Task axis is real — authored assertions, and exit code 2 finally reachable
+
+docs/SPEC.md §3 principle 4 promises "three independent verdicts. Behavior / Task /
+Safety." Two were real. TASK had printed `UNKNOWN — no oracle configured` from a
+hardcoded string in `render_run_result` since Gate 3, because no oracle existed to ask.
+This builds it: `evaluate/assertions.py` plus a real `tasks:` block in `drifter.yaml`.
+
+**A blocking dependency that turned out not to exist.** docs/FEATURES.md listed F-24 as
+"Depends on: task definitions (F-30)", and F-30 (mining task candidates from a corpus)
+is deferred indefinitely for want of a multi-week corpus — so a whole verdict axis was
+being held hostage. Checked rather than accepted: F-30 is about DISCOVERING tasks
+automatically. Authoring one by hand needs no mining whatsoever. The dependency was real
+for auto-discovery and simply wrong as a blocker for authoring, and removing it cost
+nothing but reading it carefully.
+
+**One of docs/SPEC.md §8's four named assertion types cannot be built, and saying so
+loudly is the point.** §8 lists `calls`, `calls_before`, `never_calls`, and
+`result_contains`. The first three are built as specified. `result_contains` is
+structurally unevaluable: F-02/F-04 record only a result's SHAPE (`{type, keys,
+array_lengths}`), never its payload, and that is a §3 non-negotiable rather than a gap
+to close later — there is simply nothing for such an assertion to read. The dangerous
+outcome here would have been silence: `extra="allow"` is this project's config
+convention, so `result_contains:` in a `drifter.yaml` would have parsed cleanly, been
+read by nothing, and left the author believing their assertion was enforced. That is
+precisely the "doesn't crash, just calmly reports success" failure mode the Task axis's
+UNKNOWN-by-default rule exists to prevent, so it is now REJECTED at config-load time,
+by name, pointing at the two recordable checks offered in its place: `result_has_keys`
+(the recorded shape's keys — what "did the tool return the right kind of thing" reduces
+to under shape-only recording) and `no_errors` (the recorded `is_error` flag).
+
+**Evaluated over valid runs only.** Assertions run against each arm's fidelity-passing
+sessions (`BaselineResult.valid_session_paths`, added for this). A run excluded because
+replay collapsed is one where the agent couldn't do the task for harness reasons;
+asserting on it would report a task failure that is really a fidelity failure, and
+would have made the Task axis inherit limitation 16's whole problem.
+
+**Deliberately NOT gated by the minimum-evidence rule** the Behavior axis needs. That
+gate exists because `natural_variation`/`baseline_spread` are statistical estimates
+that mean nothing at n=1. An assertion is a deterministic check on one real trajectory:
+a single run genuinely calling `delete_everything` under `never_calls` is a real
+finding, not a sampling artifact. Run counts are always printed so a reader can weigh
+how widespread a failure was.
+
+**Exit code 2 is reachable for the first time** (docs/SPEC.md §12), and its precedence
+is a real decision rather than a slot in a list. It outranks BEHAVIOR (1): a failed
+assertion is a deterministic statement that the task broke, strictly stronger than a
+statistical claim that the agent's path shifted. It is read from the MUTATED arm only,
+and suppressed when the baseline fails the same assertions — a baseline already failing
+its own oracle means the task or the corpus is wrong, not that the mutation broke
+anything, and reporting that as the run's headline failure would point the user at the
+wrong problem entirely. Verified end-to-end against a real run: an authored task whose
+`calls: [read_file]` doesn't match the agent's actual `read_text_file` correctly reports
+`TASK baseline FAIL / mutated FAIL` with the reason printed, and exits 0 — not 2 —
+because both arms failed.
+
+`drifter report` gets real Task verdicts too, unlike `mutation_log`: assertions are
+evaluated against the recorded trajectories themselves, which a reconstructed report
+already has in hand.
+
+One near-miss worth recording. The first version put the shared `TaskConfig →
+TaskAssertions` conversion in `cli/run.py` and had `cli/report.py` import it lazily
+inside a function. That silently violated `cli/report.py`'s zero-execution guarantee —
+importing `cli.run` transitively pulls in real subprocess-spawning code — and
+`test_report.py`'s AST check walks function bodies, so it would have caught it. Moved to
+`cli/config.py` as `TaskConfig.assertions()`/`find_task`/`assertions_for`, which both
+commands already import, with the added benefit that `drifter run` and `drifter report`
+now structurally cannot disagree about how an authored task is read.
+
+---
+
 ## DEC-027(c): projected replay coverage — and the first real measurement of whether (b) helps
 
 The last of DEC-027's three pieces, and the one that turns limitation 16 from a thing

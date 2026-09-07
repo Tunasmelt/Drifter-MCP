@@ -42,7 +42,9 @@ from typing import Literal
 
 import yaml
 from mcp.client.stdio import StdioServerParameters
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+from evaluate.assertions import TaskAssertions
 
 
 class ServerConfig(BaseModel):
@@ -144,11 +146,131 @@ class PolicyConfig(BaseModel):
     confirmation_required: list[str] = []
 
 
+class TaskAssertConfig(BaseModel):
+    """docs/SPEC.md §8's Task-axis oracle, as authored in `drifter.yaml`
+    (F-24). Every field optional — a task with none of them set is a task
+    with no oracle, which yields UNKNOWN rather than a vacuous PASS.
+
+    `result_contains` from docs/SPEC.md §8's own list is deliberately absent
+    and is REJECTED with an actionable message rather than silently
+    ignored: recording is shape-only by design (F-02/F-04, a docs/SPEC.md §3
+    non-negotiable), so no recorded session carries the payload such an
+    assertion would need to read. `result_has_keys` and `no_errors` are the
+    recordable checks offered in its place — see
+    `evaluate/assertions.py`'s module docstring and docs/CHANGELOG.md.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    calls: list[str] = []
+    # Each entry is a two-element [earlier, later] pair.
+    calls_before: list[list[str]] = []
+    never_calls: list[str] = []
+    result_has_keys: dict[str, list[str]] = {}
+    no_errors: bool = False
+
+    @field_validator("calls_before")
+    @classmethod
+    def _pairs_are_pairs(cls, v: list[list[str]]) -> list[list[str]]:
+        for pair in v:
+            if len(pair) != 2:
+                raise ValueError(
+                    f"each calls_before entry must be exactly [earlier, later]; got {pair!r} "
+                    f"with {len(pair)} element(s)"
+                )
+        return v
+
+    @model_validator(mode="after")
+    def _reject_unevaluable_result_contains(self) -> "TaskAssertConfig":
+        """`extra="allow"` (this project's convention, so a config written
+        against a later version still loads) would otherwise accept
+        `result_contains` and silently never check it — a user would
+        reasonably believe their assertion was being evaluated when nothing
+        was reading it. Silently ignoring an authored assertion is precisely
+        the "doesn't crash, just calmly reports success" failure mode the
+        Task axis's own UNKNOWN-by-default invariant exists to prevent, so
+        this one unevaluable key is rejected loudly and by name.
+        """
+        if "result_contains" in (self.model_extra or {}):
+            raise ValueError(
+                "`result_contains` cannot be evaluated: Drifter records result SHAPE only "
+                "(type/keys/array lengths), never payloads — a docs/SPEC.md §3 invariant, not a "
+                "gap. Use `result_has_keys: {tool: [key, ...]}` to assert on the recorded shape, "
+                "or `no_errors: true` to assert no call reported is_error."
+            )
+        return self
+
+
+class TaskConfig(BaseModel):
+    """One authored task: what to ask the agent, and what success means.
+
+    Fills in docs/SPEC.md §11's `tasks: [...]`, which had been listed in the
+    config schema since the spec was written but never given a real shape
+    (`cli/run.py`'s own docstring recorded that gap). `id` is what
+    `drifter run --task-id` selects; `prompt` is what gets substituted into
+    `agent.command`'s `{task.prompt}`, so an authored task no longer needs
+    `--prompt` passed alongside it.
+
+    This is deliberately NOT mining-derived task discovery — F-24's
+    docs/FEATURES.md entry lists "Depends on: task definitions (F-30)",
+    which is about where task CANDIDATES come from automatically. Authoring
+    one by hand needs no mining at all, and that dependency was blocking a
+    whole verdict axis on an unrelated unbuilt feature.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    id: str
+    prompt: str = ""
+    assert_: TaskAssertConfig = Field(default_factory=TaskAssertConfig, alias="assert")
+
+    def assertions(self) -> TaskAssertions:
+        """This authored task's oracle, as `evaluate/assertions.py`'s own
+        types. Lives here rather than in either command so `drifter run` and
+        `drifter report` cannot drift apart in how they read a task — a
+        report that silently disagreed with the run it re-renders would be
+        worse than one that refused to render. Deliberately NOT in
+        `cli/run.py`: `cli/report.py` needs it too and must never import
+        `cli.run` (that path transitively reaches real subprocess-spawning
+        code, breaking its zero-execution guarantee — `test_report.py`
+        asserts this by AST).
+        """
+        return TaskAssertions(
+            calls=tuple(self.assert_.calls),
+            calls_before=tuple((pair[0], pair[1]) for pair in self.assert_.calls_before),
+            never_calls=tuple(self.assert_.never_calls),
+            result_has_keys={tool: tuple(keys) for tool, keys in self.assert_.result_has_keys.items()},
+            no_errors=self.assert_.no_errors,
+        )
+
+
+def find_task(tasks: list[TaskConfig], task_id: str) -> TaskConfig | None:
+    """The authored task `task_id` names, or None if this is a bare label.
+
+    Not an error when nothing matches: `--task-id` predates authored tasks
+    and has always been usable as a free-form label alongside `--prompt`.
+    Raising would break every existing invocation for the sake of a feature
+    that is opt-in by design.
+    """
+    return next((t for t in tasks if t.id == task_id), None)
+
+
+def assertions_for(tasks: list[TaskConfig], task_id: str) -> TaskAssertions:
+    """`find_task` + `TaskConfig.assertions()`, or an empty oracle when this
+    id names no authored task — the single call both commands use."""
+    task = find_task(tasks, task_id)
+    return task.assertions() if task is not None else TaskAssertions()
+
+
 class DrifterConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     version: int
     servers: list[ServerConfig]
+    # docs/SPEC.md §11's `tasks: [...]`, real as of F-24. Empty is the
+    # honest default: no authored tasks means the Task axis reports
+    # UNKNOWN, which is the correct answer rather than a missing feature.
+    tasks: list[TaskConfig] = []
     record: RecordConfig = RecordConfig()
     # None (not a default AgentConfig()) since there's no sensible
     # default agent command -- absence must stay distinguishable from

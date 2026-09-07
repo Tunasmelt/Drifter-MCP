@@ -3,7 +3,7 @@
 import pytest
 from mcp.client.stdio import StdioServerParameters
 
-from cli.config import ConfigError, ServerConfig, load_config, server_target
+from cli.config import ConfigError, ServerConfig, assertions_for, find_task, load_config, server_target
 
 VALID_YAML = """
 version: 1
@@ -193,3 +193,85 @@ def test_policy_confirmation_required_is_honored_when_specified(tmp_path):
     text = VALID_YAML + "\npolicy:\n  confirmation_required: [send_email]\n"
     config = load_config(_write(tmp_path, text))
     assert config.policy.confirmation_required == ["send_email"]
+
+
+# --- F-24: authored tasks (docs/SPEC.md §11's `tasks:`) ---------------------
+
+
+def test_an_authored_task_parses_with_its_assertions(tmp_path):
+    path = tmp_path / "drifter.yaml"
+    path.write_text(
+        "version: 1\n"
+        "servers:\n"
+        "  - name: s\n"
+        "    command: ['echo']\n"
+        "tasks:\n"
+        "  - id: invoice\n"
+        "    prompt: make an invoice\n"
+        "    assert:\n"
+        "      calls: [search, create]\n"
+        "      calls_before: [[search, create]]\n"
+        "      never_calls: [delete]\n"
+        "      no_errors: true\n",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+
+    assert [t.id for t in config.tasks] == ["invoice"]
+    assertions = assertions_for(config.tasks, "invoice")
+    assert assertions.calls == ("search", "create")
+    assert assertions.calls_before == (("search", "create"),)
+    assert assertions.never_calls == ("delete",)
+    assert assertions.no_errors is True
+
+
+def test_a_config_with_no_tasks_yields_an_empty_oracle(tmp_path):
+    """The honest default: no authored task means the Task axis reports
+    UNKNOWN, which is a correct answer rather than a missing feature."""
+    path = tmp_path / "drifter.yaml"
+    path.write_text("version: 1\nservers:\n  - name: s\n    command: ['echo']\n", encoding="utf-8")
+    config = load_config(path)
+
+    assert config.tasks == []
+    assert assertions_for(config.tasks, "anything").empty is True
+
+
+def test_an_unmatched_task_id_is_a_bare_label_not_an_error(tmp_path):
+    """`--task-id` predates authored tasks and stays usable as a free-form
+    label alongside `--prompt` -- raising here would break every existing
+    invocation for an opt-in feature."""
+    path = tmp_path / "drifter.yaml"
+    path.write_text(
+        "version: 1\nservers:\n  - name: s\n    command: ['echo']\n"
+        "tasks:\n  - id: known\n    assert:\n      calls: [a]\n",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+
+    assert find_task(config.tasks, "unknown") is None
+    assert assertions_for(config.tasks, "unknown").empty is True
+
+
+def test_result_contains_is_rejected_loudly_not_silently_ignored(tmp_path):
+    """`extra="allow"` would otherwise accept an assertion nothing reads --
+    a user would believe it was being checked. Recording is shape-only by
+    design (docs/SPEC.md §3), so this one can never be evaluated."""
+    path = tmp_path / "drifter.yaml"
+    path.write_text(
+        "version: 1\nservers:\n  - name: s\n    command: ['echo']\n"
+        "tasks:\n  - id: t\n    assert:\n      result_contains: ['invoice-42']\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="result_has_keys"):
+        load_config(path)
+
+
+def test_calls_before_rejects_a_malformed_pair(tmp_path):
+    path = tmp_path / "drifter.yaml"
+    path.write_text(
+        "version: 1\nservers:\n  - name: s\n    command: ['echo']\n"
+        "tasks:\n  - id: t\n    assert:\n      calls_before: [[only_one]]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="earlier, later"):
+        load_config(path)

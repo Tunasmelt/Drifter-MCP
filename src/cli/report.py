@@ -43,9 +43,10 @@ import sys
 from pathlib import Path
 from typing import TextIO
 
-from cli.config import ConfigError, DrifterConfig, PolicyConfig, load_config
+from cli.config import ConfigError, DrifterConfig, PolicyConfig, assertions_for, load_config
 from cli.report_format import RunResult, budget_exceeded_from_excluded_runs, render_run_result
 from cli.stats import resolve_runs_dir
+from evaluate.assertions import TaskAssertions, evaluate_task
 from evaluate.baseline import aggregate_baseline_runs
 from evaluate.effect_size import compute_behavior_effect_size
 from policy.safety import evaluate_safety_across_arms
@@ -59,6 +60,7 @@ def build_report_result(
     runs_dir: Path,
     policy: PolicyConfig | None = None,
     calibration: Calibration | None = None,
+    assertions: TaskAssertions | None = None,
 ) -> RunResult:
     """The pure reconstruction core — given a `runs_dir` matching
     `cli/run.py`'s own `session_dir = runs_dir / "run" / task_id` layout
@@ -90,6 +92,12 @@ def build_report_result(
     effect = compute_behavior_effect_size(baseline_result, mutated_result, calibration=calibration)
     safety = evaluate_safety_across_arms(session_dir, policy.destructive, policy.confirmation_required)
 
+    # F-24: unlike `mutation_log`, task assertions ARE reconstructable from
+    # disk -- they are evaluated against the recorded trajectories
+    # themselves, which is exactly what this function already has. So a
+    # re-rendered report carries a real Task verdict, not a degraded one,
+    # provided the caller supplies the same assertions the run used.
+    effective_assertions = assertions or TaskAssertions()
     result = RunResult(
         task_id=task_id,
         operator=_OPERATOR_UNKNOWN,
@@ -98,6 +106,8 @@ def build_report_result(
         effect=effect,
         mutation_log=[],
         safety=safety,
+        baseline_task=evaluate_task(baseline_result.valid_session_paths, effective_assertions),
+        mutated_task=evaluate_task(mutated_result.valid_session_paths, effective_assertions),
     )
     # `budget_exceeded` can't be read off the tracker (there isn't one here,
     # only recorded sessions) — reconstructed from `ExcludedRun.reason` text
@@ -120,7 +130,8 @@ def run_report(
         config = load_config(config_path)
         runs_dir = resolve_runs_dir(config)
     policy = config.policy if config is not None else None
+    assertions = assertions_for(config.tasks, task_id) if config is not None else TaskAssertions()
 
-    result = build_report_result(task_id, runs_dir, policy=policy)
+    result = build_report_result(task_id, runs_dir, policy=policy, assertions=assertions)
     output_stream.write(render_run_result(result))
     return result

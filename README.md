@@ -75,11 +75,13 @@ Gates 0–3 are closed:
   config for existing stdio MCP servers and writes a starter `drifter.yaml`, so you
   don't have to hand-write your server list.
 
-Task assertions, safety verdicts, mutation mining/approval, and the full report
-format are not built yet — see [`docs/FEATURES.md`](docs/FEATURES.md) for the
-complete per-feature breakdown and [`docs/SPEC.md` §15](docs/SPEC.md) for known
-limitations, stated plainly, including two found only by testing against a real
-agent rather than a scripted stand-in.
+- **All three verdict axes** — Behavior (effect size vs. baseline), Task (opt-in
+  assertions you author), Safety (evaluated on every run, never gated by the others).
+
+Mutation mining/approval and adaptive scheduling are not built yet — see
+[`docs/FEATURES.md`](docs/FEATURES.md) for the complete per-feature breakdown and
+[`docs/SPEC.md` §15](docs/SPEC.md) for known limitations, stated plainly, including
+two found only by testing against a real agent rather than a scripted stand-in.
 
 ## Install
 
@@ -188,6 +190,32 @@ reports a confident verdict on top of that — below `calibration.min_valid_runs
 arm you get `UNKNOWN` with the surviving counts — but a thin corpus still means fewer
 usable runs, so check the `N/10 valid runs` and `REPLAY CORPUS` lines, not just the
 headline verdict.
+
+### Telling Drifter what success looks like
+
+By default the TASK axis reports `UNKNOWN` — Drifter won't guess whether your agent
+actually did the job. Give it a deterministic oracle and it will check:
+
+```yaml
+# drifter.yaml
+tasks:
+  - id: invoice_creation
+    prompt: "Create an invoice for customer 42"
+    assert:
+      calls: [search, create_invoice]        # these must be called
+      calls_before: [[search, create_invoice]]  # in this order
+      never_calls: [delete_customer]         # this must not be
+      no_errors: true                        # no call returned is_error
+```
+
+Then `drifter run --task-id invoice_creation` picks up both the prompt and the
+assertions. Both arms are checked, so you can see whether the *mutation* broke the
+task rather than just that something failed — and `drifter run` exits `2` when the
+mutated arm fails assertions the baseline passed.
+
+There's no `result_contains`: Drifter records result *shapes*, never payloads, so
+there'd be nothing for it to read. Writing one is a config error rather than a check
+that silently never runs — use `result_has_keys: {tool: [key]}` instead.
 
 `drifter run` shows a blast-radius preview (planned agent runs, estimated tool calls
 by risk level) and asks for confirmation before spawning any real agent process —

@@ -59,11 +59,13 @@ def test_template_command_substitutes_task_prompt_per_token():
     assert result == ["python", "agent.py", "--task", "do the thing"]
 
 
-def test_render_run_result_shows_task_axis_as_unknown_unconditionally():
-    """No assertion engine exists (F-24 depends on F-30, task
-    definitions, not built) -- TASK must always read UNKNOWN, never
-    silently omitted or defaulted to something that looks like a real
-    verdict."""
+def test_render_run_result_shows_task_axis_as_unknown_without_an_oracle():
+    """CLAUDE.md's non-negotiable, now that F-24 makes a real PASS
+    reachable: with no assertions configured, TASK must read UNKNOWN --
+    never silently omitted, and never defaulted to something that looks
+    like a real verdict. This test previously asserted TASK was UNKNOWN
+    *unconditionally*, which was true only while no assertion engine
+    existed; the invariant it was actually guarding is this one."""
     baseline = BaselineResult(
         task_id="t", total_runs=1, valid_runs=1, dominant_path=("a",),
         variant_frequencies={("a",): 1}, natural_variation=0.0, baseline_spread=0.0,
@@ -75,7 +77,8 @@ def test_render_run_result_shows_task_axis_as_unknown_unconditionally():
         mutation_log=[], safety=NO_VIOLATION,
     )
     output = render_run_result(result)
-    assert "TASK      UNKNOWN — no oracle configured" in output
+    assert "TASK      UNKNOWN — no assertions configured for this task" in output
+    assert "PASS" not in output
 
 
 def test_render_run_result_handles_unknown_behavior_verdict_without_crashing():
