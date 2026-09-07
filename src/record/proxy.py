@@ -1,13 +1,24 @@
-"""Proxy passthrough over stdio (F-01).
+"""Proxy passthrough over stdio (F-01) or Streamable HTTP (F-39).
 
 Drifter is invoked as the MCP server command in the client's config. It
-spawns the real server as a child process and forwards every JSON-RPC frame
+connects to the real server and forwards every JSON-RPC frame
 bidirectionally, unmodified, between the agent (our own stdin/stdout) and
-the real server (the child process's stdin/stdout).
+the real server — either a locally spawned child process (stdio) or a
+network-reachable endpoint (Streamable HTTP), per docs/SPEC.md §5.1/§11's
+`servers[].command` vs `servers[].url`.
 
-Framing on both sides comes from the official MCP SDK's stdio transport
-(`mcp.client.stdio.stdio_client`, `mcp.server.stdio.stdio_server`) rather
-than hand-rolled JSON-RPC parsing, per docs/FEATURES.md F-01.
+Framing on both sides comes from the official MCP SDK's own transports
+(`mcp.client.stdio.stdio_client` / `mcp.client.streamable_http.
+streamable_http_client` on the real-server side, `mcp.server.stdio.
+stdio_server` on the agent-facing side) rather than hand-rolled JSON-RPC
+parsing, per docs/FEATURES.md F-01/F-39.
+
+F-39's own scoping, confirmed against the installed SDK before relying on
+it (docs/SPEC.md §5.1): `streamable_http_client(url)` is a drop-in-shaped
+replacement for `stdio_client(params)` — both are async context managers
+yielding the identical `(read_stream, write_stream)` pair. `_pump`'s
+forwarding logic needs zero changes; only `connect_to_server` (below)
+picks which transport to open, based on which the caller passed.
 
 `on_message` (optional) is a pure observer hook for record/writer.py to tap
 into: it never alters what's forwarded, and its default (None) reproduces
@@ -18,11 +29,13 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterable, Callable
+from contextlib import AbstractAsyncContextManager
 from enum import Enum
 
 import anyio
 from anyio.abc import CancelScope, ObjectSendStream
 from mcp.client.stdio import StdioServerParameters, stdio_client
+from mcp.client.streamable_http import streamable_http_client
 from mcp.server.stdio import stdio_server
 from mcp.shared.message import SessionMessage
 
@@ -38,18 +51,42 @@ class Direction(Enum):
 
 MessageObserver = Callable[[Direction, "SessionMessage | Exception"], None]
 
+# What identifies the real server to connect to: local stdio (spawn a
+# child process) or a network-reachable Streamable HTTP endpoint (a bare
+# URL string) — docs/SPEC.md §11's `servers[].command` vs `servers[].url`,
+# mutually exclusive on the same config entry (cli/config.py's own
+# validator enforces that at load time, before this module ever sees it).
+ServerTarget = StdioServerParameters | str
+
+
+def connect_to_server(server: ServerTarget) -> AbstractAsyncContextManager:
+    """Picks the transport by the target's own type — a `str` is always a
+    URL (Streamable HTTP), never mistaken for anything else, since
+    `StdioServerParameters` is never itself a string. No sniffing of URL
+    shape needed.
+
+    Public (not `_`-prefixed): `cli/doctor.py`'s connectivity check needs
+    the identical transport-selection logic `run_passthrough_proxy` uses
+    below, not a second, separately-maintained copy of the same branch.
+    """
+    if isinstance(server, str):
+        return streamable_http_client(server)
+    return stdio_client(server)
+
 
 async def run_passthrough_proxy(
-    server: StdioServerParameters,
+    server: ServerTarget,
     on_message: MessageObserver | None = None,
 ) -> None:
-    """Spawns `server` and pipes frames to/from our own stdio, unmodified.
+    """Connects to `server` (spawned locally over stdio, or a Streamable
+    HTTP URL) and pipes frames to/from our own stdio, unmodified.
 
     Runs until either side closes its connection, then tears the other
-    side down too — closing the child's pipes and terminating it if it
-    hasn't already exited, via `stdio_client`'s own shutdown sequence.
+    side down too — closing the connection and, for stdio, terminating
+    the child process if it hasn't already exited, via the chosen
+    transport's own shutdown sequence.
     """
-    async with stdio_client(server) as (server_read, server_write):
+    async with connect_to_server(server) as (server_read, server_write):
         async with stdio_server() as (agent_read, agent_write):
             async with anyio.create_task_group() as tg:
                 tg.start_soon(_pump, agent_read, server_write, tg.cancel_scope, Direction.AGENT_TO_SERVER, on_message)

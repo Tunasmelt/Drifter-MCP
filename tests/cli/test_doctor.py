@@ -31,6 +31,12 @@ def _server(name: str, command: list[str]):
     return ServerConfig(name=name, command=command)
 
 
+def _url_server(name: str, url: str):
+    from cli.config import ServerConfig
+
+    return ServerConfig(name=name, url=url)
+
+
 def _drifter_yaml(tmp_path: Path, servers: list[tuple[str, list[str]]]) -> Path:
     # Single-quoted YAML scalars — sys.executable on Windows contains
     # backslashes, which double-quoted YAML strings misparse as escapes
@@ -85,6 +91,39 @@ async def test_check_server_times_out_against_a_non_mcp_process():
     assert check.ok is False
     assert "no response" in check.detail
     assert elapsed < 8  # returned well inside the test's outer bound, not right at it
+
+
+@pytest.mark.anyio
+async def test_check_server_reports_actionable_error_for_an_unreachable_url():
+    """F-39: a `url`-configured server's connectivity failure must be
+    actionable too, not an unhandled `ExceptionGroup` -- confirmed
+    empirically before writing the `except* httpx2.TransportError` clause
+    this locks in: `streamable_http_client` fails asynchronously, deep
+    inside a task group, wrapped in a group, not like stdio's synchronous
+    bare `OSError`."""
+    server = _url_server("bad", "http://127.0.0.1:1/mcp")  # a real, always-refused port
+    with anyio.fail_after(10):
+        check = await _check_server(server, timeout_seconds=5)
+    assert check.ok is False
+    assert "127.0.0.1:1" in check.detail
+
+
+# --- run_doctor: end-to-end config + connectivity ---------------------------
+
+
+def test_run_doctor_bad_server_url_is_actionable(tmp_path):
+    config_path = tmp_path / "drifter.yaml"
+    config_path.write_text(
+        "version: 1\nservers:\n  - name: remote\n    url: http://127.0.0.1:1/mcp\n", encoding="utf-8"
+    )
+
+    out = io.StringIO()
+    ok = run_doctor(config_path=config_path, output_stream=out)
+    assert ok is False
+    text = out.getvalue()
+    assert "[ OK ] config" in text  # config itself parsed fine
+    assert "[FAIL] server 'remote'" in text
+    assert "127.0.0.1:1" in text
 
 
 # --- run_doctor: config + full end-to-end -----------------------------------

@@ -26,6 +26,13 @@ keeps behaving identically, with no migration needed. `agent.env_var`
 proxy's real, loopback-bound URL into — only meaningful when
 `mode: http`, but always present (with its default) so a caller doesn't
 need to branch on `mode` just to read it.
+
+`ServerConfig.url` (F-39, docs/SPEC.md §5.1/§11): the *real server's* own
+transport, separate from and unrelated to `agent.mode` above (that's the
+agent-under-test's transport, this is the real MCP server Drifter connects
+to on the agent's behalf). Mutually exclusive with `command` on the same
+entry — `server_target()` below is the one place that distinction turns
+into what `record/proxy.py` actually consumes.
 """
 
 from __future__ import annotations
@@ -34,21 +41,62 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
+from mcp.client.stdio import StdioServerParameters
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator, model_validator
 
 
 class ServerConfig(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     name: str
-    command: list[str]
+    # F-39 (docs/SPEC.md §5.1/§11): `command` (local, spawned over stdio) and
+    # `url` (a real, network-reachable Streamable HTTP endpoint — the
+    # "change one config line" onboarding story) are mutually exclusive on
+    # the same entry, enforced below. Both default to None rather than one
+    # being required, so the validator (not pydantic's own required-field
+    # error) reports whichever real problem occurred -- neither given, or
+    # both given -- with an actionable message instead of a generic
+    # "field required" that doesn't explain the exclusivity rule.
+    command: list[str] | None = None
+    url: str | None = None
 
     @field_validator("command")
     @classmethod
-    def _command_not_empty(cls, v: list[str]) -> list[str]:
-        if not v:
+    def _command_not_empty(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None and not v:
             raise ValueError("server command must have at least one element (the executable)")
         return v
+
+    @field_validator("url")
+    @classmethod
+    def _url_not_empty(cls, v: str | None) -> str | None:
+        if v is not None and not v.strip():
+            raise ValueError("server url must not be empty")
+        return v
+
+    @model_validator(mode="after")
+    def _exactly_one_of_command_or_url(self) -> "ServerConfig":
+        if (self.command is None) == (self.url is None):
+            raise ValueError(
+                f"server {self.name!r} must declare exactly one of `command` (local, stdio) or "
+                "`url` (a real, network-reachable Streamable HTTP endpoint), not both or neither"
+            )
+        return self
+
+
+def server_target(server: ServerConfig) -> StdioServerParameters | str:
+    """The one place `command` vs `url` gets turned into what `record/
+    proxy.py`'s `run_passthrough_proxy`/`_connect_to_server` actually
+    consumes (`record.proxy.ServerTarget`) — every caller (`cli/observe.py`,
+    `cli/doctor.py`) goes through this rather than re-deriving the same
+    branch, so a third transport later only needs a change here. The
+    `_exactly_one_of_command_or_url` validator above guarantees exactly one
+    of `server.command`/`server.url` is set by the time this runs — no
+    third "neither" case to handle here.
+    """
+    if server.url is not None:
+        return server.url
+    return StdioServerParameters(command=server.command[0], args=server.command[1:])
 
 
 class RecordConfig(BaseModel):

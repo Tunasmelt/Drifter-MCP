@@ -54,6 +54,69 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-39 (HTTP real-server connection) built: the other half of "+HTTP in v1"
+
+Following the priority list's next item: `record/proxy.py`'s real-server
+connection now supports `servers[].url` (a real, network-reachable Streamable
+HTTP endpoint) alongside the existing `command` (local, spawned stdio) — the
+"change one config line" onboarding story SPEC.md §2 has pitched since before
+any code existed, now literally true.
+
+`record/proxy.py` gains `ServerTarget = StdioServerParameters | str` and
+`connect_to_server(server)`, which picks `mcp.client.streamable_http.
+streamable_http_client` vs `mcp.client.stdio.stdio_client` purely by the
+target's own type — a bare `str` is always a URL, `StdioServerParameters`
+never is, so no shape-sniffing is needed. Confirmed against the installed SDK
+before relying on it (already documented in SPEC.md §5.1 from F-38's own
+research): both are async context managers yielding the identical
+`(read_stream, write_stream)` pair, so `_pump`'s forwarding logic needed
+zero changes — the existing F-01 stdio test suite passed completely
+unchanged. `cli/config.py`'s `ServerConfig` gains `url: str | None`, mutually
+exclusive with `command` via a `model_validator` (neither or both set is
+rejected with an actionable message naming the server), and a new
+`server_target()` function is the one place that distinction turns into what
+`connect_to_server` actually consumes — shared by `cli/observe.py` and
+`cli/doctor.py` rather than each re-deriving the same branch (`connect_to_server`
+is deliberately public, not `_`-prefixed, for exactly this reuse).
+
+One real, empirically-confirmed difference from the stdio case, handled
+explicitly rather than assumed to generalize for free: an unreachable URL
+does NOT fail synchronously at connect time the way a bad stdio command does
+— `streamable_http_client`'s context manager entry succeeds even against a
+completely unreachable address; the real failure only surfaces once
+`ClientSession.initialize()` sends an actual request, deep inside
+`connect_to_server`'s own task group, and arrives as `httpx2.ConnectError`
+wrapped in an `ExceptionGroup` (PEP 654), not bare. Verified with a direct
+REPL reproduction before writing any fix, not guessed. `cli/observe.py`'s and
+`cli/doctor.py`'s existing actionable-error handling (already built for a bad
+stdio command) is extended to `except*` (not a plain `except` — PEP 654
+forbids mixing the two styles on one `try`, and forbids `return`/`break`/
+`continue` directly inside an `except*` block, both discovered the hard way
+via real `SyntaxError`s while writing this, not anticipated), so a
+url-configured server's connectivity failure now surfaces as the same
+actionable `ConfigError`/`ServerCheck` a bad stdio command already did — not
+a raw `ExceptionGroup` traceback. `httpx2` (the MCP SDK's own vendored httpx
+fork, already transitive via `mcp`) is declared as an explicit direct
+dependency in `pyproject.toml`, matching the `uvicorn`/`sse-starlette`
+precedent F-38 already established for this reasoning.
+
+Real end-to-end test coverage, not just unit-level (`tests/record/
+test_proxy_http.py`, reusing F-38's own `serve_replay_over_http` as the real
+server side rather than building a second real-HTTP-server test harness):
+`connect_to_server` against a real Streamable HTTP server, `connect_to_server`
+still spawning a real subprocess for the stdio case (confirming the branch
+wasn't only ever exercised on one side), and — the actual "Done when" bar —
+`run_passthrough_proxy` driven in a real, separate subprocess exactly as
+`drifter observe` is genuinely invoked (agent-facing stdio via
+`stdio_server()`, real-server-facing Streamable HTTP via `connect_to_server`),
+confirming a real tool-call round trip matches the recorded golden fixture's
+own `is_error` values. 13 new tests total across `tests/record/
+test_proxy_http.py`, `tests/cli/test_config.py`, `tests/cli/test_observe.py`,
+and `tests/cli/test_doctor.py`. `docs/PHASES.md` gains a full gate-shaped
+Tasks/Exit-test/Kill-criterion block for F-39, matching F-38's own rigor.
+
+---
+
 ## F-15's remaining scope built: tier-weighted fidelity, closing F-13's own deliberate gap
 
 Directly following F-13 (semantic key resolution, previous entry): its own honest

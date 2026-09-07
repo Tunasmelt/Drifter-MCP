@@ -33,9 +33,9 @@ from pathlib import Path
 from typing import TextIO
 
 import anyio
-from mcp.client.stdio import StdioServerParameters
+import httpx2
 
-from cli.config import ConfigError, DrifterConfig, ServerConfig, load_config
+from cli.config import ConfigError, DrifterConfig, ServerConfig, load_config, server_target
 from record.proxy import Direction, run_passthrough_proxy
 from record.writer import SessionRecorder
 
@@ -204,17 +204,18 @@ def run_observe(
         recorder.observe(direction, message)
         status.update(recorder)
 
-    server_params = StdioServerParameters(command=server.command[0], args=server.command[1:])
+    target = server_target(server)
+    description = server.url if server.url is not None else " ".join(server.command)
 
     # See handle_sigint's docstring for why this exists and what was
     # verified by hand before relying on it.
     previous_handler = signal.signal(signal.SIGINT, lambda signum, frame: handle_sigint(recorder, status, status_stream))
     try:
-        status_stream.write(f"drifter observe — proxying {server.name!r} ({' '.join(server.command)})\n")
+        status_stream.write(f"drifter observe — proxying {server.name!r} ({description})\n")
         status_stream.flush()
         try:
-            anyio.run(run_passthrough_proxy, server_params, on_message)
-        except OSError as e:
+            anyio.run(run_passthrough_proxy, target, on_message)
+        except* (OSError, httpx2.TransportError) as eg:
             # Found empirically, not assumed: a bad server command
             # previously crashed here with a raw ~40-line Python
             # traceback from deep inside anyio/asyncio/subprocess
@@ -224,7 +225,21 @@ def run_observe(
             # other subcommand's config/connectivity failure already is
             # (cli/app.py's existing `except ConfigError` picks this up
             # for free, exit code 4 per docs/SPEC.md §12).
-            raise ConfigError(f"could not start command {' '.join(server.command)!r}: {e}") from e
+            #
+            # F-39 (docs/SPEC.md §5.1): a `url`-configured server's
+            # connectivity failure doesn't surface as a plain OSError the
+            # way a stdio spawn failure does -- confirmed empirically
+            # before writing this, not assumed: `streamable_http_client`
+            # doesn't fail synchronously at connect, only once a real
+            # request is attempted (inside `run_passthrough_proxy`'s task
+            # group), and the underlying `httpx2.ConnectError` arrives
+            # wrapped in an `ExceptionGroup` (PEP 654), not bare -- hence
+            # `except*`, not a plain `except`, and both failure shapes
+            # (bare OSError, grouped httpx2.TransportError) are handled by
+            # the same clause since `except*` matches either.
+            first = eg.exceptions[0]
+            action = "start command" if isinstance(first, OSError) else "connect to"
+            raise ConfigError(f"could not {action} {description!r}: {first}") from eg
     finally:
         signal.signal(signal.SIGINT, previous_handler)
         # Only reached on normal completion (agent disconnected) — the

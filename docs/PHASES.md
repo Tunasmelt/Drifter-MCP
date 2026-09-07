@@ -481,11 +481,71 @@ config file format, with no environment-variable override path), the "inject via
 env var" mechanism itself is too narrow — a config-file-templating mechanism
 becomes the next thing to build, not a variant of this one.
 
-### v1 — remaining scope (unchanged from SPEC.md, F-38 above pulled to the front)
+### v1 — HTTP real-server connection (F-39)
 
-- F-39: HTTP real-server connection — the *other* half of "+HTTP in v1" (the "change
-  one config line" story for a user's real server, not the agent under test). Separate
-  from F-38, shares no code path with it, does not depend on F-38 landing first.
+**Depends on:** none — mirrors F-01's own stdio connection; does not depend on F-38
+landing first, shares no code path with it. See `docs/SPEC.md` §5.1 for the shared
+transport research and `docs/FEATURES.md`'s F-39 entry for the full technical/simple
+breakdown.
+
+#### Tasks
+
+- [x] `record/proxy.py`: `ServerTarget = StdioServerParameters | str` and
+  `connect_to_server(server)`, picking `streamable_http_client`/`stdio_client` purely
+  by the target's own type. `_pump`'s forwarding logic needed zero changes, confirmed
+  by the existing F-01 stdio test suite passing unchanged
+- [x] `cli/config.py`: `ServerConfig.url: str | None`, mutually exclusive with
+  `command` via a `model_validator` (both `None`/both set both rejected, with an
+  actionable message naming the offending server). `server_target()` is the one place
+  that distinction turns into a `ServerTarget` — shared by `cli/observe.py` and
+  `cli/doctor.py`, not duplicated (23 tests, `tests/cli/test_config.py`)
+- [x] `cli/observe.py`/`cli/doctor.py`: both wired through `server_target`/
+  `connect_to_server`. Real, empirically-confirmed failure-mode difference from
+  stdio handled explicitly: an unreachable URL fails asynchronously (not at connect
+  time) with the underlying `httpx2.ConnectError` wrapped in an `ExceptionGroup`
+  (PEP 654), not bare — both call sites use `except*`, matching the existing
+  actionable-`ConfigError`/`ServerCheck` bar the stdio case already met, confirmed
+  by a dedicated test in each rather than assumed to generalize for free
+- [x] `pyproject.toml`: `httpx2` declared as an explicit direct dependency (already
+  transitive via `mcp`), matching the `uvicorn`/`sse-starlette` precedent from F-38 —
+  this project's own code now imports it directly for the `except*` clauses above
+- [x] `tests/record/test_proxy_http.py`: real end-to-end confirmation, reusing F-38's
+  own `serve_replay_over_http` as the real server side — `connect_to_server` against
+  a real Streamable HTTP server, a real spawned-subprocess round trip through
+  `run_passthrough_proxy` exactly as `drifter observe` is really invoked (agent-facing
+  stdio, real-server-facing HTTP), and a stdio-still-works confirmation so the branch
+  wasn't only ever exercised on one side
+
+Full new-test count: 3 (`test_proxy_http.py`) + 6 (`test_config.py` url/
+server_target) + 2 (`test_observe.py`/`test_doctor.py` unreachable-url actionable
+errors, each) = 13.
+
+#### Exit test
+
+`drifter observe` against a real, network-reachable HTTP MCP server records an
+identical-shaped session to an equivalent stdio server, with no code path caring
+which transport originally recorded it. **Met**:
+`tests/record/test_proxy_http.py`'s
+`test_run_passthrough_proxy_over_a_real_http_server_end_to_end` drives
+`run_passthrough_proxy` in a real separate process against a real HTTP server
+(`serve_replay_over_http`, F-38's own infra, replaying the golden fixture) and
+confirms the real tool-call round trip matches the recorded fixture's own
+`is_error` values — the actual invocation shape `drifter observe` uses, not a
+unit-level stand-in.
+
+#### Kill criterion
+
+If the installed SDK's `streamable_http_client`/`stdio_client` turn out NOT to yield
+the same `(read_stream, write_stream)` shape in some real-world configuration (a
+proxy, a redirect, an SDK version skew) — forcing `_pump`'s forwarding logic to
+branch on transport after all — this feature's whole "confirmed drop-in shape, zero
+`_pump` changes needed" premise is wrong, and the fix belongs in `_pump` itself, not
+as a special case bolted onto `connect_to_server`. Not encountered: the real
+end-to-end test above round-trips a full session with zero `_pump` awareness of
+which transport is underneath.
+
+### v1 — remaining scope
+
 - Synthetic replay provenance surfaced fully in reports
 - Remaining Level 0–1 mutation operators beyond the two shipped in Gate 3
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,

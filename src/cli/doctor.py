@@ -33,11 +33,12 @@ from pathlib import Path
 from typing import TextIO
 
 import anyio
+import httpx2
 from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from cli.config import AgentConfig, ConfigError, ServerConfig, load_config
+from cli.config import AgentConfig, ConfigError, ServerConfig, load_config, server_target
 from record.calibration import load_calibration
+from record.proxy import connect_to_server
 
 
 @dataclass
@@ -47,51 +48,75 @@ class ServerCheck:
     detail: str
 
 
-def _command_str(server: ServerConfig) -> str:
-    return " ".join(server.command)
+def _describe_server(server: ServerConfig) -> str:
+    """F-39: a `url`-configured server has no `command` to join -- joining
+    `None` would raise `TypeError`, not report a useful message. This is
+    the one place that distinction is made for `doctor`'s own messages,
+    matching `cli/observe.py`'s identical `description` derivation."""
+    return server.url if server.url is not None else " ".join(server.command)
 
 
 async def _check_server(server: ServerConfig, timeout_seconds: float) -> ServerCheck:
-    """Spawns `server` and attempts a real MCP `initialize` handshake.
+    """Connects to `server` (stdio or, F-39, a `url`-configured Streamable
+    HTTP endpoint) and attempts a real MCP `initialize` handshake.
 
     Bounded by `timeout_seconds` for the whole attempt — a command that
-    spawns but never speaks MCP (wrong executable, a plain shell command,
-    a server hung at startup) would otherwise block doctor forever rather
-    than reporting "unreachable." `stdio_client`'s own shutdown sequence
-    (mcp/client/stdio.py) tears the subprocess down cleanly even when its
-    caller is cancelled mid-handshake — every wait inside is bounded and
-    shielded — so a `fail_after` timeout here doesn't leak the spawned
-    process; verified directly in tests/cli/test_doctor.py with a
-    real-subprocess reproduction, not assumed from reading the SDK.
+    spawns (or a URL that accepts a connection) but never speaks MCP
+    (wrong executable, a plain shell command, a server hung at startup, an
+    unrelated HTTP service on that URL) would otherwise block doctor
+    forever rather than reporting "unreachable." `stdio_client`'s own
+    shutdown sequence (mcp/client/stdio.py) tears the subprocess down
+    cleanly even when its caller is cancelled mid-handshake — every wait
+    inside is bounded and shielded — so a `fail_after` timeout here
+    doesn't leak the spawned process; verified directly in
+    tests/cli/test_doctor.py with a real-subprocess reproduction, not
+    assumed from reading the SDK.
     """
+    # `except*` (PEP 654), not plain `except`, throughout this try: an
+    # httpx2 connectivity error (the F-39/url case) arrives wrapped in an
+    # ExceptionGroup, not bare — confirmed empirically before writing this,
+    # not assumed — since streamable_http_client only actually attempts a
+    # connection once a real request is sent, deep inside the task group
+    # `connect_to_server`/`ClientSession.initialize` opens; `except*`
+    # handles both that and a plain (stdio-case) exception uniformly. PEP
+    # 654 forbids `return` inside an `except*` block, so each clause sets
+    # `failure` instead, returned once, after the try/except finishes.
+    failure: ServerCheck | None = None
     try:
         with anyio.fail_after(timeout_seconds):
-            params = StdioServerParameters(command=server.command[0], args=server.command[1:])
-            async with stdio_client(params) as (read, write):
+            async with connect_to_server(server_target(server)) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
-    except TimeoutError:
-        return ServerCheck(
+    except* TimeoutError:
+        failure = ServerCheck(
             server.name,
             False,
             f"no response to initialize within {timeout_seconds:.0f}s "
-            f"(command: {_command_str(server)!r}) — is this an MCP server?",
+            f"({_describe_server(server)!r}) — is this an MCP server?",
         )
-    except OSError as e:
+    except* OSError as eg:
         # stdio_client's own contract (its docstring): OSError if the
         # server process cannot be spawned at all — bad executable path,
         # not found on PATH, no permission to execute, etc.
-        return ServerCheck(
+        failure = ServerCheck(
             server.name,
             False,
-            f"could not start command {_command_str(server)!r}: {e}",
+            f"could not start command {_describe_server(server)!r}: {eg.exceptions[0]}",
         )
-    except Exception as e:
-        return ServerCheck(
+    except* httpx2.TransportError as eg:
+        failure = ServerCheck(
             server.name,
             False,
-            f"unexpected error talking to {server.name!r} ({_command_str(server)!r}): {e}",
+            f"could not connect to {_describe_server(server)!r}: {eg.exceptions[0]}",
         )
+    except* Exception as eg:
+        failure = ServerCheck(
+            server.name,
+            False,
+            f"unexpected error talking to {server.name!r} ({_describe_server(server)!r}): {eg.exceptions[0]}",
+        )
+    if failure is not None:
+        return failure
     return ServerCheck(server.name, True, "initialize handshake succeeded")
 
 

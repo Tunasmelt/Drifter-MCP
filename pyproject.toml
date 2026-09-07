@@ -20,6 +20,14 @@ dependencies = [
     # work around a real, confirmed cross-invocation bug in that library (see
     # http_proxy.py's own docstring) -- same reasoning as uvicorn above.
     "sse-starlette>=2.0",
+    # F-39 (docs/SPEC.md §5.1): cli/observe.py imports httpx2 (the MCP SDK's
+    # own vendored httpx fork -- a real top-level installed package, not a
+    # submodule of `mcp`) directly, to catch a real connectivity failure to
+    # a `servers[].url` entry actionably rather than let a raw ExceptionGroup
+    # traceback reach the user. Already present transitively via `mcp`
+    # (confirmed via `uv pip list`), declared explicitly for the same reason
+    # uvicorn/sse-starlette are above.
+    "httpx2>=2.10",
 ]
 
 [project.scripts]

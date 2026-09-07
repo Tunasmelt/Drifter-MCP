@@ -53,7 +53,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-36 | `drifter score` / `drifter report` | ⚠️ `score` built, `report` not separate | `drifter report` (render from stored records without re-scoring) not built as its own command |
 | F-37 | `drifter doctor` | ⚠️ Gate 1 scope + F-38's http check | Classification-sanity checks explicitly deferred — need F-26 first |
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
-| F-39 | HTTP real-server connection | ❌ Not built | **Needs building next** — the other half of "+HTTP in v1", lower risk than F-38 (confirmed drop-in stream shape against the SDK) |
+| F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
 
 **Priority order for what to build next**, per docs/PHASES.md's own v1 ordering and the
 dependency chain above (not a re-ranking, just made explicit in one place):
@@ -64,8 +64,10 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    (F-13's own follow-on, same private-marker-key pattern `result_provenance` already
    used), and `_run_fidelity` now weights a semantic hit at `semantic_weight` (0.8)
    instead of full 1.0, per docs/SPEC.md §7's formula.
-3. **F-39** — HTTP real-server connection. Scoped already, no code yet, lower risk than
-   F-38 was.
+3. ~~**F-39**~~ — **built.** `record/proxy.py`'s `connect_to_server` picks the
+   transport by the target's own type (`StdioServerParameters` vs. a bare `str`
+   URL); `cli/config.py`'s `ServerConfig.url` is mutually exclusive with `command`.
+   Confirmed against a real Streamable HTTP server, not just unit-level.
 4. **F-26 → F-25 → F-31/F-32** — the `policy/` module, in that dependency order (risk
    classification unblocks the safety verdict engine and blast-radius preview).
 5. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
@@ -674,16 +676,31 @@ first try:
 
 ### F-39 HTTP real-server connection (`servers[].url`)
 
-**Technical:** The separate half of "+HTTP in v1" (SPEC.md §5.1): `record/proxy.py`'s
-real-server connection swaps `mcp.client.stdio.stdio_client(params)` for
-`mcp.client.streamable_http.streamable_http_client(url)` when a `servers[]` entry
-declares `url` instead of `command` — both are async context managers yielding the
+**Technical:** The separate half of "+HTTP in v1" (SPEC.md §5.1). **Built.**
+`record/proxy.py` gains `ServerTarget = StdioServerParameters | str` and
+`connect_to_server(server)`, which swaps `mcp.client.stdio.stdio_client(params)` for
+`mcp.client.streamable_http.streamable_http_client(url)` purely by the target's own
+type (a bare `str` is always a URL) — both are async context managers yielding the
 identical `(read_stream, write_stream)` shape, confirmed against the installed SDK
-before scoping this as low-risk, so `_pump`'s forwarding logic needs no change at
-all, only the connection setup. This is what makes SPEC.md §2's "change one config
-line" onboarding pitch literally true for the first time: a user with an existing
-remote MCP server swaps `command: [...]` for `url: "..."` and `drifter observe`
-works unchanged.
+before scoping this as low-risk, so `_pump`'s forwarding logic needed zero changes,
+only the connection setup. `cli/config.py`'s `ServerConfig` gains `url: str | None`,
+mutually exclusive with `command` (a `model_validator` enforces exactly one), and
+`server_target()` is the one place that distinction turns into what `connect_to_server`
+consumes — used by both `cli/observe.py` and `cli/doctor.py` (`connect_to_server` is
+public, not `_`-prefixed, specifically so `doctor` doesn't need a second copy of the
+same branch). This is what makes SPEC.md §2's "change one config line" onboarding
+pitch literally true for the first time: a user with an existing remote MCP server
+swaps `command: [...]` for `url: "..."` and `drifter observe` works unchanged.
+
+Real, confirmed-empirically failure-mode difference from stdio, handled explicitly:
+an unreachable URL doesn't fail synchronously at connect time the way a bad stdio
+command does (`streamable_http_client` only actually attempts a connection once a
+real request is sent), and the underlying `httpx2.ConnectError` arrives wrapped in
+an `ExceptionGroup` (PEP 654), not bare. `cli/observe.py`/`cli/doctor.py` both use
+`except*` (not a plain `except`) so this still surfaces as the same actionable
+`ConfigError`/`ServerCheck` a bad stdio command already did, not a raw traceback —
+confirmed by a dedicated test in each, not assumed from the stdio case's own fix
+generalizing for free.
 
 **Simple:** Lets Drifter record and replay against a real server that lives on the
 network, not just one it spawns locally — most production MCP servers, as opposed to
@@ -692,7 +709,12 @@ local dev tools, are exactly this shape.
 **Depends on:** none (mirrors F-01's own stdio connection, doesn't depend on F-38).
 **Done when:** `drifter observe` against a real, network-reachable HTTP MCP server
 records an identical-shaped session to an equivalent stdio server, and `drifter run`
-replays it with no code path caring which transport originally recorded it.
+replays it with no code path caring which transport originally recorded it — confirmed
+end to end: `tests/record/test_proxy_http.py`'s
+`test_run_passthrough_proxy_over_a_real_http_server_end_to_end` spawns
+`run_passthrough_proxy` in a real separate process (agent-facing stdio, real-server-
+facing Streamable HTTP against a real, replay-served server) and drives it exactly the
+way `drifter observe` is really invoked, not just at the unit level.
 
 ### F-35 `drifter run`
 

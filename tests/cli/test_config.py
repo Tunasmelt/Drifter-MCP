@@ -1,8 +1,9 @@
 """Unit tests for cli/config.py's minimal drifter.yaml loader (F-09)."""
 
 import pytest
+from mcp.client.stdio import StdioServerParameters
 
-from cli.config import ConfigError, load_config
+from cli.config import ConfigError, ServerConfig, load_config, server_target
 
 VALID_YAML = """
 version: 1
@@ -128,3 +129,46 @@ def test_unknown_top_level_keys_do_not_break_loading(tmp_path):
     text = VALID_YAML + "\nmutations:\n  profile: quick\n  seed: 42\n"
     config = load_config(_write(tmp_path, text))
     assert config.servers[0].name == "crm"
+
+
+# --- servers[].url (F-39) ----------------------------------------------------
+
+
+def test_server_url_is_honored_when_specified(tmp_path):
+    text = "version: 1\nservers:\n  - name: remote\n    url: https://mcp.example.com/mcp\n"
+    config = load_config(_write(tmp_path, text))
+    assert config.servers[0].url == "https://mcp.example.com/mcp"
+    assert config.servers[0].command is None
+
+
+def test_server_with_both_command_and_url_raises_config_error(tmp_path):
+    text = 'version: 1\nservers:\n  - name: bad\n    command: ["npx", "-y", "@mcp/server"]\n    url: https://mcp.example.com/mcp\n'
+    with pytest.raises(ConfigError, match="exactly one of"):
+        load_config(_write(tmp_path, text))
+
+
+def test_server_with_neither_command_nor_url_raises_config_error(tmp_path):
+    text = "version: 1\nservers:\n  - name: bad\n"
+    with pytest.raises(ConfigError, match="exactly one of"):
+        load_config(_write(tmp_path, text))
+
+
+def test_server_with_empty_url_raises_config_error(tmp_path):
+    text = "version: 1\nservers:\n  - name: bad\n    url: ''\n"
+    with pytest.raises(ConfigError):
+        load_config(_write(tmp_path, text))
+
+
+def test_server_target_returns_stdio_params_for_a_command_entry():
+    server = ServerConfig(name="local", command=["npx", "-y", "@mcp/server"])
+    target = server_target(server)
+    assert isinstance(target, StdioServerParameters)
+    assert target.command == "npx"
+    assert target.args == ["-y", "@mcp/server"]
+
+
+def test_server_target_returns_the_url_string_for_a_url_entry():
+    server = ServerConfig(name="remote", url="https://mcp.example.com/mcp")
+    target = server_target(server)
+    assert target == "https://mcp.example.com/mcp"
+    assert isinstance(target, str)

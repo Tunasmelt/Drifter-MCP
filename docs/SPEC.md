@@ -119,7 +119,7 @@ Everything citable in docs/marketing must trace to this table. Nothing else is c
 The dashed boundary is the core architectural bet: agent execution is the only expensive,
 risky operation. Everything below it reads stored records and reruns at zero cost.
 
-### 5.1 HTTP transport (v1 scope, planned — F-38/F-39)
+### 5.1 HTTP transport (v1 scope — F-38/F-39, both built)
 
 Two independent transport axes exist in this diagram, and v0 is stdio-only on both:
 

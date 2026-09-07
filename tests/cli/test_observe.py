@@ -282,6 +282,29 @@ def test_run_observe_raises_actionable_config_error_for_a_bad_server_command(tmp
         run_observe(config_path=config_path, server_name="bad", status_stream=io.StringIO())
 
 
+def test_run_observe_raises_actionable_config_error_for_an_unreachable_url(tmp_path):
+    """F-39's own version of the bug directly above: a `url`-configured
+    server that can't be reached must surface the same kind of actionable
+    ConfigError, not a raw ExceptionGroup traceback. Confirmed empirically
+    before writing the fix this locks in, not assumed: `streamable_http_
+    client` doesn't fail synchronously at connect, only once a real
+    request is attempted, and the underlying `httpx2.ConnectError` arrives
+    wrapped in an ExceptionGroup (PEP 654) -- `run_observe`'s `except*`
+    clause has to actually unwrap it, or this raises the wrong thing
+    entirely (an unhandled ExceptionGroup, not a ConfigError).
+    """
+    config_path = tmp_path / "drifter.yaml"
+    config_path.write_text(
+        # Port 1 is a real, always-unassigned low port -- a genuine,
+        # fast-failing connection refusal, not a slow DNS timeout that
+        # would make this test flaky/slow.
+        "version: 1\nservers:\n  - name: bad\n    url: http://127.0.0.1:1/mcp\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="127.0.0.1:1"):
+        run_observe(config_path=config_path, server_name="bad", status_stream=io.StringIO())
+
+
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
