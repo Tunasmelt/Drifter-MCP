@@ -438,6 +438,49 @@ async def test_a_semantic_hit_is_recorded_with_match_tier_semantic(tmp_path):
     assert new_call.match_tier == "semantic"
 
 
+@pytest.mark.anyio
+async def test_an_inverse_map_hit_is_recorded_with_match_tier_inverse(tmp_path):
+    """F-12's real, wired-through-the-proxy confirmation, mirroring the
+    semantic-tier test above exactly: a live call using a RENAMED
+    parameter name, with the exact `inverse_map` a real `mutate.
+    parameter_rename` mutation would have produced, must resolve via the
+    proxy's `run_replay_proxy(..., inverse_map=...)` parameter and be
+    recorded with `match_tier == "inverse"` -- not just resolve
+    successfully at the ReplayStore layer alone (already confirmed by
+    replay_store.py's own unit tests)."""
+    from record.writer import SessionRecorder
+
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+
+    call = next(c for c in _golden_calls() if len(c.arguments) == 1)
+    original_key = next(iter(call.arguments))
+    new_key = f"{original_key}_renamed"
+    renamed_arguments = {new_key: call.arguments[original_key]}
+    inverse_map = {call.tool_name: {new_key: original_key}}
+
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=GOLDEN_SERVER)
+
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                run_replay_proxy, *server_streams, store, GOLDEN_SERVER, tools_served, recorder.observe,
+                frozenset(), inverse_map,
+            )
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                await session.call_tool(call.tool_name, renamed_arguments)
+            tg.cancel_scope.cancel()
+    recorder.close()
+
+    new_records = list(read_session(next(runs_dir.glob("*.jsonl"))))
+    new_call = next(r for r in new_records if isinstance(r, ToolCall))
+    assert new_call.fault is False
+    assert new_call.match_tier == "inverse"
+
+
 # --- F-14/F-15: content_length reconstruction edge cases -------------------
 
 

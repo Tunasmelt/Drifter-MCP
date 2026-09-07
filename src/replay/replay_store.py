@@ -1,7 +1,10 @@
-"""Replay store (F-11 + F-13): docs/SPEC.md §7 tiers 1 (exact-key) and 3
-(semantic) — tier 2 (inverse-mutation, F-12) is still not implemented, since
-it needs a real mutation's recorded inverse to resolve against, matching
-this project's original Gate 2 scoping.
+"""Replay store (F-11 + F-13 + F-12): docs/SPEC.md §7's full three-tier
+scheme — exact-key, inverse-mutation, and semantic. F-12 was deferred at
+Gate 2 for exactly the reason its own docs/FEATURES.md entry states ("needs a
+real mutation's recorded inverse to resolve against") — built once
+`mutate.parameter_rename` (F-40) gave it one: `lookup`'s
+`inverse_param_map` parameter, populated by `replay/replay_proxy.py` from
+the active mutation's own `MutationLogEntry.inverse` mappings.
 
 Indexes every recorded `ToolCall` from one or more session JSONL files under
 `sha256(server + tool_name + canonical_json(args))`, so a later request with
@@ -36,7 +39,7 @@ from record.reader import read_session
 from record.redact import redact_secrets
 from record.schema import ToolCall
 
-MatchTier = Literal["exact", "semantic"]
+MatchTier = Literal["exact", "semantic", "inverse"]
 
 
 @dataclass(frozen=True)
@@ -137,18 +140,47 @@ class ReplayStore:
                     response, match_tier="semantic"
                 )
 
-    def lookup(self, server: str, tool_name: str, arguments: dict) -> RecordedResponse | None:
+    def lookup(
+        self,
+        server: str,
+        tool_name: str,
+        arguments: dict,
+        inverse_param_map: dict[str, str] | None = None,
+    ) -> RecordedResponse | None:
         """HIT (the recorded response) or MISS (`None`) — never raises
         for an unmatched key. See this module's docstring: MISS is
         ordinary here, not an error condition.
 
-        Tries the exact key first, since it's the higher-confidence tier
-        (docs/SPEC.md §7's ordering: exact, inverse, semantic, decreasing
-        specificity) — only falls back to the semantic key when the exact
-        key misses, never the reverse, so a tighter match available is
-        never discarded in favor of a looser one.
+        docs/SPEC.md §7's full three-tier ordering, decreasing specificity:
+        exact, inverse, semantic. Tries the exact key first (`arguments`
+        as given); only falls back to the next tier on a miss, never the
+        reverse, so a tighter match available is never discarded in favor
+        of a looser one.
+
+        `inverse_param_map` (F-12), if given, is `{new_param_name:
+        old_param_name}` for THIS tool under the currently-active
+        mutation (`mutate.parameter_rename`'s own inverse — the caller,
+        `replay/replay_proxy.py`, holds the per-tool mapping and passes
+        in only the slice relevant to `tool_name`; this class has no
+        mutation-specific knowledge itself, matching this project's
+        module dependency order — `replay/` is upstream of `mutate/`
+        and must not import from it). When given, a live call using the
+        NEW parameter name is translated back to the OLD name and looked
+        up again under the exact index — recovering the original,
+        pre-mutation key exactly, not a fuzzy approximation, which is
+        why an inverse hit gets the same full fidelity weight as an
+        exact one (`evaluate.baseline._run_fidelity`) despite being
+        reported as its own tier. A key in `arguments` that isn't in
+        `inverse_param_map` passes through unchanged — this only
+        reverses parameters that were actually renamed, not every
+        argument on the call.
         """
         exact_hit = self._index.get(replay_key(server, tool_name, arguments))
         if exact_hit is not None:
             return exact_hit
+        if inverse_param_map:
+            de_mutated_args = {inverse_param_map.get(k, k): v for k, v in arguments.items()}
+            inverse_hit = self._index.get(replay_key(server, tool_name, de_mutated_args))
+            if inverse_hit is not None:
+                return replace(inverse_hit, match_tier="inverse")
         return self._semantic_index.get(semantic_key(server, tool_name, arguments))

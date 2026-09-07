@@ -59,12 +59,13 @@ from mcp.server.stdio import stdio_server
 
 from cli.config import ConfigError
 from mutate.description_update import mutate_tool_manifest
+from mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
 from mutate.tool_addition import add_tool
 from record.writer import SessionRecorder
 from replay.replay_proxy import run_replay_proxy, tools_served_from_session
 from replay.replay_store import ReplayStore
 
-OPERATORS = ("description_update", "tool_addition")
+OPERATORS = ("description_update", "tool_addition", "parameter_rename")
 
 
 def run_replay_serve(
@@ -84,8 +85,12 @@ def run_replay_serve(
     original_tools = tools_served_from_session(fixture_path)
 
     synthetic_tool_names: frozenset[str] = frozenset()
+    inverse_map: dict[str, dict[str, str]] | None = None
     if operator == "description_update":
         tools_served, _log = mutate_tool_manifest(original_tools, seed=seed)
+    elif operator == "parameter_rename":
+        tools_served, log = rename_tool_parameters(original_tools, seed=seed)
+        inverse_map = inverse_map_from_log(log) or None
     elif operator == "tool_addition":
         new_tool, _entry = add_tool(original_tools, seed=seed)
         tools_served = [*original_tools, new_tool]
@@ -110,6 +115,7 @@ def run_replay_serve(
                     tools_served,
                     recorder.observe,
                     synthetic_tool_names,
+                    inverse_map,
                 )
 
         anyio.run(_main)

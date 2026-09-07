@@ -99,7 +99,9 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--server", required=True, help="Server name the fixture session was recorded against")
     run_parser.add_argument("--task-id", default="task", help="Label for this task (no task-definition system exists yet — see cli/run.py)")
     run_parser.add_argument("--prompt", default="", help="Substituted into agent.command's {task.prompt} token")
-    run_parser.add_argument("--operator", choices=["description_update", "tool_addition"], default="description_update")
+    run_parser.add_argument(
+        "--operator", choices=["description_update", "tool_addition", "parameter_rename"], default="description_update"
+    )
     run_parser.add_argument("--runs-dir", type=Path, default=None, help="Where to write new session JSONL, bypassing drifter.yaml")
     run_parser.add_argument("--seed", type=int, default=42, help="Mutation seed (reproducible)")
     run_parser.add_argument("--repeats", type=int, default=None, help="Overrides calibration.yaml's baseline.repeats")
@@ -127,7 +129,12 @@ def _build_parser() -> argparse.ArgumentParser:
     replay_serve_parser.add_argument("--server", required=True, help="Server name the fixture session was recorded against")
     replay_serve_parser.add_argument("--runs-dir", type=Path, default=Path(".drifter/runs"), help="Where to write the new recorded session JSONL")
     replay_serve_parser.add_argument("--raw-dir", type=Path, default=None, help="Defaults to <runs-dir>/../raw")
-    replay_serve_parser.add_argument("--mutate", choices=["description_update", "tool_addition"], default=None, help="Apply a mutation operator before serving (omit for baseline)")
+    replay_serve_parser.add_argument(
+        "--mutate",
+        choices=["description_update", "tool_addition", "parameter_rename"],
+        default=None,
+        help="Apply a mutation operator before serving (omit for baseline)",
+    )
     replay_serve_parser.add_argument("--seed", type=int, default=42, help="Mutation seed (reproducible)")
 
     return parser

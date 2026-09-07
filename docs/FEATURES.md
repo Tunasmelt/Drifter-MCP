@@ -26,10 +26,10 @@ table and docs/PHASES.md for gate-level narrative.
 | F-09 | `drifter observe` | ⚠️ Built, known gap | §15 limitation 9 — Ctrl+C doesn't wait for/terminate the real spawned server. A second gap (a bad server command crashed with a raw traceback instead of an actionable error, unlike `drifter doctor`) was found and FIXED during the same edge-case pass — see docs/CHANGELOG.md |
 | F-10 | `drifter stats` | ✅ Built | Retry detection compares stored (already-redacted) arguments — previously two different real secrets redacted identically and were misdetected as a retry; fixed by making the redaction marker a deterministic hash of the matched value (record/redact.py) instead of a fixed placeholder, so different secrets now redact differently while the same secret still redacts identically (required for both retry detection and F-11's replay matching) |
 | F-11 | Replay store | ⚠️ Built, exact-key only | Tier-3 finding (PHASES.md Gate 3) — may not be viable against any real agent alone. Multi-session merging, cross-file last-writer-wins, fault/null-shape hits, and nested-key canonicalization now directly tested |
-| F-12 | Inverse-mutation key resolution | ⚠️ Stub only | Never implemented past the Gate 2 stub — **needs building** if tier 2 replay is ever exercised for real |
+| F-12 | Inverse-mutation key resolution | ✅ Built | Built alongside F-40 (`parameter_rename`), which gave it the first real mutation with a real inverse to resolve against — `ReplayStore.lookup`'s new `inverse_param_map` parameter |
 | F-13 | Semantic key resolution | ✅ Built | Falls back to a sorted-value-multiset match when exact misses, only when exact misses. Fidelity gating (F-15) now weights a semantic hit at `semantic_weight` (0.8) instead of full 1.0 — see F-15's own row |
 | F-14 | Synthetic response generation | ⚠️ Scoped to `tool_addition` only | General schema-inference synthesis explicitly out of scope; deliberate |
-| F-15 | Fidelity computation and gating | ✅ Built | Gate 2; tier-weighting (exact=1.0, semantic=`semantic_weight`) wired up once F-13 gave `ToolCall` a `match_tier` field to read |
+| F-15 | Fidelity computation and gating | ✅ Built | Gate 2; tier-weighting (exact=1.0, inverse=1.0, semantic=`semantic_weight`) wired up once F-13/F-12 gave `ToolCall` a `match_tier` field with all three tiers reachable |
 | F-16 | `description_update` | ⚠️ Built, one known gap (one fixed) | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it, still open. The other known gap (ALL-CAPS source words losing case class, e.g. "GET" → "Obtain" instead of "OBTAIN") is fixed — case class (all-caps/title-case/lowercase) is now preserved, not just the first letter |
 | F-17 | `tool_addition` | ✅ Built | Gate 3, safety-reviewed |
 | F-18 | Mutation audit log | ⚠️ Minimal shared shape, deliberate | Not F-18's own eventual general log format — see `description_update.py`'s docstring |
@@ -54,6 +54,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-37 | `drifter doctor` | ⚠️ Gate 1 scope + F-38's http check + F-26 classification | Surfaces unresolved classifications as `[WARN]`, not yet a hard live-mode gate (F-31/F-32 don't exist to gate against) |
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
+| F-40 | `parameter_rename` mutation operator | ✅ Built | `mutate/parameter_rename.py` — the third Level 0/1 operator, added specifically to give F-12 a real inverse to resolve against (neither F-16 nor F-17 can: schema-immune / no prior recording respectively). Closed-set, deterministic snake_case→camelCase, exactly one property per tool |
 
 **Priority order for what to build next**, per docs/PHASES.md's own v1 ordering and the
 dependency chain above (not a re-ranking, just made explicit in one place):
@@ -264,7 +265,21 @@ translates it back to the old name so the original recording still matches.
 
 **Depends on:** F-11, `mutate/` operator definitions (F-20+) providing an inverse.
 **Done when:** a `parameter_rename` mutation test produces HIT (inverse) rather than
-MISS on all previously-recorded call shapes.
+MISS on all previously-recorded call shapes. **Built** (docs/CHANGELOG.md), together with
+F-40 (`mutate/parameter_rename.py`) — the depends-on above sat unmet from Gate 2 through
+this point for exactly the stated reason: neither F-16 (`description_update`, schema-
+immune) nor F-17 (`tool_addition`, no prior recording to invert against) can ever produce
+a real inverse, so F-12 had nothing to resolve against until a third operator that could.
+`ReplayStore.lookup` gained an `inverse_param_map: dict[str, str] | None` parameter — a
+live call's arguments are translated `{new_name: old_name}` and looked up again under the
+exact index on an initial exact miss, before falling to semantic (docs/SPEC.md §7's
+ordering: exact, inverse, semantic). Tagged `match_tier="inverse"` and given the same
+full fidelity weight as `"exact"` (`evaluate/baseline.py`'s `_run_fidelity`) — not
+discounted like semantic — since it recovers the exact original call under a known,
+deterministic transformation, not an approximation. Confirmed end to end through the
+real proxy (`tests/replay/test_replay_proxy.py`'s
+`test_an_inverse_map_hit_is_recorded_with_match_tier_inverse`), not just at the
+`ReplayStore` unit level.
 
 ### F-13 Semantic key resolution
 
@@ -321,7 +336,8 @@ each call. A confirmed hit (`fault is False`) with `match_tier is None` — a re
 from before this field existed — is treated as `"exact"`, not unknown: every tier
 besides `"exact"` postdates this field's own introduction, so that's the verified-
 correct reading of old data, not a risky assumption (see `ToolCall.match_tier`'s
-own docstring). Inverse (tier 2, F-12) stays at 0 — still unbuilt.
+own docstring). Inverse (tier 2, F-12) is now reachable too, as of F-40 — weighted at
+the same full 1.0 as exact, not discounted like semantic (see F-12's own entry above).
 
 **Simple:** Drifter grades its own homework before trusting its answer. If it had to
 guess too much during a test, it says "I don't know" instead of reporting a fake
@@ -429,6 +445,30 @@ by an active mutation — locked in by
 `test_replay_proxy_module_imports_nothing_capable_of_a_live_forward`
 (`tests/replay/test_replay_proxy.py`), which inspects the module's own imports rather
 than relying on a fixture never happening to exercise a future live path.
+
+### F-40 Mutation operator: parameter_rename
+
+**Technical:** Renames exactly one JSON-Schema top-level property per tool from
+snake_case to camelCase (`customer_id` → `customerId`, docs/SPEC.md §13's own
+illustrative report example), updating `required` in lockstep. Deterministic given
+only the schema (alphabetically-first eligible property, seed selects nothing — there's
+only one correct choice once eligibility is decided) and closed-set — a pure, mechanical
+string rule, not chosen content, so unlike F-16/F-17 there is no table/pool to
+safety-review. Tool name, description, and every other property are untouched.
+
+**Simple:** Renames one input field the way a schema refactor might (`customer_id`
+becomes `customerId`), so Drifter can test whether an agent still calls the tool
+correctly when a parameter's name changes but its meaning doesn't.
+
+**Depends on:** none (pure function over the manifest, same shape as F-16). Built
+specifically to give F-12 a real inverse to resolve against — neither F-16
+(schema-immune) nor F-17 (no prior recording to invert against) can.
+**Done when:** a renamed parameter's `MutationLogEntry.inverse` (`{new_name: old_name}`)
+correctly feeds `ReplayStore.lookup`'s `inverse_param_map`, resolving a live call using
+the new name as a `match_tier="inverse"` HIT rather than MISS — confirmed by
+`tests/replay/test_replay_proxy.py`'s
+`test_an_inverse_map_hit_is_recorded_with_match_tier_inverse` through the real proxy, not
+just at the operator's own unit-test level (`tests/mutate/test_parameter_rename.py`).
 
 ---
 

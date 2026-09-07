@@ -62,6 +62,7 @@ from cli.subprocess_adapter import make_run_once
 from evaluate.baseline import run_baseline
 from evaluate.effect_size import compute_behavior_effect_size
 from mutate.description_update import mutate_tool_manifest
+from mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
 from mutate.tool_addition import add_tool
 from policy.blast_radius import compute_blast_radius, render_blast_radius
 from policy.budget import BudgetTracker, budget_limited
@@ -70,7 +71,7 @@ from record.calibration import Calibration, load_calibration
 from replay.replay_proxy import tools_served_from_session
 from replay.replay_store import ReplayStore
 
-OPERATORS = ("description_update", "tool_addition")
+OPERATORS = ("description_update", "tool_addition", "parameter_rename")
 
 DEFAULT_TIMEOUT_S = 60.0
 
@@ -154,11 +155,24 @@ def run_mutation_comparison(
     if operator == "description_update":
         mutated_tools, mutation_log = mutate_tool_manifest(original_tools, seed=seed)
         synthetic_tool_names: frozenset[str] = frozenset()
+    elif operator == "parameter_rename":
+        mutated_tools, mutation_log = rename_tool_parameters(original_tools, seed=seed)
+        synthetic_tool_names = frozenset()
     else:
         new_tool, entry = add_tool(original_tools, seed=seed)
         mutated_tools = [*original_tools, new_tool]
         mutation_log = [entry]
         synthetic_tool_names = frozenset({new_tool.name})
+
+    # F-12: only parameter_rename ever produces a real inverse mapping
+    # (description_update/tool_addition's own MutationLogEntry.inverse is
+    # always None) — inverse_map_from_log handles that generically, so
+    # this line doesn't need an operator-specific branch. Only the MUTATED
+    # arm's replay resolution needs it: the baseline arm serves the
+    # ORIGINAL, un-renamed manifest, so its calls already match the
+    # recording under their original parameter names with no translation
+    # needed.
+    inverse_map = inverse_map_from_log(mutation_log) or None
 
     mutated_run_once = budget_limited(
         make_run_once(
@@ -172,6 +186,7 @@ def run_mutation_comparison(
             synthetic_tool_names=synthetic_tool_names,
             agent_mode=agent_mode,
             env_var=agent_env_var,
+            inverse_map=inverse_map,
         ),
         tracker,
     )

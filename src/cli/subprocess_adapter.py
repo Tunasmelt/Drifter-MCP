@@ -125,6 +125,7 @@ def make_run_once(
     synthetic_tool_names: frozenset[str] = frozenset(),
     agent_mode: str = "subprocess",
     env_var: str = "DRIFTER_PROXY_URL",
+    inverse_map: dict[str, dict[str, str]] | None = None,
 ):
     """Binds `run_agent_subprocess`'s (or, for `agent_mode="http"`,
     `run_agent_subprocess_http`'s — F-38) fixed parameters once and
@@ -134,6 +135,12 @@ def make_run_once(
     returns its session JSONL path. `agent_mode`/`env_var` mirror
     `cli.config.AgentConfig`'s own fields; this function still takes
     already-resolved values, not a config object (see point 1 below).
+
+    `inverse_map` (F-12) passes straight through to `run_replay_proxy`/
+    `serve_replay_over_http`, mirroring exactly how `synthetic_tool_names`
+    is threaded — see those functions' own docstrings for what it does.
+    `None` (the default) reproduces pre-F-12 behavior exactly: exact-then-
+    semantic resolution only.
 
     Module placement: docs/FEATURES.md names neither this function nor a
     dedicated composition step. F-34 (this module) is the adapter in
@@ -198,6 +205,7 @@ def make_run_once(
                 timeout_s,
                 synthetic_tool_names,
                 env_var,
+                inverse_map,
             )
         return anyio.run(
             run_agent_subprocess,
@@ -211,6 +219,7 @@ def make_run_once(
             cwd,
             timeout_s,
             synthetic_tool_names,
+            inverse_map,
         )
 
     return run_once
@@ -267,6 +276,7 @@ async def run_agent_subprocess(
     cwd: Path | None = None,
     timeout_s: float | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
+    inverse_map: dict[str, dict[str, str]] | None = None,
 ) -> Path:
     """Spawns `command` (an already-resolved argv — templating and
     config-loading are the caller's job, see module docstring point 1),
@@ -304,6 +314,7 @@ async def run_agent_subprocess(
                 tools_served,
                 recorder.observe,
                 synthetic_tool_names,
+                inverse_map,
             )
 
             with anyio.move_on_after(timeout_s):
@@ -363,6 +374,7 @@ async def run_agent_subprocess_http(
     timeout_s: float | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
     env_var: str = "DRIFTER_PROXY_URL",
+    inverse_map: dict[str, dict[str, str]] | None = None,
 ) -> Path:
     """The `mode: http` sibling of `run_agent_subprocess` (F-38, docs/SPEC.md
     §5.1): instead of wiring the spawned agent's own stdin/stdout to an
@@ -388,7 +400,7 @@ async def run_agent_subprocess_http(
     stdout_chunks: list[str] = []
 
     async with serve_replay_over_http(
-        replay_store, server_name, tools_served, recorder.observe, synthetic_tool_names
+        replay_store, server_name, tools_served, recorder.observe, synthetic_tool_names, inverse_map
     ) as url:
         # Found empirically, not assumed: passing env=None straight
         # through to anyio.open_process (as run_agent_subprocess's own

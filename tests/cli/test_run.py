@@ -422,6 +422,47 @@ def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_over
     assert forced_destructive in output
 
 
+def test_run_mutation_comparison_parameter_rename_end_to_end(tmp_path):
+    """parameter_rename (F-40) wired all the way through cli/run.py's real
+    orchestration -- confirms the new operator branch, and
+    inverse_map_from_log feeding make_run_once's own new inverse_map
+    parameter, don't crash the pipeline. The golden fixture's real tools
+    (filesystem server) happen to have no snake_case properties (verified
+    directly, not assumed), so this exercises the "nothing eligible to
+    rename" path at full orchestration scale -- an honest NO_REGRESSION
+    for the same reason description_update's own end-to-end test is:
+    nothing changed, so nothing should. F-12's actual inverse-tier
+    resolution mechanism is confirmed separately and more precisely by
+    tests/replay/test_replay_proxy.py's
+    test_an_inverse_map_hit_is_recorded_with_match_tier_inverse, which
+    controls the schema directly rather than depending on golden-fixture
+    content.
+    """
+    calls = _golden_calls()[:3]
+    command = [sys.executable, str(SCRIPTED_AGENT), *(_spec(c.tool_name, c.arguments) for c in calls)]
+
+    result = run_mutation_comparison(
+        task_id="param_rename_task",
+        prompt="",
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        agent_command=command,
+        operator="parameter_rename",
+        session_dir=tmp_path / "runs",
+        raw_dir=tmp_path / "raw",
+        repeats=2,
+        timeout_s=30.0,
+    )
+
+    assert result.baseline.has_data is True
+    assert result.mutated.has_data is True
+    assert result.effect.verdict == "NO_REGRESSION"
+    assert len(result.mutation_log) == len(tools_served_from_session(GOLDEN_FIXTURE))
+    # No golden-fixture tool has an eligible snake_case property -- every
+    # entry's inverse must honestly report None, not a fabricated rename.
+    assert all(entry.inverse is None for entry in result.mutation_log)
+
+
 # --- real end-to-end: agent.mode: http (F-38) --------------------------------
 
 

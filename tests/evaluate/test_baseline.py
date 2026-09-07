@@ -653,6 +653,20 @@ def test_an_all_exact_run_still_has_fidelity_one(tmp_path):
     assert result.baseline_fidelity == 1.0
 
 
+def test_an_inverse_hit_gets_full_weight_same_as_exact_not_discounted(tmp_path):
+    """F-12/F-40's own consequence for fidelity: docs/SPEC.md §7's formula
+    groups exact and inverse together at full weight, unlike semantic --
+    an inverse resolution recovers the exact original recorded call under
+    a known, deterministic rename, not an approximation. One exact + one
+    inverse hit must average to 1.0, not the 0.9 a semantic-style
+    discount would (incorrectly) produce."""
+    path = _write_session_with_tiers(tmp_path, "sess_inverse_full_weight", [("a", "exact"), ("b", "inverse")])
+    paths = iter([path])
+    result = run_baseline("task_inverse_weight", run_once=lambda: next(paths), repeats=1)
+
+    assert result.baseline_fidelity == 1.0
+
+
 def test_a_session_of_only_synthetic_calls_has_vacuous_fidelity_one(tmp_path):
     path = _write_session_with_provenance(tmp_path, "sess_all_synthetic", [("added_tool", "synthetic")])
     paths = iter([path])
@@ -727,7 +741,7 @@ def test_provenance_breakdown_categorizes_every_call_into_exactly_one_bucket(tmp
     result = run_baseline("task_provenance", run_once=lambda: next(paths), repeats=1)
 
     assert result.has_data is True  # fidelity is 3/4 = 0.75, above the 0.70 floor
-    assert result.provenance_breakdown == {"exact": 2, "semantic": 1, "synthetic": 1, "unresolved": 1}
+    assert result.provenance_breakdown == {"exact": 2, "inverse": 0, "semantic": 1, "synthetic": 1, "unresolved": 1}
 
 
 def test_provenance_breakdown_merges_counts_across_multiple_valid_runs(tmp_path):
@@ -737,7 +751,7 @@ def test_provenance_breakdown_merges_counts_across_multiple_valid_runs(tmp_path)
 
     result = run_baseline("task_provenance_merge", run_once=lambda: next(paths), repeats=2)
 
-    assert result.provenance_breakdown == {"exact": 1, "semantic": 1, "synthetic": 0, "unresolved": 0}
+    assert result.provenance_breakdown == {"exact": 1, "inverse": 0, "semantic": 1, "synthetic": 0, "unresolved": 0}
 
 
 def test_provenance_breakdown_excludes_calls_from_runs_that_were_themselves_excluded(tmp_path):
@@ -751,7 +765,7 @@ def test_provenance_breakdown_excludes_calls_from_runs_that_were_themselves_excl
     result = run_baseline("task_provenance_exclusion", run_once=lambda: next(paths), repeats=2)
 
     assert len(result.excluded_runs) == 1
-    assert result.provenance_breakdown == {"exact": 1, "semantic": 0, "synthetic": 0, "unresolved": 0}
+    assert result.provenance_breakdown == {"exact": 1, "inverse": 0, "semantic": 0, "synthetic": 0, "unresolved": 0}
 
 
 def test_provenance_breakdown_is_none_when_no_run_is_valid(tmp_path):

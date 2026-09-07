@@ -398,3 +398,106 @@ def test_semantic_match_on_the_golden_fixture_resolves_a_renamed_argument():
         hit = store.lookup(call.server, call.tool_name, renamed_arguments)
         assert hit is not None
         assert hit.match_tier == "semantic"
+
+
+# --- F-12: inverse-mutation key resolution ----------------------------------
+
+
+def test_a_renamed_parameter_resolves_via_inverse_when_the_map_is_given(tmp_path):
+    """F-12's own docs/FEATURES.md 'Done when' bar: a parameter_rename
+    mutation test produces HIT (inverse) rather than MISS on a previously-
+    recorded call shape. Same live-call-uses-the-new-name scenario as
+    F-13's own semantic test above, but here the caller (replay_proxy.py,
+    standing in for it) supplies the exact inverse mapping a real
+    mutate.parameter_rename operator would have produced."""
+    from record.proxy import Direction
+    from record.writer import SessionRecorder
+    from mcp.shared.message import SessionMessage
+    from mcp_types import JSONRPCRequest, JSONRPCResponse
+
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name="crm", session_id="sess_inverse")
+    request = JSONRPCRequest(
+        jsonrpc="2.0", id=1, method="tools/call", params={"name": "get_customer", "arguments": {"customer_id": 42}}
+    )
+    response = JSONRPCResponse(jsonrpc="2.0", id=1, result={"content": [{"type": "text", "text": "x"}]})
+    recorder.observe(Direction.AGENT_TO_SERVER, SessionMessage(request))
+    recorder.observe(Direction.SERVER_TO_AGENT, SessionMessage(response))
+    recorder.close()
+
+    store = ReplayStore()
+    store.index_session(recorder.jsonl_path)
+
+    hit = store.lookup("crm", "get_customer", {"customerId": 42}, inverse_param_map={"customerId": "customer_id"})
+    assert hit is not None
+    assert hit.match_tier == "inverse"
+    assert hit.result_shape is not None
+
+
+def test_inverse_is_tried_before_semantic_but_after_exact():
+    """docs/SPEC.md §7's ordering, confirmed for all three tiers at once:
+    build a store where exact, inverse, AND semantic could each
+    plausibly resolve the same lookup differently, and confirm the
+    tightest available tier always wins."""
+    store = ReplayStore()
+    # An exact hit for the RAW (unmutated) key -- should win outright,
+    # inverse_param_map never even needs to be consulted.
+    store._index[replay_key("srv", "tool", {"a": 1})] = RecordedResponse(
+        result_shape={"type": "object", "keys": ["one"]}, is_error=False, fault=False, match_tier="exact"
+    )
+    hit = store.lookup("srv", "tool", {"a": 1}, inverse_param_map={"a": "b"})
+    assert hit.match_tier == "exact"
+    assert hit.result_shape == {"type": "object", "keys": ["one"]}
+
+
+def test_inverse_lookup_only_translates_keys_present_in_the_map():
+    """A live call's arguments can contain keys the mutation never
+    touched (only one property is renamed per tool, mutate.
+    parameter_rename's own scope) -- those must pass through unchanged,
+    not be dropped or corrupted by inverse translation."""
+    store = ReplayStore()
+    store._index[replay_key("srv", "tool", {"customer_id": 42, "verbose": True})] = RecordedResponse(
+        result_shape={"type": "object", "keys": []}, is_error=False, fault=False, match_tier="exact"
+    )
+    hit = store.lookup(
+        "srv", "tool", {"customerId": 42, "verbose": True}, inverse_param_map={"customerId": "customer_id"}
+    )
+    assert hit is not None
+    assert hit.match_tier == "inverse"
+
+
+def test_no_inverse_map_falls_straight_through_to_semantic_unchanged():
+    """Passing inverse_param_map=None (the default) must reproduce pre-
+    F-12 lookup behavior exactly -- confirms this feature is additive,
+    never a regression for the two operators with no inverse."""
+    store = ReplayStore()
+    store._semantic_index[semantic_key("srv", "tool", {"a": 1})] = RecordedResponse(
+        result_shape={"type": "object", "keys": []}, is_error=False, fault=False, match_tier="semantic"
+    )
+    hit = store.lookup("srv", "tool", {"different_name": 1})
+    assert hit is not None
+    assert hit.match_tier == "semantic"
+
+
+def test_inverse_map_given_but_this_tool_has_no_entry_falls_through_to_semantic():
+    store = ReplayStore()
+    store._semantic_index[semantic_key("srv", "other_tool", {"a": 1})] = RecordedResponse(
+        result_shape={"type": "object", "keys": []}, is_error=False, fault=False, match_tier="semantic"
+    )
+    hit = store.lookup("srv", "other_tool", {"different_name": 1}, inverse_param_map=None)
+    assert hit is not None
+    assert hit.match_tier == "semantic"
+
+
+def test_inverse_exact_miss_still_falls_through_to_semantic():
+    """The inverse-translated key misses the EXACT index -- must not give
+    up there; falls to the loosest tier, same as an ordinary exact miss
+    does. Semantic matches on raw argument VALUES regardless of name, so
+    it can still resolve this even when inverse (name-based) can't."""
+    store = ReplayStore()
+    store._semantic_index[semantic_key("srv", "tool", {"customer_id": 42})] = RecordedResponse(
+        result_shape={"type": "object", "keys": []}, is_error=False, fault=False, match_tier="semantic"
+    )
+    hit = store.lookup("srv", "tool", {"customerId": 42}, inverse_param_map={"customerId": "customer_id"})
+    assert hit is not None
+    assert hit.match_tier == "semantic"

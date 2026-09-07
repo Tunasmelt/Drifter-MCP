@@ -234,6 +234,7 @@ def build_replay_server(
     tools_served: list[ToolDescriptor],
     on_message: MessageObserver | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
+    inverse_map: dict[str, dict[str, str]] | None = None,
 ) -> Server:
     """Builds the `mcp.server.lowlevel.Server` app that answers a session
     entirely from `replay_store`/`tools_served` — extracted out of
@@ -330,7 +331,12 @@ def build_replay_server(
             JSONRPCRequest(jsonrpc="2.0", id=req_id, method="tools/call", params={"name": params.name, "arguments": arguments}),
         )
 
-        hit = replay_store.lookup(server_name, params.name, arguments)
+        # F-12: only the slice of inverse_map relevant to THIS tool is
+        # passed down -- replay_store.lookup has no mutation-specific
+        # knowledge of its own (see its own docstring), it just applies
+        # whatever {new_name: old_name} mapping it's handed.
+        param_map = inverse_map.get(params.name) if inverse_map else None
+        hit = replay_store.lookup(server_name, params.name, arguments, param_map)
         if hit is None:
             if params.name in synthetic_tool_names:
                 result = _synthesize_added_tool_result()
@@ -367,6 +373,7 @@ async def run_replay_proxy(
     tools_served: list[ToolDescriptor],
     on_message: MessageObserver | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
+    inverse_map: dict[str, dict[str, str]] | None = None,
 ) -> None:
     """Serves one MCP session over `read_stream`/`write_stream` entirely
     from `replay_store` and `tools_served`. Stream-parameterized (matching
@@ -425,10 +432,15 @@ async def run_replay_proxy(
     `initialize`+`tools/list` synthesis; MISS and replayed-fault both
     recorded as `fault=True`).
 
+    `inverse_map` (F-12), if given, is `{tool_name: {new_param_name:
+    old_param_name}}` for the active mutation — see `ReplayStore.lookup`'s
+    own docstring for what this does. `None`/absent tools skip straight to
+    exact-then-semantic resolution, matching pre-F-12 behavior exactly.
+
     A thin wrapper as of F-38: all the actual response logic lives in
     `build_replay_server`, above, so an HTTP-serving caller can host the
     same app across many connections instead of one `server.run()` per
     stream pair.
     """
-    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names)
+    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map)
     await server.run(read_stream, write_stream, server.create_initialization_options())

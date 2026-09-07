@@ -55,16 +55,14 @@ ResultProvenance = Literal["real", "synthetic"]
 # leaks into a recorded ToolCall's own shape as if it were a real field.
 SYNTHETIC_RESULT_MARKER_KEY = "_drifter_result_provenance"
 
-# docs/SPEC.md §7's three-tier replay key scheme. Only "exact" and
-# "semantic" are reachable today (tier 2, inverse-mutation/F-12, is still
-# unbuilt) -- kept as a 2-value Literal rather than a 3-value one with an
-# unreachable branch, so a type checker can't be satisfied by code that
-# silently never handles "inverse". Duplicated here rather than imported
-# from replay/replay_store.py's own MatchTier: record/ is upstream of
-# replay/ in this project's module dependency order (CLAUDE.md), so
-# schema.py cannot import from replay/ without inverting that order. Keep
-# both definitions in sync by hand if a third tier is ever built.
-MatchTier = Literal["exact", "semantic"]
+# docs/SPEC.md §7's three-tier replay key scheme -- all three now reachable
+# (F-12/inverse-mutation, F-40's parameter_rename, docs/CHANGELOG.md).
+# Duplicated here rather than imported from replay/replay_store.py's own
+# MatchTier: record/ is upstream of replay/ in this project's module
+# dependency order (CLAUDE.md), so schema.py cannot import from replay/
+# without inverting that order. Keep both definitions in sync by hand if a
+# fourth tier is ever built.
+MatchTier = Literal["exact", "semantic", "inverse"]
 
 # Same pattern as SYNTHETIC_RESULT_MARKER_KEY above, for the same reason:
 # replay_proxy.py's on_call_tool knows which tier resolved a HIT

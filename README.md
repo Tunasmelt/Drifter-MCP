@@ -37,10 +37,12 @@ agent ──MCP──▶ drifter (replayed, mutated)        (drifter replay-serv
 2. **Replay** — an already-recorded session becomes a offline stand-in for the real
    server: exact-match tool calls resolve instantly from the recording, for free,
    with no live connection and no API cost.
-3. **Mutate** — two structural operators, both closed-set and reviewed as data, never
-   free-text generation: `description_update` (bounded synonym substitution and
-   sentence reordering) and `tool_addition` (a small, fixed pool of generic tool
-   archetypes). Neither touches a tool's name or schema.
+3. **Mutate** — three structural operators, all closed-set: `description_update`
+   (bounded synonym substitution and sentence reordering, never touches a tool's
+   name or schema), `tool_addition` (a small, fixed pool of generic tool
+   archetypes), and `parameter_rename` (renames one input parameter, snake_case to
+   camelCase — Drifter still recognizes the resulting call via inverse-mutation key
+   resolution, so replay keeps working even though the schema changed).
 4. **Evaluate** — runs your agent against the same task through the unmutated and
    mutated manifests, and compares the resulting behavior. A verdict defaults to
    `UNKNOWN`, never a false pass, when there isn't enough data to say more.
@@ -54,9 +56,9 @@ Gates 0–3 are closed:
   segmentation) — built and tested.
 - **Baseline analysis & re-scoring** (`drifter score`) — re-analyzes already-recorded
   data with zero new agent execution and zero API calls.
-- **Mutation** (`description_update`, `tool_addition`) — built, safety-reviewed
-  (red-test-first against prompt-injection-shaped output), tested against a real
-  agent.
+- **Mutation** (`description_update`, `tool_addition`, `parameter_rename`) — built,
+  safety-reviewed (red-test-first against prompt-injection-shaped output), tested
+  against a real agent.
 - **Orchestration** (`drifter run`) — baseline + one mutation operator + behavioral
   comparison, run against a real dogfood pairing (Claude Code + a real filesystem MCP
   server).

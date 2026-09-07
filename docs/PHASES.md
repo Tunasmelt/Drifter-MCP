@@ -826,7 +826,10 @@ encountered yet; no current consumer needs it.
   `calibration.yaml`/`fidelity_floor` footnote from docs/SPEC.md §13's
   illustrative CONFIDENCE block is separate, still-unbuilt scope — this closed
   the provenance-breakdown half specifically, not the whole section.
-- Remaining Level 0–1 mutation operators beyond the two shipped in Gate 3
+- ~~Remaining Level 0–1 mutation operators beyond the two shipped in Gate 3~~ —
+  built: `parameter_rename` (F-40, docs/CHANGELOG.md), which also finally gave F-12
+  (inverse-mutation key resolution — sat as an unbuilt stub since Gate 2) a real
+  inverse to resolve against.
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
   candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be
   hand-written; mining matters once there's a real multi-week corpus

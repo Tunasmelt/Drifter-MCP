@@ -214,15 +214,13 @@ class BaselineResult:
     # only (matching baseline_fidelity's own "computed over valid_runs"
     # scope) -- counts, not percentages, so a report can compute its own
     # denominator rather than trusting a pre-divided float. Keys are
-    # "exact"/"semantic" (docs/SPEC.md §7's two currently-reachable replay
-    # tiers -- "inverse" is F-12, still unbuilt, and deliberately absent
-    # here rather than always-0 fake precision), "synthetic"
-    # (tool_addition's fixed placeholder responses, excluded from fidelity
-    # itself but real calls that happened), and "unresolved" (a replay MISS
-    # or protocol fault -- see `_run_fidelity`'s own docstring for why
-    # these can't be told apart from each other by this field alone).
-    # `None` exactly when `valid_runs == 0`, same convention as the other
-    # fields above.
+    # "exact"/"inverse"/"semantic" (docs/SPEC.md §7's three replay tiers,
+    # all reachable as of F-12/F-40), "synthetic" (tool_addition's fixed
+    # placeholder responses, excluded from fidelity itself but real calls
+    # that happened), and "unresolved" (a replay MISS or protocol fault --
+    # see `_run_fidelity`'s own docstring for why these can't be told
+    # apart from each other by this field alone). `None` exactly when
+    # `valid_runs == 0`, same convention as the other fields above.
     provenance_breakdown: dict[str, int] | None = None
 
     @property
@@ -262,30 +260,35 @@ def _tool_path(records: list) -> tuple[str, ...]:
 
 
 def _run_fidelity(records: list, semantic_weight: float = 1.0) -> float:
-    """`(exact_hits + semantic_weight * semantic_hits) / total_attempted_calls`
-    for one session's ToolCall records — docs/SPEC.md §7's formula, minus the
-    `inverse` term (F-12 is still unbuilt, so it's always 0). `fault is
-    False` is the only "confirmed hit" signal — a replay MISS or a replayed
-    protocol fault are both recorded as `fault=True` (replay_proxy.py's own
-    deliberate, documented choice: both look identical on the wire, so both
-    are recorded identically), and `fault is None` (a legacy pre-v1.0.10
-    corpus, not something a freshly replay-served run ever produces) is
-    treated as "not a confirmed hit" too — conservative, matching this
-    project's nullable-field discipline rather than assuming an unknown
-    fault status was fine.
+    """`(exact_hits + inverse_hits + semantic_weight * semantic_hits) /
+    total_attempted_calls` for one session's ToolCall records — docs/SPEC.md
+    §7's formula, in full as of F-12/F-40 (both `exact` and `inverse` are
+    now reachable). `fault is False` is the only "confirmed hit" signal —
+    a replay MISS or a replayed protocol fault are both recorded as
+    `fault=True` (replay_proxy.py's own deliberate, documented choice:
+    both look identical on the wire, so both are recorded identically),
+    and `fault is None` (a legacy pre-v1.0.10 corpus, not something a
+    freshly replay-served run ever produces) is treated as "not a
+    confirmed hit" too — conservative, matching this project's nullable-
+    field discipline rather than assuming an unknown fault status was fine.
 
     Among confirmed hits, `match_tier` (F-13/F-15, docs/CHANGELOG.md) decides
-    the weight: `"exact"` is full weight (1.0), `"semantic"` gets
-    `semantic_weight` (`calibration.yaml`'s `semantic_weight`, 0.8 by
-    default — passed in by the caller, not read from calibration directly,
-    matching this function's existing "caller owns configuration" shape).
-    `match_tier is None` on a confirmed hit is treated as `"exact"`, NOT as
-    unknown/excluded — see `ToolCall.match_tier`'s own docstring: every tier
-    besides `"exact"` postdates this field's own introduction, so a
-    confirmed hit recorded before the field existed structurally cannot
-    have been anything but an exact-tier hit. This is the one nullable-field
-    case in this project where `None` does NOT mean "conservatively treat as
-    unknown" — confirmed by
+    the weight: `"exact"` and `"inverse"` are both full weight (1.0) —
+    docs/SPEC.md §7's own formula groups them together, since an inverse
+    resolution recovers the exact original recorded call under a known,
+    deterministic transformation rather than approximating it, so it
+    carries the same confidence as an exact hit despite being tracked as
+    its own tier for reporting (`BaselineResult.provenance_breakdown`).
+    `"semantic"` gets `semantic_weight` (`calibration.yaml`'s
+    `semantic_weight`, 0.8 by default — passed in by the caller, not read
+    from calibration directly, matching this function's existing "caller
+    owns configuration" shape). `match_tier is None` on a confirmed hit is
+    treated as `"exact"`, NOT as unknown/excluded — see `ToolCall.
+    match_tier`'s own docstring: every tier besides `"exact"` postdates
+    this field's own introduction, so a confirmed hit recorded before the
+    field existed structurally cannot have been anything but an exact-tier
+    hit. This is the one nullable-field case in this project where `None`
+    does NOT mean "conservatively treat as unknown" — confirmed by
     `tests/evaluate/test_baseline.py`'s
     `test_a_pre_field_hit_with_no_recorded_tier_is_treated_as_exact_not_unknown`.
 
@@ -315,15 +318,17 @@ def _run_fidelity(records: list, semantic_weight: float = 1.0) -> float:
     return weighted_hits / len(calls)
 
 
+_PROVENANCE_BUCKETS = ("exact", "inverse", "semantic", "synthetic", "unresolved")
+
+
 def _provenance_counts(records: list) -> dict[str, int]:
     """Categorizes every `ToolCall` in `records` into exactly one of
-    `BaselineResult.provenance_breakdown`'s four buckets — see that
-    field's own docstring for what each means and why "inverse" isn't
-    one of them yet. Synthetic calls are checked first since
-    `result_provenance` and `match_tier` are otherwise independent
-    fields (a synthetic call has no `match_tier` at all — it never went
-    through `ReplayStore.lookup`)."""
-    counts = {"exact": 0, "semantic": 0, "synthetic": 0, "unresolved": 0}
+    `BaselineResult.provenance_breakdown`'s five buckets — see that
+    field's own docstring for what each means. Synthetic calls are
+    checked first since `result_provenance` and `match_tier` are
+    otherwise independent fields (a synthetic call has no `match_tier`
+    at all — it never went through `ReplayStore.lookup`)."""
+    counts = dict.fromkeys(_PROVENANCE_BUCKETS, 0)
     for call in records:
         if not isinstance(call, ToolCall):
             continue
@@ -333,13 +338,15 @@ def _provenance_counts(records: list) -> dict[str, int]:
             counts["unresolved"] += 1
         elif call.match_tier == "semantic":
             counts["semantic"] += 1
+        elif call.match_tier == "inverse":
+            counts["inverse"] += 1
         else:
             counts["exact"] += 1
     return counts
 
 
 def _merge_provenance_counts(counts_list: list[dict[str, int]]) -> dict[str, int]:
-    merged = {"exact": 0, "semantic": 0, "synthetic": 0, "unresolved": 0}
+    merged = dict.fromkeys(_PROVENANCE_BUCKETS, 0)
     for counts in counts_list:
         for key, value in counts.items():
             merged[key] += value

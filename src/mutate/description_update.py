@@ -219,13 +219,25 @@ class MutationLogEntry:
     description_update's genuine before/after text pair. Never a
     placeholder value standing in for "nothing" — `None` means exactly
     that.
+
+    `inverse` is `dict[str, str] | None` — widened from a bare `str |
+    None` when `mutate.parameter_rename` (F-40) shipped the first
+    operator with a REAL inverse: `{new_param_name: old_param_name}`,
+    directly consumable by `replay.replay_store.ReplayStore.lookup`'s
+    `inverse_param_map` (F-12) with no further parsing. `None` still
+    means exactly what it always did — this operator's mutation has no
+    inverse (description_update/tool_addition, both unchanged) —
+    distinct from an empty dict, which parameter_rename never produces
+    (a tool with nothing eligible to rename gets `inverse=None`, not
+    `{}`, matching this project's "None means genuinely absent, not an
+    empty collection standing in for it" convention elsewhere).
     """
 
     tool_name: str
     operator: str
     before: str | None
     after: str
-    inverse: str | None
+    inverse: dict[str, str] | None
     seed: int
     injection_flagged: bool
 

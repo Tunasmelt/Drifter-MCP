@@ -6,6 +6,84 @@ not just a diff.
 
 ---
 
+## parameter_rename (F-40) built, finally giving F-12 a real inverse to resolve against
+
+Next item down "v1 — remaining scope": a third Level 0/1 mutation operator, on the
+user's explicit go-ahead to design it (the alternative — skip to task-assertion
+authoring UX — was declined). There was no spec for a third operator, only
+`parameter_rename` named once, in passing, as F-12's own illustrative test example
+(docs/FEATURES.md: "Done when: a `parameter_rename` mutation test produces HIT
+(inverse) rather than MISS"). Investigated before writing anything: F-12
+(inverse-mutation key resolution) has sat as an unbuilt stub since Gate 2 for the
+reason its own entry always stated — it needs a real mutation's recorded inverse to
+resolve against, and neither existing operator has one (`description_update` is
+schema-immune; `tool_addition` has no prior recording to invert against by
+definition, docs/SPEC.md §7). Building only the third operator without also building
+F-12 would have shipped dead code with nothing to consume it; building only F-12
+without a real inverse-producing operator was exactly the trap that left it a stub
+for two gates. Scoped as one change.
+
+**`mutate/parameter_rename.py`**: renames exactly one JSON-Schema top-level property
+per tool, snake_case → camelCase (`customer_id` → `customerId`, matching docs/SPEC.md
+§13's own illustrative example), updating `required` in lockstep so the served
+schema stays internally consistent. Deterministic given only the schema (the
+alphabetically-first eligible property — not JSON insertion order, which isn't a
+meaningful signal — with `seed` selecting nothing, since there's only one correct
+choice once eligibility is decided). A tool with nothing eligible (no properties, no
+underscores, or every candidate collides with an existing sibling) is left
+completely untouched, reported honestly (`inverse=None`), never forced into a
+no-op-shaped rename. No content to safety-review here, unlike `description_update`'s
+synonym table or `tool_addition`'s archetype pool — the transformation is a pure,
+mechanical, structurally invertible string rule, not chosen text.
+
+**F-12, real this time**: `replay.replay_store.ReplayStore.lookup` gained an
+`inverse_param_map: dict[str, str] | None` parameter. On an exact-key miss, if given,
+a live call's renamed argument names are translated back to their recorded
+originals and the exact index is retried before falling to semantic — docs/SPEC.md
+§7's full three-tier ordering (exact, inverse, semantic) is now real, not aspirational.
+Kept deliberately dumb about mutations: `ReplayStore` has no idea `parameter_rename`
+exists, it just applies whatever plain `{new_name: old_name}` dict it's handed —
+`replay/replay_proxy.py` holds the per-tool slice of a caller-supplied `inverse_map`
+and passes it down per call, matching this project's module dependency order
+(`replay/` stays upstream of `mutate/`, never importing it). `inverse_map` was
+threaded the same way `synthetic_tool_names` already was, end to end:
+`build_replay_server`/`run_replay_proxy` (`replay/`) → `serve_replay_over_http`
+(`cli/http_proxy.py`) → `make_run_once`/`run_agent_subprocess`/
+`run_agent_subprocess_http` (`cli/subprocess_adapter.py`) → `cli/run.py`'s
+orchestration, which builds it generically via `mutate.parameter_rename.
+inverse_map_from_log` (contributes nothing for the two operators whose own
+`MutationLogEntry.inverse` is always `None`, so `cli/run.py` never has to
+special-case which operator is active) and passes it only to the MUTATED arm — the
+baseline arm serves the original manifest, so its calls already match under their
+original names with nothing to translate.
+
+`MutationLogEntry.inverse` widened from `str | None` to `dict[str, str] | None` — safe
+to change freely since this dataclass is never persisted to disk (it's `cli/report.py`'s
+own documented gap that mutation logs aren't reconstructable from a session's JSONL at
+all), unlike the strict nullable-field discipline this project holds actual `ToolCall`
+schema fields to.
+
+Fidelity weighting: `evaluate.baseline._run_fidelity` already gave anything that
+wasn't `"semantic"` full weight (1.0) — `"inverse"` needed zero code change there,
+only a docstring correction, since docs/SPEC.md §7's own formula groups exact and
+inverse together at full confidence (an inverse resolution recovers the exact
+original call under a known transformation, not an approximation). `provenance_breakdown`
+(the CONFIDENCE section built two entries up) gained a fifth bucket, `inverse`,
+alongside exact/semantic/synthetic/unresolved.
+
+Tested at three levels, matching this project's own precedent for the semantic tier:
+a `ReplayStore` unit level (ordering — exact wins over inverse wins over semantic;
+partial key translation; `None` map reproduces pre-F-12 behavior exactly), a real
+proxy level (`test_an_inverse_map_hit_is_recorded_with_match_tier_inverse`, a genuine
+`ClientSession` against `run_replay_proxy` with a real `inverse_map`, confirming the
+recorded `match_tier` end to end), and a `cli/run.py` orchestration level (confirms
+the new operator branch doesn't crash the pipeline — the golden fixture's real tools
+happen to have no snake_case properties, verified directly rather than assumed, so
+this exercises the honest "nothing eligible" path at full scale, not inverse
+resolution itself, which the proxy-level test already nails down precisely).
+
+---
+
 ## Synthetic replay provenance surfaced in reports (docs/SPEC.md §13)
 
 Next item down "v1 — remaining scope" after the exit-code wiring above.

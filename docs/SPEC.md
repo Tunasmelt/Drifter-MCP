@@ -219,22 +219,26 @@ fidelity = (exact + inverse + SEMANTIC_WEIGHT × semantic) / total_calls
 `SEMANTIC_WEIGHT`, `FLOOR`, `FLAG_THRESHOLD` are calibration constants (§9), not fixed
 truths.
 
-*Implementation status (updated after F-13/F-15):* exact-key (tier 1) and semantic
-(tier 3) resolution both exist (`replay/replay_store.py`), and semantic falls back
-only when exact misses, per this section's own decreasing-specificity ordering.
-Inverse-mutation (tier 2, F-12) is still unbuilt — deferred, since it needs a real
-mutation's recorded inverse to resolve against, matching the operators built so far
-(`description_update`/`tool_addition`, neither of which has an inverse — see their
-own `MutationLogEntry.inverse` always being `None`). Fidelity gating
-(`evaluate/baseline.py`, `< FLOOR` row) still exists only for the baseline arm, but
-is no longer tier-blind: `record/schema.py`'s `ToolCall` carries a `match_tier`
-field (set by `replay/replay_proxy.py` on every real HIT), and `_run_fidelity`
-weights a semantic hit at `SEMANTIC_WEIGHT` (0.8, `calibration.yaml`) instead of
-full 1.0. A confirmed hit with `match_tier is None` (recorded before this field
-existed) is read as `"exact"`, verified correct rather than assumed — see
-`ToolCall.match_tier`'s own docstring. The `between FLOOR and FLAG_THRESHOLD`
-degraded-but-included row is still unbuilt. Read the rest of this section as the
-target design where it isn't confirmed above as built.
+*Implementation status (updated after F-40/F-12):* all three tiers now exist
+(`replay/replay_store.py`): exact-key (tier 1), inverse-mutation (tier 2), and
+semantic (tier 3), tried in exactly that decreasing-specificity order — inverse only
+on an exact miss, semantic only when both exact and inverse miss. Tier 2 was
+deferred at Gate 2 for exactly the reason once stated here (it needs a real
+mutation's recorded inverse to resolve against, and neither `description_update`
+nor `tool_addition` has one) — built once `parameter_rename` (F-40) gave it a real
+one: `ReplayStore.lookup`'s `inverse_param_map` parameter translates a live call's
+renamed argument names back to their recorded originals before the exact-key
+retry. Fidelity gating (`evaluate/baseline.py`, `< FLOOR` row) still exists only for
+the baseline arm, but is no longer tier-blind: `record/schema.py`'s `ToolCall`
+carries a `match_tier` field (set by `replay/replay_proxy.py` on every real HIT),
+and `_run_fidelity` weights an inverse hit the same full 1.0 as exact (recovering
+the exact original call under a known transformation, not an approximation) and a
+semantic hit at `SEMANTIC_WEIGHT` (0.8, `calibration.yaml`). A confirmed hit with
+`match_tier is None` (recorded before this field existed) is read as `"exact"`,
+verified correct rather than assumed — see `ToolCall.match_tier`'s own docstring.
+The `between FLOOR and FLAG_THRESHOLD` degraded-but-included row is still unbuilt.
+Read the rest of this section as the target design where it isn't confirmed above
+as built.
 
 *Gate 3 implementation status — "Miss → structurally synthesized response from the
 recorded schema" (line above), i.e. F-14:* general synthesis for an ordinary missed
@@ -493,11 +497,10 @@ RECOMMENDATION  Add an assertion to resolve TASK. Inspect the retry loop on
 *Implementation status:* the illustrative block above is this section's aspirational
 target, not what `render_run_result` prints today. Built: BEHAVIOR/TASK/SAFETY exactly
 as shown, plus a CONFIDENCE section reporting each arm's own replay fidelity and a
-provenance breakdown (`exact`/`semantic`/`synthetic`/`unresolved` percentages —
-`evaluate.baseline.BaselineResult.provenance_breakdown`) per arm rather than merged
-into one "baseline 10 runs · mutation 10 runs" line, and using `semantic` in place of
-the illustrative `inverse` (F-12, inverse-mutation key resolution, is still unbuilt —
-see limitation in §7 above). NOT built: the single-line `Mutation`/`mut_042` header
+provenance breakdown (`exact`/`inverse`/`semantic`/`synthetic`/`unresolved` percentages
+— `evaluate.baseline.BaselineResult.provenance_breakdown`, all three replay tiers now
+reachable as of F-12/F-40) per arm rather than merged into one "baseline 10 runs ·
+mutation 10 runs" line. NOT built: the single-line `Mutation`/`mut_042` header
 (no mutation-log persistence exists to reconstruct it from — `cli/report.py`'s own
 docstring), the `detectable regression threshold`/`calibration: fidelity_floor=...`
 footnote, and the RECOMMENDATION line entirely (would require a task-assertion engine
