@@ -27,7 +27,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-10 | `drifter stats` | ✅ Built | Retry detection compares stored (already-redacted) arguments — previously two different real secrets redacted identically and were misdetected as a retry; fixed by making the redaction marker a deterministic hash of the matched value (record/redact.py) instead of a fixed placeholder, so different secrets now redact differently while the same secret still redacts identically (required for both retry detection and F-11's replay matching) |
 | F-11 | Replay store | ⚠️ Built, exact-key only | Tier-3 finding (PHASES.md Gate 3) — may not be viable against any real agent alone. Multi-session merging, cross-file last-writer-wins, fault/null-shape hits, and nested-key canonicalization now directly tested |
 | F-12 | Inverse-mutation key resolution | ⚠️ Stub only | Never implemented past the Gate 2 stub — **needs building** if tier 2 replay is ever exercised for real |
-| F-13 | Semantic key resolution | ❌ Not built | **Needs building** — the tier-3 gap F-11's own limitation points at; no longer "nice-to-have," possibly blocking |
+| F-13 | Semantic key resolution | ✅ Built | Falls back to a sorted-value-multiset match when exact misses, only when exact misses. Fidelity gating (F-15) doesn't yet weight a semantic hit differently from an exact one — still tier-blind, F-15's own remaining scope, see docs/SPEC.md §7's updated implementation-status note |
 | F-14 | Synthetic response generation | ⚠️ Scoped to `tool_addition` only | General schema-inference synthesis explicitly out of scope; deliberate |
 | F-15 | Fidelity computation and gating | ✅ Built | Gate 2 |
 | F-16 | `description_update` | ⚠️ Built, one known gap (one fixed) | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it, still open. The other known gap (ALL-CAPS source words losing case class, e.g. "GET" → "Obtain" instead of "OBTAIN") is fixed — case class (all-caps/title-case/lowercase) is now preserved, not just the first letter |
@@ -57,17 +57,22 @@ table and docs/PHASES.md for gate-level narrative.
 
 **Priority order for what to build next**, per docs/PHASES.md's own v1 ordering and the
 dependency chain above (not a re-ranking, just made explicit in one place):
-1. **F-39** — HTTP real-server connection. Scoped already, no code yet, lower risk than
+1. ~~**F-13** (semantic key resolution)~~ — **built.** Was the tier-3 gap docs/SPEC.md
+   §15 limitation 16's real evidence (Gate 4's real second-user test) confirmed as
+   blocking, not just "nice to have." Fidelity gating still doesn't weight a semantic
+   hit differently from an exact one — see F-15's remaining scope below.
+2. **F-15's remaining scope** — wire `SEMANTIC_WEIGHT` into `_run_fidelity` so a
+   semantic hit is discounted relative to an exact one, per docs/SPEC.md §7's formula.
+   Needs a schema change (served `ToolCall`s must carry which tier resolved them) —
+   a new nullable field, this project's own required pre-change-test procedure.
+3. **F-39** — HTTP real-server connection. Scoped already, no code yet, lower risk than
    F-38 was.
-2. **F-13** (semantic key resolution) — the tier-3 gap. No longer purely "nice to have":
-   F-11's own limitation says exact-tier-only replay may not be viable against any real
-   agent at all.
-3. **F-26 → F-25 → F-31/F-32** — the `policy/` module, in that dependency order (risk
+4. **F-26 → F-25 → F-31/F-32** — the `policy/` module, in that dependency order (risk
    classification unblocks the safety verdict engine and blast-radius preview).
-4. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
+5. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
    multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
    first place, still true).
-5. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
+6. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
    no blocking dependents.
 
 ---
@@ -239,7 +244,20 @@ MISS on all previously-recorded call shapes.
 
 **Technical:** Fallback matching on the sorted multiset of argument *values*, ignoring
 parameter names, for cases the inverse mapping can't cleanly recover (e.g.
-`tool_integration`).
+`tool_integration`). **Built** (`replay/replay_store.py`'s `semantic_key`/
+`ReplayStore._semantic_index`): `ReplayStore.lookup` tries the exact key first,
+falling back to a semantic-key lookup only on an exact miss, never the reverse —
+matching docs/SPEC.md §7's decreasing-specificity tier ordering. Redacted the same
+way and for the same reason `replay_key` already is, so a live lookup with real
+secret values still matches an index built from already-redacted recorded ones.
+Deliberately narrow: a genuine multiset match on VALUES, never fuzzy/partial-value
+matching, and argument COUNT still has to line up (a 3-argument call can't
+semantically match a 2-argument recording) — matching this project's "structural,
+not free-text" stance elsewhere. **Known remaining gap, not this feature's own
+scope:** fidelity gating (F-15) doesn't yet discount a semantic hit relative to an
+exact one — `docs/SPEC.md` §7's `SEMANTIC_WEIGHT` isn't wired up, since doing so
+needs served sessions to record which tier resolved each call, a schema change
+this feature didn't need and didn't add.
 
 **Simple:** A looser last resort: even if Drifter can't figure out the exact renamed
 field, if the actual data being passed looks the same as something it's seen before, it
@@ -247,7 +265,11 @@ can still make a reasonable guess.
 
 **Depends on:** F-11.
 **Done when:** a merged-tool fixture resolves via semantic match at a measurably better
-rate than falling straight to synthetic.
+rate than falling straight to synthetic — confirmed:
+`tests/replay/test_replay_store.py`'s `test_a_renamed_parameter_resolves_via_
+semantic_match_when_exact_misses` and `test_semantic_match_on_the_golden_fixture_
+resolves_a_renamed_argument` both show a renamed-parameter lookup resolving via
+semantic HIT where exact-only resolution would MISS.
 
 ### F-14 Synthetic response generation
 

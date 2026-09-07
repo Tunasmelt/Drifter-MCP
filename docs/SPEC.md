@@ -219,11 +219,21 @@ fidelity = (exact + inverse + SEMANTIC_WEIGHT × semantic) / total_calls
 `SEMANTIC_WEIGHT`, `FLOOR`, `FLAG_THRESHOLD` are calibration constants (§9), not fixed
 truths.
 
-*Gate 2 implementation status:* only the exact tier and the `< FLOOR` row exist today
-(`evaluate/baseline.py`, gating baseline-arm fidelity — no mutation arm exists yet to
-gate the same way). Inverse-mutation and semantic resolution, `SEMANTIC_WEIGHT`
-itself, and the `between FLOOR and FLAG_THRESHOLD` degraded-but-included row are all
-unbuilt — read the rest of this section as the target design, not current behavior.
+*Implementation status (updated after F-13):* exact-key (tier 1) and semantic (tier
+3) resolution both exist (`replay/replay_store.py`), and semantic falls back only
+when exact misses, per this section's own decreasing-specificity ordering. Inverse-
+mutation (tier 2, F-12) is still unbuilt — deferred, since it needs a real
+mutation's recorded inverse to resolve against, matching the operators built so far
+(`description_update`/`tool_addition`, neither of which has an inverse — see their
+own `MutationLogEntry.inverse` always being `None`). Fidelity gating
+(`evaluate/baseline.py`, `< FLOOR` row) still exists only for the baseline arm, and
+is still tier-BLIND: a semantic hit resolves identically to an exact one at the wire
+level, so it currently counts as a full 1.0-weight hit rather than being discounted
+by `SEMANTIC_WEIGHT` (0.8, already in `calibration.yaml`) — wiring that in needs the
+served session's own records to carry which tier resolved each call, a schema
+change not yet made. The `between FLOOR and FLAG_THRESHOLD` degraded-but-included
+row is also still unbuilt. Read the rest of this section as the target design where
+it isn't confirmed above as built.
 
 *Gate 3 implementation status — "Miss → structurally synthesized response from the
 recorded schema" (line above), i.e. F-14:* general synthesis for an ordinary missed

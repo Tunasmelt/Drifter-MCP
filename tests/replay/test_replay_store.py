@@ -12,7 +12,7 @@ from pathlib import Path
 
 from record.reader import read_session
 from record.schema import ToolCall
-from replay.replay_store import RecordedResponse, ReplayStore, replay_key
+from replay.replay_store import RecordedResponse, ReplayStore, replay_key, semantic_key
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 
@@ -264,3 +264,137 @@ def test_secret_shaped_arguments_hit_when_the_live_lookup_uses_the_real_unredact
     hit = store.lookup("srv", "auth_tool", live_arguments)
     assert hit is not None
     assert hit.result_shape == {"type": "object", "keys": ["ok"]}
+
+
+# --- F-13: semantic key resolution (docs/SPEC.md §7 tier 3) -----------------
+#
+# The tier-3 gap docs/SPEC.md's own limitation-16 investigation (Gate 4's real
+# second-user test) confirmed as blocking, not just "nice to have": a real,
+# curious agent's call shape diverges from any single recorded fixture in
+# ways exact-key matching structurally cannot resolve (different parameter
+# names for the same underlying data being the case this tier targets
+# directly). Deliberately narrower than a general fuzzy matcher: this only
+# ever matches on the sorted MULTISET of argument VALUES, ignoring parameter
+# names entirely -- never partial/fuzzy value matching, never argument
+# COUNT-independent matching (a call with 3 arguments can't semantically
+# match one recorded with 2, even if 2 of the 3 values line up) -- matching
+# this project's "structural, not free-text/fuzzy" stance elsewhere
+# (mutate/description_update.py's closed-set mechanism, the same principle).
+
+
+def test_semantic_key_ignores_parameter_names_but_matches_on_values():
+    key_a = semantic_key("srv", "tool", {"customerId": 42, "verbose": True})
+    key_b = semantic_key("srv", "tool", {"customer_id": 42, "isVerbose": True})
+    assert key_a == key_b
+
+
+def test_semantic_key_differs_when_values_actually_differ():
+    key_a = semantic_key("srv", "tool", {"customerId": 42})
+    key_b = semantic_key("srv", "tool", {"customerId": 43})
+    assert key_a != key_b
+
+
+def test_semantic_key_is_a_multiset_not_a_set_duplicate_values_matter():
+    # {"a": 5, "b": 5} has the value 5 TWICE; {"a": 5} has it once -- a set
+    # of values would collapse both to {5} and wrongly collide them.
+    key_two_fives = semantic_key("srv", "tool", {"a": 5, "b": 5})
+    key_one_five = semantic_key("srv", "tool", {"a": 5})
+    assert key_two_fives != key_one_five
+
+
+def test_semantic_key_is_stable_regardless_of_parameter_order():
+    key_a = semantic_key("srv", "tool", {"a": 1, "b": 2})
+    key_b = semantic_key("srv", "tool", {"b": 2, "a": 1})
+    assert key_a == key_b
+
+
+def test_semantic_key_differs_by_server_and_tool_name_same_as_exact():
+    base = semantic_key("srv", "tool", {"x": 1})
+    assert semantic_key("other-srv", "tool", {"x": 1}) != base
+    assert semantic_key("srv", "other-tool", {"x": 1}) != base
+
+
+def test_a_renamed_parameter_resolves_via_semantic_match_when_exact_misses(tmp_path):
+    """F-13's own docs/FEATURES.md 'Done when' bar: a merged/renamed-parameter
+    fixture resolves via semantic match rather than falling straight to
+    MISS. Builds a real recorded session (one ToolCall, parameter named
+    `customer_id`), then looks it up with a DIFFERENT parameter name
+    (`customerId`) carrying the identical value -- the exact scenario a
+    `tool_integration`/rename-shaped mutation or a real agent's own
+    natural divergence produces."""
+    from record.proxy import Direction
+    from record.writer import SessionRecorder
+    from mcp.shared.message import SessionMessage
+    from mcp_types import JSONRPCRequest, JSONRPCResponse
+
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name="crm", session_id="sess_semantic")
+    request = JSONRPCRequest(
+        jsonrpc="2.0", id=1, method="tools/call", params={"name": "get_customer", "arguments": {"customer_id": 42}}
+    )
+    response = JSONRPCResponse(jsonrpc="2.0", id=1, result={"content": [{"type": "text", "text": "x"}]})
+    recorder.observe(Direction.AGENT_TO_SERVER, SessionMessage(request))
+    recorder.observe(Direction.SERVER_TO_AGENT, SessionMessage(response))
+    recorder.close()
+
+    store = ReplayStore()
+    store.index_session(recorder.jsonl_path)
+
+    hit = store.lookup("crm", "get_customer", {"customerId": 42})
+    assert hit is not None
+    assert hit.match_tier == "semantic"
+    assert hit.result_shape is not None
+
+
+def test_exact_match_is_preferred_over_semantic_when_both_would_hit(tmp_path):
+    """When BOTH the exact key and a semantic key would resolve a lookup,
+    exact must win -- it's the higher-confidence tier (docs/SPEC.md §7's
+    ordering: exact, then inverse, then semantic, decreasing specificity).
+    Falling to the looser tier when the tighter one is available would
+    throw away confidence for no reason."""
+    from record.proxy import Direction
+    from record.writer import SessionRecorder
+    from mcp.shared.message import SessionMessage
+    from mcp_types import JSONRPCRequest, JSONRPCResponse
+
+    runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
+    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name="crm", session_id="sess_exact_wins")
+    request = JSONRPCRequest(
+        jsonrpc="2.0", id=1, method="tools/call", params={"name": "get_customer", "arguments": {"customer_id": 42}}
+    )
+    response = JSONRPCResponse(jsonrpc="2.0", id=1, result={"content": [{"type": "text", "text": "x"}]})
+    recorder.observe(Direction.AGENT_TO_SERVER, SessionMessage(request))
+    recorder.observe(Direction.SERVER_TO_AGENT, SessionMessage(response))
+    recorder.close()
+
+    store = ReplayStore()
+    store.index_session(recorder.jsonl_path)
+
+    hit = store.lookup("crm", "get_customer", {"customer_id": 42})  # identical to the recording
+    assert hit is not None
+    assert hit.match_tier == "exact"
+
+
+def test_semantic_fallback_still_returns_miss_when_no_value_multiset_matches():
+    store = ReplayStore()
+    store._index["some-exact-key"] = RecordedResponse(
+        result_shape={"type": "object", "keys": []}, is_error=False, fault=False, match_tier="exact"
+    )
+    result = store.lookup("srv", "tool", {"totally": "unrelated-value"})
+    assert result is None
+
+
+def test_semantic_match_on_the_golden_fixture_resolves_a_renamed_argument():
+    """Same F-13 'Done when' bar, against the real golden fixture rather
+    than a hand-built session: a genuinely recorded call's tool_name and
+    real argument VALUE, looked up under a different parameter NAME,
+    still resolves -- via semantic, since exact structurally can't."""
+    store = _golden_store()
+    calls = _golden_calls()
+    call = next(c for c in calls if c.arguments)  # any call with at least one real argument
+    original_key = next(iter(call.arguments))
+    renamed_arguments = {f"{original_key}_renamed": v for k, v in call.arguments.items() if k == original_key}
+    if len(call.arguments) == 1:  # only reliable when there's exactly one argument to rename unambiguously
+        hit = store.lookup(call.server, call.tool_name, renamed_arguments)
+        assert hit is not None
+        assert hit.match_tier == "semantic"

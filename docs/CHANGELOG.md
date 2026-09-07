@@ -54,6 +54,49 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-13 (semantic key resolution) built: the priority-1 item from docs/SPEC.md §15 limitation 16
+
+Following the user's explicit choice to pursue "adapting" over the report-redesign
+alternative for limitation 16 (exact-match replay collapsing against a real,
+unscripted agent — the Gate 4 real-test finding), F-13 is built: `replay/
+replay_store.py` gains a second index keyed on `semantic_key(server, tool_name,
+arguments)` — `sha256` over the sorted, canonicalized multiset of argument VALUES,
+ignoring parameter names entirely, per docs/SPEC.md §7 tier 3.
+
+`ReplayStore.lookup` tries the exact key first and only falls back to the semantic
+key on an exact miss, matching §7's decreasing-specificity ordering (exact, then
+inverse [F-12, still unbuilt], then semantic) — a tighter match available is never
+discarded for a looser one. `semantic_key` reuses `replay_key`'s own redaction and
+canonicalization conventions (redact before hashing, `sort_keys` + no incidental
+whitespace) and treats the values as a genuine multiset, not a set — `{"a": 5, "b":
+5}` and `{"a": 5}` must hash differently, or a real duplicate-value argument set
+would silently collapse. `replay/replay_proxy.py` needed zero changes: it already
+calls `replay_store.lookup(...)` generically and doesn't branch on tier, so a
+semantic hit resolves at the wire level exactly like an exact one, automatically.
+13 new tests in `tests/replay/test_replay_store.py`, including a renamed-parameter
+lookup against both a hand-built session and the real golden fixture, confirming
+F-13's own "Done when" bar directly (resolves via semantic HIT where exact-only
+resolution would MISS).
+
+**Deliberately not done here, flagged rather than silently assumed:** `evaluate/
+baseline.py`'s `_run_fidelity` is still completely tier-blind — a semantic hit
+counts as a full 1.0-weight "confirmed hit," identically to an exact one, because
+the served session's recorded `ToolCall` has no field carrying which tier resolved
+it. docs/SPEC.md §7's target formula (`exact + inverse + SEMANTIC_WEIGHT × semantic`,
+weight already 0.8 in `calibration.yaml`) is not wired up. This means real fidelity,
+as SPEC.md itself defines it, is somewhat OVER-stated wherever semantic matches are
+now involved — the opposite direction of a false negative, and worth being explicit
+about specifically because this project just spent real effort (the Gate 4 finding)
+on the danger of a report looking more confident than its underlying data supports.
+Wiring in the weight needs a schema change (a new nullable field on `ToolCall`,
+recorded at replay-serve time) — this project's own required pre-change-test
+procedure applies, and F-13 itself didn't need that change, so it's left as F-15's
+own next increment rather than folded in here as scope creep. docs/SPEC.md §7's
+implementation-status note, docs/FEATURES.md's F-13/F-15 entries, and
+`evaluate/baseline.py`'s own docstring are all updated to say this plainly.
+
+---
+
 ## F-10 retry-misdetection: redesigned and fixed, after a false start caught before it shipped
 
 Following the user's explicit go-ahead to redesign the F-10 fix despite it touching

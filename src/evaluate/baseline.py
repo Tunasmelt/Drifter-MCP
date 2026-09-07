@@ -44,11 +44,26 @@ a single flaky repeat degrades `valid_runs`, it doesn't nuke the run.
 
 Third exclusion reason — fidelity gating (docs/SPEC.md §7/§8, DEC-020, F-22),
 now implemented since a real replay-served pipeline exists to gate. Per-
-run fidelity is `exact_hit_calls / total_attempted_calls` over that run's
-recorded `ToolCall`s. Only the exact tier exists right now
-(`replay_store.py`'s `MatchTier` is `"exact"` only) — inverse/semantic
-tiers and docs/SPEC.md §9's `semantic_weight` apply once Gate 3's mutations
-exist; no placeholder weighting is built for tiers that don't exist yet.
+run fidelity is `confirmed_hit_calls / total_attempted_calls` over that
+run's recorded `ToolCall`s, where "confirmed hit" is `fault is False` —
+this is `_run_fidelity`'s own binary, tier-blind definition and STILL IS,
+even after F-13 (semantic key resolution) shipped: `replay_store.py`'s
+`MatchTier` is now `"exact" | "semantic"`, and a semantic HIT resolves at
+the wire level exactly like an exact one (an ordinary `CallToolResult`,
+not distinguishable from the recorded session's `fault=False` alone), so
+it counts as a FULL 1.0-weight hit here. docs/SPEC.md §7's target formula
+(`fidelity = (exact + inverse + SEMANTIC_WEIGHT × semantic) / total`,
+`semantic_weight` already in `calibration.yaml` at 0.8) is deliberately
+NOT wired up yet — doing so needs the served session's `ToolCall` records
+to actually carry which tier resolved them, which requires a schema
+change (a new nullable field, this project's own required pre-change-test
+procedure per CLAUDE.md) that F-13 itself didn't need and didn't add.
+Left as F-15's own next increment, not silently assumed done — a semantic
+hit counting as full-weight today means REAL fidelity (as SPEC.md defines
+it) is somewhat OVER-stated whenever semantic matches are involved, the
+opposite direction of a false negative, worth being explicit about rather
+than letting a plausible-sounding docstring imply more precision than
+exists.
 
 STOP-AND-CHECK done before writing this, not assumed: does a replay MISS
 or FAULT actually reach the recorded session as a `ToolCall` at all, or
