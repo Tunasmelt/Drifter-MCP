@@ -48,6 +48,25 @@ ResultProvenance = Literal["real", "synthetic"]
 # leaks into a recorded ToolCall's own shape as if it were a real field.
 SYNTHETIC_RESULT_MARKER_KEY = "_drifter_result_provenance"
 
+# docs/SPEC.md §7's three-tier replay key scheme. Only "exact" and
+# "semantic" are reachable today (tier 2, inverse-mutation/F-12, is still
+# unbuilt) -- kept as a 2-value Literal rather than a 3-value one with an
+# unreachable branch, so a type checker can't be satisfied by code that
+# silently never handles "inverse". Duplicated here rather than imported
+# from replay/replay_store.py's own MatchTier: record/ is upstream of
+# replay/ in this project's module dependency order (CLAUDE.md), so
+# schema.py cannot import from replay/ without inverting that order. Keep
+# both definitions in sync by hand if a third tier is ever built.
+MatchTier = Literal["exact", "semantic"]
+
+# Same pattern as SYNTHETIC_RESULT_MARKER_KEY above, for the same reason:
+# replay_proxy.py's on_call_tool knows which tier resolved a HIT
+# (ReplayStore.lookup's return value), but the actual wire response sent
+# to the connecting agent must stay a clean, ordinary CallToolResult --
+# this marker only ever appears on the SEPARATE dict handed to on_message
+# for recording, never on the real one returned to the agent.
+MATCH_TIER_MARKER_KEY = "_drifter_match_tier"
+
 SegmentationMethod = Literal["trace_context", "heuristic"]
 
 
@@ -221,6 +240,26 @@ class ToolCall(BaseModel):
     # doesn't exist yet) but the field must exist now — the inverse can
     # only be captured at the moment the mutation was applied.
     mutation_inverse: dict | None = None
+    # Which docs/SPEC.md §7 tier resolved this call during replay-serving
+    # (F-13, docs/CHANGELOG.md) -- set only by replay/replay_proxy.py's
+    # on_call_tool, via MATCH_TIER_MARKER_KEY, for a call that actually hit
+    # against a ReplayStore. `None` covers three genuinely different cases,
+    # deliberately not distinguished from each other by this field alone
+    # (evaluate/baseline.py's fidelity weighting is what tells them apart,
+    # using `fault` alongside this field): (1) a live-recorded session
+    # (`drifter observe`, no replay involved at all -- there is no tier
+    # concept here), (2) a call that MISSED or FAULTed during replay (no
+    # HIT occurred, so no tier resolved it), (3) a HIT recorded before this
+    # field existed. Case 3 is NOT the usual "genuinely unknown" nullable-
+    # field case this project otherwise treats conservatively: every
+    # `MatchTier` value besides "exact" postdates this field's own
+    # introduction (semantic resolution, F-13, and this field, shipped
+    # together), so a pre-existing `fault is False` record with
+    # `match_tier is None` can ONLY have been an exact-tier hit when it was
+    # recorded -- there was no other tier for it to have been. Verified
+    # against this project's own history, not assumed: `replay_store.py`'s
+    # `MatchTier` literally had no other value before this change.
+    match_tier: MatchTier | None = None
     raw_frame_offset: int
 
 

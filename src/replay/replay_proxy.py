@@ -99,7 +99,7 @@ from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
 from record.proxy import Direction, MessageObserver
 from record.reader import read_session
-from record.schema import SYNTHETIC_RESULT_MARKER_KEY, ToolDescriptor, ToolsList
+from record.schema import MATCH_TIER_MARKER_KEY, SYNTHETIC_RESULT_MARKER_KEY, ToolDescriptor, ToolsList
 from replay.replay_store import RecordedResponse, ReplayStore
 
 # Deliberately OUTSIDE JSON-RPC 2.0's entire reserved band (-32768..-32000
@@ -347,10 +347,13 @@ def build_replay_server(
             raise MCPError(code=REPLAY_FAULT_CODE, message=message)
 
         result = _synthesize_call_tool_result(hit)
-        _emit(
-            Direction.SERVER_TO_AGENT,
-            JSONRPCResponse(jsonrpc="2.0", id=req_id, result=result.model_dump(mode="json", by_alias=True, exclude_unset=True)),
-        )
+        # F-13/F-15: tag the RECORDING-only dict with which tier resolved
+        # this HIT, same private-marker-key pattern as
+        # SYNTHETIC_RESULT_MARKER_KEY above -- the actual wire response
+        # returned to the agent (`result`, below) never carries this key.
+        record_result = result.model_dump(mode="json", by_alias=True, exclude_unset=True)
+        record_result[MATCH_TIER_MARKER_KEY] = hit.match_tier
+        _emit(Direction.SERVER_TO_AGENT, JSONRPCResponse(jsonrpc="2.0", id=req_id, result=record_result))
         return result
 
     return Server(name=f"drifter-replay-{server_name}", on_list_tools=on_list_tools, on_call_tool=on_call_tool)

@@ -219,21 +219,22 @@ fidelity = (exact + inverse + SEMANTIC_WEIGHT × semantic) / total_calls
 `SEMANTIC_WEIGHT`, `FLOOR`, `FLAG_THRESHOLD` are calibration constants (§9), not fixed
 truths.
 
-*Implementation status (updated after F-13):* exact-key (tier 1) and semantic (tier
-3) resolution both exist (`replay/replay_store.py`), and semantic falls back only
-when exact misses, per this section's own decreasing-specificity ordering. Inverse-
-mutation (tier 2, F-12) is still unbuilt — deferred, since it needs a real
+*Implementation status (updated after F-13/F-15):* exact-key (tier 1) and semantic
+(tier 3) resolution both exist (`replay/replay_store.py`), and semantic falls back
+only when exact misses, per this section's own decreasing-specificity ordering.
+Inverse-mutation (tier 2, F-12) is still unbuilt — deferred, since it needs a real
 mutation's recorded inverse to resolve against, matching the operators built so far
 (`description_update`/`tool_addition`, neither of which has an inverse — see their
 own `MutationLogEntry.inverse` always being `None`). Fidelity gating
-(`evaluate/baseline.py`, `< FLOOR` row) still exists only for the baseline arm, and
-is still tier-BLIND: a semantic hit resolves identically to an exact one at the wire
-level, so it currently counts as a full 1.0-weight hit rather than being discounted
-by `SEMANTIC_WEIGHT` (0.8, already in `calibration.yaml`) — wiring that in needs the
-served session's own records to carry which tier resolved each call, a schema
-change not yet made. The `between FLOOR and FLAG_THRESHOLD` degraded-but-included
-row is also still unbuilt. Read the rest of this section as the target design where
-it isn't confirmed above as built.
+(`evaluate/baseline.py`, `< FLOOR` row) still exists only for the baseline arm, but
+is no longer tier-blind: `record/schema.py`'s `ToolCall` carries a `match_tier`
+field (set by `replay/replay_proxy.py` on every real HIT), and `_run_fidelity`
+weights a semantic hit at `SEMANTIC_WEIGHT` (0.8, `calibration.yaml`) instead of
+full 1.0. A confirmed hit with `match_tier is None` (recorded before this field
+existed) is read as `"exact"`, verified correct rather than assumed — see
+`ToolCall.match_tier`'s own docstring. The `between FLOOR and FLAG_THRESHOLD`
+degraded-but-included row is still unbuilt. Read the rest of this section as the
+target design where it isn't confirmed above as built.
 
 *Gate 3 implementation status — "Miss → structurally synthesized response from the
 recorded schema" (line above), i.e. F-14:* general synthesis for an ordinary missed

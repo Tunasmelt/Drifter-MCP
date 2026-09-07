@@ -50,7 +50,9 @@ from record.fingerprint import build_environment, compute_tool_manifest_hash
 from record.proxy import Direction
 from record.redact import redact_rpc_payload, redact_secrets
 from record.schema import (
+    MATCH_TIER_MARKER_KEY,
     SYNTHETIC_RESULT_MARKER_KEY,
+    MatchTier,
     ResultProvenance,
     SessionStart,
     ToolCall,
@@ -244,12 +246,23 @@ class SessionRecorder:
                 # agent (that's a separate, clean dict on the wire; see
                 # replay_proxy.py's on_call_tool). Stripped here so it
                 # never leaks into result_shape as if it were a real key.
+                # Same pattern, same reason, for MATCH_TIER_MARKER_KEY
+                # (F-13/F-15) -- replay_proxy.py sets it only on a real
+                # HIT, never on a MISS/fault (there's no result dict to
+                # attach it to in that path) or on a live, non-replayed
+                # `drifter observe` recording.
                 result = rpc.result
                 provenance: ResultProvenance = "real"
-                if isinstance(result, dict) and SYNTHETIC_RESULT_MARKER_KEY in result:
+                match_tier: MatchTier | None = None
+                if isinstance(result, dict) and (SYNTHETIC_RESULT_MARKER_KEY in result or MATCH_TIER_MARKER_KEY in result):
                     result = dict(result)
-                    provenance = result.pop(SYNTHETIC_RESULT_MARKER_KEY)
-                self._write_tool_call(pending["params"], result, offset, duration_ms, result_provenance=provenance)
+                    if SYNTHETIC_RESULT_MARKER_KEY in result:
+                        provenance = result.pop(SYNTHETIC_RESULT_MARKER_KEY)
+                    if MATCH_TIER_MARKER_KEY in result:
+                        match_tier = result.pop(MATCH_TIER_MARKER_KEY)
+                self._write_tool_call(
+                    pending["params"], result, offset, duration_ms, result_provenance=provenance, match_tier=match_tier
+                )
             elif pending["method"] == "tools/list":
                 # Must run before _ensure_session_start_written(): the
                 # manifest hash has to be known *before* SessionStart is
@@ -285,6 +298,7 @@ class SessionRecorder:
         raw_frame_offset: int,
         duration_ms: float,
         result_provenance: ResultProvenance = "real",
+        match_tier: MatchTier | None = None,
     ) -> None:
         seq = self._next_seq()
         self.call_count += 1
@@ -324,6 +338,7 @@ class SessionRecorder:
                 # faults" rather than "unknown" for a corpus with none.
                 fault=False,
                 result_provenance=result_provenance,
+                match_tier=match_tier,
                 references=outcome.references,
                 raw_frame_offset=raw_frame_offset,
             )

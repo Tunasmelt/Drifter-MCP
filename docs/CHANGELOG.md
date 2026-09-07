@@ -54,6 +54,50 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-15's remaining scope built: tier-weighted fidelity, closing F-13's own deliberate gap
+
+Directly following F-13 (semantic key resolution, previous entry): its own honest
+"known remaining gap" note said fidelity gating didn't yet discount a semantic hit
+relative to an exact one, since served sessions had no field to say which tier
+resolved a call. Built now, following CLAUDE.md's required procedure for a new
+schema field: a genuinely discriminating test
+(`test_a_semantic_hit_is_discounted_relative_to_an_exact_hit`, a mixed exact+
+semantic session) was written and confirmed to fail against the pre-change
+`_run_fidelity` (a plain, tier-blind hit ratio — it reported 1.0 for the mixed
+session, not the intended weighted 0.9) BEFORE any implementation, not after.
+
+`record/schema.py`'s `ToolCall` gains `match_tier: Literal["exact", "semantic"] |
+None`, plus `MATCH_TIER_MARKER_KEY`, set by `replay/replay_proxy.py`'s
+`on_call_tool` on every real HIT using the exact same private-marker-key pattern
+`SYNTHETIC_RESULT_MARKER_KEY`/`result_provenance` already established — a second
+dict, carrying the marker, handed to the recording observer only, never the actual
+wire response returned to the connecting agent. `record/writer.py` strips the
+marker the same way it already strips the synthetic one. `evaluate/baseline.py`'s
+`_run_fidelity` now computes `(exact_hits + semantic_weight * semantic_hits) /
+total`, reading `calibration.yaml`'s existing `semantic_weight` (0.8).
+
+One real design question resolved deliberately, not by default: what should
+`match_tier is None` on a CONFIRMED hit mean? For every other nullable field in
+this schema (`is_error`, `fault`, `duration_ms`), `None` means "genuinely unknown,
+treat conservatively." Here it doesn't — every `MatchTier` value besides `"exact"`
+postdates this field's own introduction (they shipped together), so a hit recorded
+before the field existed structurally CANNOT have been anything but an exact-tier
+hit. Verified against this project's own history (`replay_store.py`'s `MatchTier`
+literally had no other value before F-13), not assumed — and locked in by
+`test_a_pre_field_hit_with_no_recorded_tier_is_treated_as_exact_not_unknown`,
+which would report the wrong fidelity (0.8 instead of 0.9) if this were ever
+mis-implemented as "exclude/unknown" instead.
+
+`tests/replay/test_replay_proxy.py` gains a true end-to-end confirmation
+(`test_a_semantic_hit_is_recorded_with_match_tier_semantic`) that the marker
+actually threads through the real proxy into a real recorded session, not just at
+the unit level — plus a `match_tier == "exact"` assertion added to the existing
+golden-fixture round-trip test. docs/SPEC.md §7's implementation-status note,
+docs/FEATURES.md's F-13/F-15 entries and priority list, and `evaluate/baseline.py`'s
+own module docstring are all updated to say this is built, not still a gap.
+
+---
+
 ## F-13 (semantic key resolution) built: the priority-1 item from docs/SPEC.md §15 limitation 16
 
 Following the user's explicit choice to pursue "adapting" over the report-redesign

@@ -102,6 +102,54 @@ def _write_session_with_faults(
     return path
 
 
+def _write_session_with_tiers(
+    dir_path: Path,
+    session_id: str,
+    calls: list[tuple[str, str | None]],
+    tool_manifest_hash: str | None = "h",
+) -> Path:
+    """Like _write_session_with_faults, but each entry is (tool_name,
+    match_tier) -- "exact", "semantic", or None -- for testing F-15's
+    tier-weighted fidelity (docs/SPEC.md §7). Every call here is a
+    confirmed hit (fault=False); `match_tier=None` alongside fault=False
+    specifically simulates a record from BEFORE this field existed (see
+    ToolCall.match_tier's own docstring for why that's safely treated as
+    an exact-tier hit, not an unknown one) -- Pydantic dumps `None`
+    explicitly as `"match_tier":null`, which round-trips identically to a
+    genuinely absent key for every reader in this codebase, so this is a
+    faithful stand-in for real legacy data without hand-writing raw JSONL.
+    """
+    lines = [
+        SessionStart(
+            session_id=session_id,
+            seq=0,
+            started_at="2026-08-25T00:00:00Z",
+            environment=Environment(tool_manifest_hash=tool_manifest_hash),
+            raw_frame_offset=0,
+        ).model_dump_json()
+    ]
+    for i, (tool_name, match_tier) in enumerate(calls, start=1):
+        lines.append(
+            ToolCall(
+                session_id=session_id,
+                seq=i,
+                timestamp="2026-08-25T00:00:01Z",
+                server="fake",
+                tool_name=tool_name,
+                arguments={},
+                result_shape={"type": "object", "keys": []},
+                is_error=False,
+                duration_ms=1.0,
+                fault=False,
+                match_tier=match_tier,
+                raw_frame_offset=i * 100,
+            ).model_dump_json()
+        )
+    path = dir_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def _write_session_with_provenance(
     dir_path: Path,
     session_id: str,
@@ -554,6 +602,55 @@ def test_synthetic_calls_excluded_from_fidelity_denominator_not_counted_as_hits_
     # dominant_path still reflects the FULL tool-call sequence, including
     # the synthetic call -- fidelity exclusion is not path exclusion.
     assert result.dominant_path == ("real_tool", "added_tool")
+
+
+# --- F-15's remaining scope: tier-weighted fidelity (docs/SPEC.md §7) ------
+# Written and confirmed to fail against the pre-weighting `_run_fidelity`
+# (a plain fault-based hit ratio, blind to which tier resolved a hit)
+# BEFORE that function was changed, per CLAUDE.md's required procedure for
+# this class of schema-adjacent change -- see docs/CHANGELOG.md for the red
+# run this was confirmed against.
+
+
+def test_a_semantic_hit_is_discounted_relative_to_an_exact_hit(tmp_path):
+    """The core of docs/SPEC.md §7's formula: fidelity = (exact + inverse +
+    SEMANTIC_WEIGHT x semantic) / total. One exact hit (weight 1.0) and one
+    semantic hit (weight 0.8, calibration.yaml's default) must average to
+    0.9, not the tier-blind 1.0 a plain hit-count ratio would report --
+    this is exactly the number that would incorrectly look like full
+    confidence before this fix."""
+    path = _write_session_with_tiers(tmp_path, "sess_mixed_tiers", [("a", "exact"), ("b", "semantic")])
+    paths = iter([path])
+    result = run_baseline("task_mixed_tiers", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is True
+    assert result.baseline_fidelity == pytest.approx(0.9)
+
+
+def test_a_pre_field_hit_with_no_recorded_tier_is_treated_as_exact_not_unknown(tmp_path):
+    """ToolCall.match_tier's own documented reasoning, confirmed here rather
+    than just asserted in a comment: a confirmed hit (fault=False) with no
+    recorded tier predates F-13 entirely, and every MatchTier value besides
+    "exact" postdates this field's own introduction -- so it can only ever
+    have been an exact-tier hit. Mixed with one genuine new semantic hit so
+    the two cases are distinguishable in the same run: if the pre-field
+    call were instead treated as unknown/excluded, fidelity would be 0.8
+    (the semantic hit alone, over a denominator that dropped the untiered
+    one) or some other value -- not the 0.9 this asserts."""
+    path = _write_session_with_tiers(tmp_path, "sess_legacy_plus_new", [("a", None), ("b", "semantic")])
+    paths = iter([path])
+    result = run_baseline("task_legacy_tier", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is True
+    assert result.baseline_fidelity == pytest.approx(0.9)
+
+
+def test_an_all_exact_run_still_has_fidelity_one(tmp_path):
+    path = _write_session_with_tiers(tmp_path, "sess_all_exact", [("a", "exact"), ("b", "exact")])
+    paths = iter([path])
+    result = run_baseline("task_all_exact", run_once=lambda: next(paths), repeats=1)
+
+    assert result.baseline_fidelity == 1.0
 
 
 def test_a_session_of_only_synthetic_calls_has_vacuous_fidelity_one(tmp_path):

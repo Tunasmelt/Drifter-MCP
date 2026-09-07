@@ -43,27 +43,20 @@ a single flaky repeat degrades `valid_runs`, it doesn't nuke the run.
 — there is no session to point at when `run_once` never produced one.
 
 Third exclusion reason — fidelity gating (docs/SPEC.md §7/§8, DEC-020, F-22),
-now implemented since a real replay-served pipeline exists to gate. Per-
-run fidelity is `confirmed_hit_calls / total_attempted_calls` over that
-run's recorded `ToolCall`s, where "confirmed hit" is `fault is False` —
-this is `_run_fidelity`'s own binary, tier-blind definition and STILL IS,
-even after F-13 (semantic key resolution) shipped: `replay_store.py`'s
-`MatchTier` is now `"exact" | "semantic"`, and a semantic HIT resolves at
-the wire level exactly like an exact one (an ordinary `CallToolResult`,
-not distinguishable from the recorded session's `fault=False` alone), so
-it counts as a FULL 1.0-weight hit here. docs/SPEC.md §7's target formula
-(`fidelity = (exact + inverse + SEMANTIC_WEIGHT × semantic) / total`,
-`semantic_weight` already in `calibration.yaml` at 0.8) is deliberately
-NOT wired up yet — doing so needs the served session's `ToolCall` records
-to actually carry which tier resolved them, which requires a schema
-change (a new nullable field, this project's own required pre-change-test
-procedure per CLAUDE.md) that F-13 itself didn't need and didn't add.
-Left as F-15's own next increment, not silently assumed done — a semantic
-hit counting as full-weight today means REAL fidelity (as SPEC.md defines
-it) is somewhat OVER-stated whenever semantic matches are involved, the
-opposite direction of a false negative, worth being explicit about rather
-than letting a plausible-sounding docstring imply more precision than
-exists.
+now implemented since a real replay-served pipeline exists to gate. Per-run
+fidelity is `_run_fidelity`'s own `(exact_hits + semantic_weight *
+semantic_hits) / total_attempted_calls` — docs/SPEC.md §7's formula, minus
+the still-unbuilt `inverse` term (F-12). Originally shipped tier-blind (a
+plain `fault is False` hit ratio); F-15's remaining gap (a semantic HIT
+resolving identically to an exact one at the wire level, so it counted as a
+full 1.0-weight hit) is now closed — `record/schema.py`'s `ToolCall` gained
+a `match_tier` field, set by `replay/replay_proxy.py`'s `on_call_tool` via
+the same private-marker-key pattern `SYNTHETIC_RESULT_MARKER_KEY` already
+used for `result_provenance`, so the served session's own records now carry
+which tier resolved each call. A confirmed hit with `match_tier is None`
+(a record from before this field existed) is treated as `"exact"`, not
+unknown — see `ToolCall.match_tier`'s own docstring for why that's the
+verified-correct reading of old data, not an assumption.
 
 STOP-AND-CHECK done before writing this, not assumed: does a replay MISS
 or FAULT actually reach the recorded session as a `ToolCall` at all, or
@@ -253,17 +246,33 @@ def _tool_path(records: list) -> tuple[str, ...]:
     return tuple(r.tool_name for r in records if isinstance(r, ToolCall))
 
 
-def _run_fidelity(records: list) -> float:
-    """`exact_hit_calls / total_attempted_calls` for one session's
-    ToolCall records. `fault is False` is the only "confirmed hit"
-    signal — a replay MISS or a replayed protocol fault are both
-    recorded as `fault=True` (replay_proxy.py's own deliberate,
-    documented choice: both look identical on the wire, so both are
-    recorded identically), and `fault is None` (a legacy pre-v1.0.10
-    corpus, not something a freshly replay-served run ever produces)
-    is treated as "not a confirmed hit" too — conservative, matching
-    this project's nullable-field discipline rather than assuming an
-    unknown fault status was fine.
+def _run_fidelity(records: list, semantic_weight: float = 1.0) -> float:
+    """`(exact_hits + semantic_weight * semantic_hits) / total_attempted_calls`
+    for one session's ToolCall records — docs/SPEC.md §7's formula, minus the
+    `inverse` term (F-12 is still unbuilt, so it's always 0). `fault is
+    False` is the only "confirmed hit" signal — a replay MISS or a replayed
+    protocol fault are both recorded as `fault=True` (replay_proxy.py's own
+    deliberate, documented choice: both look identical on the wire, so both
+    are recorded identically), and `fault is None` (a legacy pre-v1.0.10
+    corpus, not something a freshly replay-served run ever produces) is
+    treated as "not a confirmed hit" too — conservative, matching this
+    project's nullable-field discipline rather than assuming an unknown
+    fault status was fine.
+
+    Among confirmed hits, `match_tier` (F-13/F-15, docs/CHANGELOG.md) decides
+    the weight: `"exact"` is full weight (1.0), `"semantic"` gets
+    `semantic_weight` (`calibration.yaml`'s `semantic_weight`, 0.8 by
+    default — passed in by the caller, not read from calibration directly,
+    matching this function's existing "caller owns configuration" shape).
+    `match_tier is None` on a confirmed hit is treated as `"exact"`, NOT as
+    unknown/excluded — see `ToolCall.match_tier`'s own docstring: every tier
+    besides `"exact"` postdates this field's own introduction, so a
+    confirmed hit recorded before the field existed structurally cannot
+    have been anything but an exact-tier hit. This is the one nullable-field
+    case in this project where `None` does NOT mean "conservatively treat as
+    unknown" — confirmed by
+    `tests/evaluate/test_baseline.py`'s
+    `test_a_pre_field_hit_with_no_recorded_tier_is_treated_as_exact_not_unknown`.
 
     Calls with `result_provenance == "synthetic"` (F-17's tool_addition,
     F-14-scoped) are excluded from this computation entirely — docs/SPEC.md
@@ -283,8 +292,12 @@ def _run_fidelity(records: list) -> float:
     calls = [r for r in records if isinstance(r, ToolCall) and r.result_provenance != "synthetic"]
     if not calls:
         return 1.0
-    hits = sum(1 for c in calls if c.fault is False)
-    return hits / len(calls)
+    weighted_hits = 0.0
+    for c in calls:
+        if c.fault is not False:
+            continue
+        weighted_hits += semantic_weight if c.match_tier == "semantic" else 1.0
+    return weighted_hits / len(calls)
 
 
 def aggregate_baseline_runs(
@@ -332,7 +345,7 @@ def aggregate_baseline_runs(
             )
             continue
 
-        fidelity = _run_fidelity(records)
+        fidelity = _run_fidelity(records, semantic_weight=calibration.semantic_weight)
         if fidelity < calibration.fidelity_floor:
             excluded_runs.append(
                 ExcludedRun(

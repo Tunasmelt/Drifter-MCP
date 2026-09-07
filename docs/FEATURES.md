@@ -27,9 +27,9 @@ table and docs/PHASES.md for gate-level narrative.
 | F-10 | `drifter stats` | ✅ Built | Retry detection compares stored (already-redacted) arguments — previously two different real secrets redacted identically and were misdetected as a retry; fixed by making the redaction marker a deterministic hash of the matched value (record/redact.py) instead of a fixed placeholder, so different secrets now redact differently while the same secret still redacts identically (required for both retry detection and F-11's replay matching) |
 | F-11 | Replay store | ⚠️ Built, exact-key only | Tier-3 finding (PHASES.md Gate 3) — may not be viable against any real agent alone. Multi-session merging, cross-file last-writer-wins, fault/null-shape hits, and nested-key canonicalization now directly tested |
 | F-12 | Inverse-mutation key resolution | ⚠️ Stub only | Never implemented past the Gate 2 stub — **needs building** if tier 2 replay is ever exercised for real |
-| F-13 | Semantic key resolution | ✅ Built | Falls back to a sorted-value-multiset match when exact misses, only when exact misses. Fidelity gating (F-15) doesn't yet weight a semantic hit differently from an exact one — still tier-blind, F-15's own remaining scope, see docs/SPEC.md §7's updated implementation-status note |
+| F-13 | Semantic key resolution | ✅ Built | Falls back to a sorted-value-multiset match when exact misses, only when exact misses. Fidelity gating (F-15) now weights a semantic hit at `semantic_weight` (0.8) instead of full 1.0 — see F-15's own row |
 | F-14 | Synthetic response generation | ⚠️ Scoped to `tool_addition` only | General schema-inference synthesis explicitly out of scope; deliberate |
-| F-15 | Fidelity computation and gating | ✅ Built | Gate 2 |
+| F-15 | Fidelity computation and gating | ✅ Built | Gate 2; tier-weighting (exact=1.0, semantic=`semantic_weight`) wired up once F-13 gave `ToolCall` a `match_tier` field to read |
 | F-16 | `description_update` | ⚠️ Built, one known gap (one fixed) | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it, still open. The other known gap (ALL-CAPS source words losing case class, e.g. "GET" → "Obtain" instead of "OBTAIN") is fixed — case class (all-caps/title-case/lowercase) is now preserved, not just the first letter |
 | F-17 | `tool_addition` | ✅ Built | Gate 3, safety-reviewed |
 | F-18 | Mutation audit log | ⚠️ Minimal shared shape, deliberate | Not F-18's own eventual general log format — see `description_update.py`'s docstring |
@@ -59,12 +59,11 @@ table and docs/PHASES.md for gate-level narrative.
 dependency chain above (not a re-ranking, just made explicit in one place):
 1. ~~**F-13** (semantic key resolution)~~ — **built.** Was the tier-3 gap docs/SPEC.md
    §15 limitation 16's real evidence (Gate 4's real second-user test) confirmed as
-   blocking, not just "nice to have." Fidelity gating still doesn't weight a semantic
-   hit differently from an exact one — see F-15's remaining scope below.
-2. **F-15's remaining scope** — wire `SEMANTIC_WEIGHT` into `_run_fidelity` so a
-   semantic hit is discounted relative to an exact one, per docs/SPEC.md §7's formula.
-   Needs a schema change (served `ToolCall`s must carry which tier resolved them) —
-   a new nullable field, this project's own required pre-change-test procedure.
+   blocking, not just "nice to have."
+2. ~~**F-15's remaining scope**~~ — **built.** `ToolCall` gained a `match_tier` field
+   (F-13's own follow-on, same private-marker-key pattern `result_provenance` already
+   used), and `_run_fidelity` now weights a semantic hit at `semantic_weight` (0.8)
+   instead of full 1.0, per docs/SPEC.md §7's formula.
 3. **F-39** — HTTP real-server connection. Scoped already, no code yet, lower risk than
    F-38 was.
 4. **F-26 → F-25 → F-31/F-32** — the `policy/` module, in that dependency order (risk
@@ -253,11 +252,9 @@ secret values still matches an index built from already-redacted recorded ones.
 Deliberately narrow: a genuine multiset match on VALUES, never fuzzy/partial-value
 matching, and argument COUNT still has to line up (a 3-argument call can't
 semantically match a 2-argument recording) — matching this project's "structural,
-not free-text" stance elsewhere. **Known remaining gap, not this feature's own
-scope:** fidelity gating (F-15) doesn't yet discount a semantic hit relative to an
-exact one — `docs/SPEC.md` §7's `SEMANTIC_WEIGHT` isn't wired up, since doing so
-needs served sessions to record which tier resolved each call, a schema change
-this feature didn't need and didn't add.
+not free-text" stance elsewhere. Fidelity gating (F-15) discounts a semantic hit
+relative to an exact one via the `match_tier` field this feature's own follow-on
+added to `ToolCall` — see F-15's entry.
 
 **Simple:** A looser last resort: even if Drifter can't figure out the exact renamed
 field, if the actual data being passed looks the same as something it's seen before, it
@@ -287,15 +284,30 @@ empty-but-correctly-shaped fake answer rather than making something up with an A
 
 **Technical:** Per mutation arm (and per baseline arm — SPEC.md §7/§8), computes
 `fidelity = (exact + inverse + w×semantic) / total`, excluding `tool_addition` calls
-from the denominator. Forces verdict to UNKNOWN below `fidelity_floor`.
+from the denominator. Forces verdict to UNKNOWN below `fidelity_floor`. **Tier-
+weighting built** (`evaluate/baseline.py`'s `_run_fidelity`, `calibration.yaml`'s
+`semantic_weight` at 0.8): `record/schema.py`'s `ToolCall` gained a `match_tier`
+field, set by `replay/replay_proxy.py`'s `on_call_tool` on every real HIT via the
+same private-marker-key pattern (`MATCH_TIER_MARKER_KEY`) `result_provenance`
+already used, so the served session's own records now carry which tier resolved
+each call. A confirmed hit (`fault is False`) with `match_tier is None` — a record
+from before this field existed — is treated as `"exact"`, not unknown: every tier
+besides `"exact"` postdates this field's own introduction, so that's the verified-
+correct reading of old data, not a risky assumption (see `ToolCall.match_tier`'s
+own docstring). Inverse (tier 2, F-12) stays at 0 — still unbuilt.
 
 **Simple:** Drifter grades its own homework before trusting its answer. If it had to
 guess too much during a test, it says "I don't know" instead of reporting a fake
-finding.
+finding — and now, if some of what it used to answer was a looser guess (semantic
+match) rather than an exact recording, that counts for a little less, not the same
+as a sure thing.
 
 **Depends on:** F-11–F-14.
 **Done when:** an artificially low-fidelity fixture (forced high miss rate) produces
-UNKNOWN rather than a REGRESSION verdict.
+UNKNOWN rather than a REGRESSION verdict — plus (this round):
+`tests/evaluate/test_baseline.py`'s `test_a_semantic_hit_is_discounted_relative_to_
+an_exact_hit` confirms a mixed exact/semantic session's fidelity is the weighted
+0.9, not the tier-blind 1.0 a plain hit ratio would report.
 
 ---
 
