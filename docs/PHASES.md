@@ -655,6 +655,60 @@ of which arm produced it — that merging decision needs revisiting, not just mo
 findings bolted on. Not encountered yet; flagged for whoever next builds a report
 renderer that needs to attribute a finding to a specific arm.
 
+### v1 — Blast-radius preview (F-31)
+
+**Depends on:** F-26 (risk classification) — built. F-15 (fidelity estimate) is
+named as a dependency in docs/FEATURES.md's original text but ends up unused — see
+below for why. See `docs/SPEC.md` §10's implementation-status note and
+docs/FEATURES.md's F-31 entry for the full technical/simple breakdown and the
+reframing this required.
+
+#### Tasks
+
+- [x] `policy/blast_radius.py`: `compute_blast_radius`/`render_blast_radius` — two
+  of docs/SPEC.md §10's mockup elements are real, documented gaps rather than built:
+  "live-mode run" doesn't exist anywhere in this codebase (no code path connects to
+  a real MCP server during evaluation), and "estimated replay coverage" presupposes
+  a live-server fallback for a replay MISS, which also doesn't exist (a MISS
+  synthesizes or reports MISS, never falls through live) — this is also why F-15's
+  fidelity estimate ends up unused despite being named as a dependency. What's real
+  and built: workflow count (fixed at 1, matching `drifter run`'s current
+  one-task-one-operator scope), planned agent run count (`repeats × 2` arms), and
+  an estimated tool-call volume/risk breakdown computed from the fixture's own
+  recorded calls via F-26, honestly labeled as an estimate
+- [x] `cli/run.py`: `run_run` gains `assume_yes`/`input_stream` parameters — shows
+  the preview, then requires `--yes` or an interactive `y`/`yes` before
+  `run_mutation_comparison` (which spawns the real agent subprocesses) is ever
+  called. Declining aborts cleanly, confirmed distinguishable from a real spawn
+  failure by using a deliberately nonexistent agent command in the decline test —
+  if the agent had been attempted, the test would see a "could not start command"
+  error instead of a clean abort
+- [x] `cli/app.py`: `--yes`/`-y` flag on the `run` subcommand
+
+Full new-test count: 10 (`test_blast_radius.py`) + 3 (`test_run.py` confirmation
+gate: decline, empty-input-declines, interactive-yes-proceeds) + 2 (existing
+real end-to-end tests updated with `assume_yes=True` and a `"Planned:"` assertion)
+= 15.
+
+#### Exit test
+
+Live mode is architecturally unreachable without this preview having been shown
+and confirmed — reframed, since "live mode" itself doesn't exist yet, as: spawning
+a real agent process (`drifter run`'s actual real-cost path today) is
+architecturally unreachable without it. **Met**: `tests/cli/test_run.py`'s
+`test_run_run_declining_confirmation_aborts_without_running_the_agent` uses a
+deliberately nonexistent agent command and confirms declining produces a clean
+abort message, not a spawn-failure error — proving the agent was never attempted,
+not just that its output was hidden.
+
+#### Kill criterion
+
+If `drifter run`'s scope ever grows to genuinely multiple workflows/tasks in one
+invocation (the rest of F-35, not built), `workflow_count`'s hardcoded `1` becomes
+wrong, not just incomplete — that's the point at which this needs a real count,
+not a placeholder that happens to already read as a real number. Not encountered
+yet; `drifter run` is still Gate 3's one-task-one-operator minimal scope.
+
 ### v1 — remaining scope
 
 - Synthetic replay provenance surfaced fully in reports
@@ -662,8 +716,7 @@ renderer that needs to attribute a finding to a specific arm.
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
   candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be
   hand-written; mining matters once there's a real multi-week corpus
-- Full safety policy engine and blast-radius preview for live mode (F-31/F-32, now
-  unblocked by F-25 above)
+- F-32 (budget and hard limits), now the only unbuilt item in the `policy/` module
 - Task assertions as a first-class authored feature, not just the engine (F-24 was
   built in Gate 3; the authoring UX around it is v1)
 - Adaptive scheduling tuning based on Gate 1–4 real usage data

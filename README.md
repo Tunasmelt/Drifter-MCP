@@ -152,6 +152,10 @@ runs for low fidelity and leave a verdict computed from very little surviving da
 always check the report's `N/10 valid runs` lines, not just its headline verdict,
 before trusting a `REGRESSION`/`NO_REGRESSION` result.
 
+`drifter run` shows a blast-radius preview (planned agent runs, estimated tool calls
+by risk level) and asks for confirmation before spawning any real agent process —
+pass `--yes`/`-y` to skip the prompt for scripted/non-interactive use.
+
 ## Design principles
 
 The short version (full list in [`docs/SPEC.md` §3](docs/SPEC.md)):

@@ -155,9 +155,87 @@ def test_run_run_end_to_end_via_real_config(tmp_path):
         repeats=1,
         timeout_s=30.0,
         output_stream=out,
+        assume_yes=True,  # F-31: no interactive stdin in a test
     )
     output = out.getvalue()
     assert "via_config" in output
+    assert "BEHAVIOR" in output
+    assert "Planned:" in output  # F-31: blast-radius preview shown before execution
+
+
+# --- F-31: blast-radius preview confirmation gate ----------------------------
+
+
+def test_run_run_declining_confirmation_aborts_without_running_the_agent(tmp_path):
+    """F-31's own "Done when" bar, reframed for what drifter run actually
+    does today (see cli/run.py's own run_run docstring): the real cost --
+    spawning real agent subprocesses -- must be architecturally unreachable
+    without confirmation. Uses a deliberately nonexistent agent command: if
+    declining didn't actually stop execution, this would fail with a
+    "could not start command" error instead of a clean abort message,
+    proving the agent was never even attempted, not just that its output
+    was suppressed.
+    """
+    text = VALID_YAML_NO_AGENT + "\nagent:\n  command: ['this-executable-does-not-exist-anywhere-xyz']\n"
+    config_path = _write_config(tmp_path, text)
+
+    out = io.StringIO()
+    run_run(
+        config_path=config_path,
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        task_id="declined_task",
+        runs_dir=tmp_path / "runs",
+        output_stream=out,
+        input_stream=io.StringIO("n\n"),
+    )
+    output = out.getvalue()
+    assert "Planned:" in output  # the preview was shown
+    assert "Aborted" in output
+    assert "BEHAVIOR" not in output  # the run itself never happened
+    assert not (tmp_path / "runs" / "run" / "declined_task").exists()
+
+
+def test_run_run_empty_input_is_treated_as_declining(tmp_path):
+    """[y/N] -- the bracketed default is N; a bare Enter (empty line) must
+    decline, not be silently coerced into acceptance."""
+    text = VALID_YAML_NO_AGENT + "\nagent:\n  command: ['this-executable-does-not-exist-anywhere-xyz']\n"
+    config_path = _write_config(tmp_path, text)
+    out = io.StringIO()
+    run_run(
+        config_path=config_path,
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        runs_dir=tmp_path / "runs",
+        output_stream=out,
+        input_stream=io.StringIO("\n"),
+    )
+    assert "Aborted" in out.getvalue()
+
+
+def test_run_run_interactive_yes_confirmation_proceeds(tmp_path):
+    """The converse of the decline test -- a real 'y' on input_stream must
+    let the real run proceed, not just assume_yes=True."""
+    calls = _golden_calls()[:2]
+    command_json = json.dumps([sys.executable, str(SCRIPTED_AGENT), *(_spec(c.tool_name, c.arguments) for c in calls)])
+    text = VALID_YAML_NO_AGENT + f"\nagent:\n  command: {command_json}\n"
+    config_path = _write_config(tmp_path, text)
+
+    out = io.StringIO()
+    run_run(
+        config_path=config_path,
+        fixture_path=GOLDEN_FIXTURE,
+        server_name=GOLDEN_SERVER,
+        task_id="confirmed_task",
+        runs_dir=tmp_path / "runs",
+        repeats=1,
+        timeout_s=30.0,
+        output_stream=out,
+        input_stream=io.StringIO("y\n"),
+    )
+    output = out.getvalue()
+    assert "Planned:" in output
+    assert "Aborted" not in output
     assert "BEHAVIOR" in output
 
 
@@ -265,6 +343,7 @@ def test_run_run_end_to_end_via_config_with_agent_mode_http(tmp_path):
         repeats=1,
         timeout_s=30.0,
         output_stream=out,
+        assume_yes=True,  # F-31: no interactive stdin in a test
     )
     output = out.getvalue()
     assert "http_mode_task" in output

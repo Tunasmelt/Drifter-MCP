@@ -83,6 +83,10 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--seed", type=int, default=42, help="Mutation seed (reproducible)")
     run_parser.add_argument("--repeats", type=int, default=None, help="Overrides calibration.yaml's baseline.repeats")
     run_parser.add_argument("--timeout", type=float, default=60.0, help="Per-agent-run timeout in seconds")
+    run_parser.add_argument(
+        "--yes", "-y", dest="assume_yes", action="store_true",
+        help="Skip the blast-radius preview confirmation prompt (F-31, docs/SPEC.md §10)",
+    )
 
     replay_serve_parser = subparsers.add_parser("replay-serve", help="Serve a replayed manifest over real stdio, for a real agent to connect to")
     replay_serve_parser.add_argument("--fixture", type=Path, required=True, help="Already-recorded session JSONL to replay from")
@@ -152,6 +156,7 @@ def main() -> None:
                 seed=args.seed,
                 repeats=args.repeats,
                 timeout_s=args.timeout,
+                assume_yes=args.assume_yes,
             )
         except ConfigError as e:
             print(f"drifter run: {e}", file=sys.stderr)

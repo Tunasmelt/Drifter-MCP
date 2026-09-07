@@ -60,6 +60,7 @@ from evaluate.baseline import BaselineResult, run_baseline
 from evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
 from mutate.description_update import MutationLogEntry, mutate_tool_manifest
 from mutate.tool_addition import add_tool
+from policy.blast_radius import compute_blast_radius, render_blast_radius
 from policy.safety import SafetyFinding, SafetyResult, evaluate_safety_for_session
 from record.calibration import Calibration, load_calibration
 from replay.replay_proxy import tools_served_from_session
@@ -269,7 +270,18 @@ def run_run(
     repeats: int | None = None,
     timeout_s: float | None = DEFAULT_TIMEOUT_S,
     output_stream: TextIO = sys.stdout,
+    input_stream: TextIO = sys.stdin,
+    assume_yes: bool = False,
 ) -> None:
+    """F-31's own "Done when" bar, reframed honestly for what this command
+    actually does today (no live MCP server mode exists — see
+    `policy/blast_radius.py`'s own module docstring): the real, un-deferred
+    cost `drifter run` incurs is spawning real agent subprocesses, `repeats`
+    times per arm, twice (baseline + mutated) — that path is now
+    architecturally unreachable without the blast-radius preview being
+    shown and either `assume_yes=True` (the CLI's `--yes` flag) or an
+    interactive `y`/`yes` confirmation on `input_stream`.
+    """
     config = load_config(config_path)
     if config.agent is None:
         raise ConfigError(
@@ -285,6 +297,20 @@ def run_run(
         runs_dir = resolve_runs_dir(config)
     session_dir = runs_dir / "run" / task_id
     raw_dir = runs_dir.parent / "raw" / "run" / task_id
+
+    calibration = load_calibration()
+    effective_repeats = repeats if repeats is not None else calibration.baseline.repeats
+    original_tools = tools_served_from_session(fixture_path)
+    preview = compute_blast_radius(fixture_path, original_tools, effective_repeats, config.policy.destructive)
+    output_stream.write(render_blast_radius(preview) + "\n")
+
+    if not assume_yes:
+        output_stream.write("Continue? [y/N] ")
+        output_stream.flush()
+        answer = input_stream.readline().strip().lower()
+        if answer not in ("y", "yes"):
+            output_stream.write("Aborted — no agent runs were started.\n")
+            return
 
     result = run_mutation_comparison(
         task_id=task_id,

@@ -45,7 +45,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-28 | Signature grouping | ❌ Not built | **Needs building** — `mine/` is empty; deferred past Gate 3 deliberately (no real multi-week corpus yet) |
 | F-29 | Frequent subsequence mining (PrefixSpan) | ❌ Not built | **Needs building** — depends on F-28 |
 | F-30 | Task candidate generation + approval | ❌ Not built | **Needs building** — depends on F-29; blocks F-24's real authoring UX |
-| F-31 | Blast-radius preview | ❌ Not built | **Needs building** — v1 scope, live-mode safety |
+| F-31 | Blast-radius preview | ✅ Built, reframed | `policy/blast_radius.py`, gates real agent-process spawning (drifter run's actual real-cost path today), not a live-server mode that doesn't exist. "Estimated replay coverage" is a real, documented gap — see docs/SPEC.md §10's implementation-status note |
 | F-32 | Budget and hard limits | ❌ Not built | **Needs building** — v1 scope (`drifter run`'s `--budget`/`--dry-run`) |
 | F-33 | `drifter init` | ⚠️ Built narrower than spec, deliberate | F-26 now exists but `init` still doesn't call it — done-when bar doesn't require it, wiring classification into `init` itself is separate, unrequested scope |
 | F-34 | Subprocess agent adapter (stdio) | ✅ Built | Gate 2 scope, deliberately narrower than original spec text (now widened by F-38, not replaced) |
@@ -76,11 +76,16 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    report. 2 of 5 check categories built (destructive invocation,
    confirmation_required bypass), 3 real documented gaps — see F-25's own entry.
    Now unblocks F-31/F-32.
-6. **F-31/F-32** — blast-radius preview / budget limits, both depending on F-25.
-7. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
+6. ~~**F-31**~~ — **built, reframed.** `policy/blast_radius.py`, gates spawning real
+   agent processes — `drifter run`'s actual real-cost path today — with `drifter
+   run` now requiring `--yes` or interactive confirmation. See F-31's own entry for
+   why "live mode" and "estimated replay coverage" from docs/SPEC.md §10's mockup don't
+   map onto this codebase's actual architecture.
+7. **F-32** — budget/hard limits (`--budget`, `--dry-run`, wall-time cap).
+8. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
    multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
    first place, still true).
-8. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
+9. **F-27** (adaptive scheduling) and **F-36's `drifter report`** — lower urgency,
    no blocking dependents.
 
 ---
@@ -609,14 +614,34 @@ approved without touching raw recordings.
 
 **Technical:** Before any live-mode run, computes and displays planned workflow count,
 agent run count, tool call count broken down by risk level, and estimated replay
-coverage. Requires explicit confirmation.
+coverage. Requires explicit confirmation. **Built, honestly reframed**
+(`policy/blast_radius.py`): "live mode" doesn't exist anywhere in this codebase (no
+code path connects to a real MCP server during evaluation — every prior module that
+touched this, F-25/F-26/F-37, already confirmed the same thing independently), and
+"estimated replay coverage" as SPEC.md's own mockup describes it presupposes a live
+server FALLBACK for a replay MISS, which also doesn't exist (a MISS synthesizes or
+reports MISS, never falls through to a real call). Both are real, stated gaps, not
+built. What IS real and gated: `drifter run`'s actual un-deferred cost TODAY —
+spawning real agent subprocesses, `repeats` times per arm, twice — is now
+unreachable without the preview (workflow count fixed at 1, matching `drifter run`'s
+current one-task-one-operator scope; planned agent runs = `repeats * 2`; estimated
+tool-call volume and risk breakdown computed from the fixture's OWN recorded call
+sequence, classified via F-26, honestly labeled as an estimate) being shown and
+either `--yes`/`assume_yes=True` or an interactive `y`/`yes` confirmation given.
+Declining aborts before the real agent is ever spawned — confirmed with a
+deliberately nonexistent agent command, so a would-be spawn failure is
+distinguishable from a clean, pre-spawn abort.
 
 **Simple:** Shows you exactly what's about to happen — how many real actions, how
 risky — before anything actually runs live, so nothing surprising happens silently.
 
-**Depends on:** F-26 (risk classification), F-15 (fidelity estimate).
+**Depends on:** F-26 (risk classification), F-15 (fidelity estimate — not actually
+used; see "estimated replay coverage" above).
 **Done when:** live mode is architecturally unreachable without this preview having
-been shown and confirmed.
+been shown and confirmed — reframed as: spawning a real agent process (`drifter
+run`'s actual live-cost path) is architecturally unreachable without it. Confirmed:
+`tests/cli/test_run.py`'s `test_run_run_declining_confirmation_aborts_without_
+running_the_agent`.
 
 ### F-32 Budget and hard limits
 

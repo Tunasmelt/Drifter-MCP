@@ -369,6 +369,22 @@ Estimated replay coverage: 92%
 Continue? [y/N]
 ```
 
+*Implementation status (F-31, docs/CHANGELOG.md):* built and required, `policy/
+blast_radius.py`, but honestly reframed against two premises above that don't hold
+in this codebase's actual architecture. "Live-mode run" doesn't exist — no code
+path anywhere connects to a real MCP server during evaluation (`drifter run`
+replays exclusively; confirmed independently by F-25/F-26/F-37 already, not a new
+claim here). "Estimated replay coverage" presupposes a live-server FALLBACK for a
+replay MISS, which also doesn't exist (a MISS synthesizes a placeholder or reports
+MISS outright, never falls through to a real call) — not built, a real gap. What
+IS gated, required, and real: `drifter run`'s actual un-deferred cost today —
+spawning real agent subprocesses — is architecturally unreachable without a
+preview (workflow count fixed at 1, matching `drifter run`'s current one-task
+scope; agent runs = `repeats × 2` arms; tool-call volume and risk breakdown
+estimated from the fixture's own recorded calls via F-26, honestly labeled as an
+estimate, never a guarantee) being shown and confirmed (`--yes` or interactive
+`y`/`yes`).
+
 ## 11. Configuration surface
 
 ```yaml

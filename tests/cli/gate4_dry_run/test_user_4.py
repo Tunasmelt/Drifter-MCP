@@ -93,6 +93,7 @@ def test_user_4_tool_addition_regression_via_last_tool_selection(tmp_path):
         repeats=1,
         timeout_s=30.0,
         output_stream=out,
+        assume_yes=True,  # F-31: no interactive stdin in a test
     )
     output = out.getvalue()
     assert "test_user_4" in output

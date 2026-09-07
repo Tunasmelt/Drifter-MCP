@@ -120,6 +120,7 @@ def test_user_1_happy_path_end_to_end(tmp_path):
         repeats=1,
         timeout_s=30.0,
         output_stream=out,
+        assume_yes=True,  # F-31: no interactive stdin in a test
     )
     output = out.getvalue()
     assert "test_user_1" in output

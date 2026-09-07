@@ -54,6 +54,63 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## F-31 (blast-radius preview) built, honestly reframed against two premises that don't hold
+
+Following the priority list: `policy/blast_radius.py` builds docs/SPEC.md §10's
+blast-radius preview, required before `drifter run` spawns any real agent
+subprocess. Two of the mockup's own elements turned out to be real, documented
+gaps rather than something to build, discovered by checking rather than
+assuming — the same discipline this project applied to F-19's cache-busting
+investigation and F-25's own deferred checks.
+
+**"Live-mode run"** — the preview's own stated trigger ("required before any
+live-mode run") — doesn't exist anywhere in this codebase. No code path connects
+to a real MCP server during evaluation; `drifter run` replays exclusively. This
+isn't a new finding specific to F-31 — F-25, F-26, and F-37 had each already
+confirmed the same fact independently while building their own pieces — but F-31
+is the first feature whose own literal "Done when" bar depends on it existing.
+**"Estimated replay coverage"** presupposes a live-server FALLBACK for a replay
+MISS (a mechanism that would answer "what fraction of calls will need to fall
+through to a real server"), which also doesn't exist — a MISS in this codebase
+either synthesizes a placeholder (`tool_addition`'s own injected tool) or reports
+MISS outright, never falls through to a live call. Neither gap is built here;
+both are stated plainly in docs/SPEC.md §10's own new implementation-status note,
+matching this project's established pattern for this class of decision rather
+than reinterpreted loosely to look built or silently dropped.
+
+What IS real, and gates something that actually matters: `drifter run`'s
+un-deferred cost TODAY is spawning real agent subprocesses — `repeats` times per
+arm, twice (baseline + mutated) — a real, ongoing cost (API calls, tokens, real
+wall time) that previously had zero preview or confirmation gate at all. The
+preview computes workflow count (hardcoded to `1`, matching `drifter run`'s
+current one-task-one-operator scope, not a placeholder pretending to be a real
+count — see docs/PHASES.md's own kill criterion for when this stops being true),
+planned agent runs (`repeats × 2`), and an estimated tool-call volume/risk
+breakdown — using the ALREADY-RECORDED fixture's own call sequence, classified
+via F-26, as the predictor, honestly labeled an estimate rather than a
+guarantee (a fresh agent invocation can and does diverge from the fixture,
+docs/SPEC.md §15 limitation 16's own real-test finding).
+
+`cli/run.py`'s `run_run` gains `assume_yes`/`input_stream` parameters: shows the
+preview, then requires `--yes` (new `cli/app.py` flag) or an interactive
+`y`/`yes` before `run_mutation_comparison` — the function that actually spawns
+agents — is ever called. Declining aborts cleanly. Confirmed the abort is real,
+not cosmetic: the decline test uses a deliberately nonexistent agent command, so
+if declining somehow didn't actually stop execution, the test would see a
+"could not start command" spawn-failure error instead of a clean "Aborted"
+message — proving the agent was genuinely never attempted.
+
+15 new tests across `tests/policy/test_blast_radius.py` and `tests/cli/
+test_run.py` (a decline test, an empty-input-declines test confirming `[y/N]`'s
+own bracketed default, an interactive-yes-proceeds test, plus two existing real
+end-to-end tests updated with `assume_yes=True` so they keep running
+non-interactively, each gaining a `"Planned:"` assertion confirming the preview
+actually appears). `docs/SPEC.md` §10, `docs/FEATURES.md`'s F-31 entry, and
+`docs/PHASES.md` all gain a full account of what's built vs. reframed vs.
+genuinely deferred.
+
+---
+
 ## F-25 (safety verdict engine) built, wired into a real `drifter run` report
 
 Following the priority list, now that F-26 unblocks it: `policy/safety.py`

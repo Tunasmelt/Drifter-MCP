@@ -143,6 +143,7 @@ def test_user_2_real_regression_via_the_full_pipeline(tmp_path):
         repeats=1,
         timeout_s=30.0,
         output_stream=out,
+        assume_yes=True,  # F-31: no interactive stdin in a test
     )
     output = out.getvalue()
     assert "test_user_2" in output

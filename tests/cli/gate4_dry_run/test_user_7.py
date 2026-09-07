@@ -102,6 +102,7 @@ def test_user_7_low_fidelity_reports_unknown_not_a_false_verdict(tmp_path):
         repeats=1,
         timeout_s=30.0,
         output_stream=out,
+        assume_yes=True,  # F-31: no interactive stdin in a test
     )
     output = out.getvalue()
     assert "test_user_7" in output
