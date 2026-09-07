@@ -490,6 +490,19 @@ RECOMMENDATION  Add an assertion to resolve TASK. Inspect the retry loop on
                 renamed parameters — the agent recovers but inefficiently.
 ```
 
+*Implementation status:* the illustrative block above is this section's aspirational
+target, not what `render_run_result` prints today. Built: BEHAVIOR/TASK/SAFETY exactly
+as shown, plus a CONFIDENCE section reporting each arm's own replay fidelity and a
+provenance breakdown (`exact`/`semantic`/`synthetic`/`unresolved` percentages —
+`evaluate.baseline.BaselineResult.provenance_breakdown`) per arm rather than merged
+into one "baseline 10 runs · mutation 10 runs" line, and using `semantic` in place of
+the illustrative `inverse` (F-12, inverse-mutation key resolution, is still unbuilt —
+see limitation in §7 above). NOT built: the single-line `Mutation`/`mut_042` header
+(no mutation-log persistence exists to reconstruct it from — `cli/report.py`'s own
+docstring), the `detectable regression threshold`/`calibration: fidelity_floor=...`
+footnote, and the RECOMMENDATION line entirely (would require a task-assertion engine
+wired into the report, which doesn't exist — TASK is unconditionally UNKNOWN).
+
 ## 14. What ships when
 
 See PHASES.md for the gated build plan. See FEATURES.md for full per-feature

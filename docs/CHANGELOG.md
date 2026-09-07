@@ -6,6 +6,45 @@ not just a diff.
 
 ---
 
+## Synthetic replay provenance surfaced in reports (docs/SPEC.md §13)
+
+Next item down "v1 — remaining scope" after the exit-code wiring above.
+`evaluate.baseline._run_fidelity` already knew, per call, which of
+exact/semantic/synthetic/unresolved it was (that's exactly what feeds the
+tier-weighted fidelity float F-15 built) — it just threw that breakdown away
+after folding it into one number. `BaselineResult` gained a new
+`provenance_breakdown: dict[str, int] | None` field (counts, not
+percentages, computed over valid runs only — same scope as
+`baseline_fidelity` itself, `None` exactly when `valid_runs == 0`), and
+`render_run_result` gained a CONFIDENCE section showing each arm's own
+fidelity + breakdown, since baseline and mutated can genuinely differ (a
+`tool_addition` mutation adds synthetic calls only the mutated arm has).
+
+Deliberately reported per-arm, not merged into docs/SPEC.md §13's illustrative
+single "baseline 10 runs · mutation 10 runs" CONFIDENCE line — merging would
+have hidden exactly the kind of arm-specific divergence this feature exists
+to surface. Also deliberately labeled `semantic`, not the illustrative
+`inverse`: inverse-mutation key resolution (F-12) is still unbuilt, so
+showing an "inverse 0%" bucket on every single report would be fake
+precision for a tier that structurally cannot fire yet — omitted from the
+breakdown entirely rather than always-zero, matching `_run_fidelity`'s own
+established `MatchTier = Literal["exact", "semantic"]` scope.
+
+Tests were written against a hand-built session mixing all four bucket
+categories at once BEFORE the field existed on `BaselineResult` at all
+(`tests/evaluate/test_baseline.py`), confirmed to fail (no such attribute),
+then implemented — same procedure CLAUDE.md requires for new record-adjacent
+fields, applied here even though this field lives on a computed result
+dataclass rather than the on-disk `ToolCall` schema itself.
+
+Real, stated scope boundary, not silently left ambiguous: this closes only
+the provenance-breakdown half of docs/SPEC.md §13's CONFIDENCE section. The
+`detectable regression threshold`/`calibration: fidelity_floor=...` footnote
+and the RECOMMENDATION line are unrelated, still-unbuilt scope — see
+docs/SPEC.md §13's own updated implementation-status note.
+
+---
+
 ## docs/SPEC.md §12 exit-code scheme wired up for `run`/`report`
 
 The last item in "v1 — remaining scope" that didn't need a design decision first

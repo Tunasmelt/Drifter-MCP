@@ -210,6 +210,21 @@ class BaselineResult:
     # dropped — see this module's docstring.
     excluded_runs: list[ExcludedRun] = field(default_factory=list)
 
+    # Replay-provenance breakdown across every ToolCall in the VALID runs
+    # only (matching baseline_fidelity's own "computed over valid_runs"
+    # scope) -- counts, not percentages, so a report can compute its own
+    # denominator rather than trusting a pre-divided float. Keys are
+    # "exact"/"semantic" (docs/SPEC.md §7's two currently-reachable replay
+    # tiers -- "inverse" is F-12, still unbuilt, and deliberately absent
+    # here rather than always-0 fake precision), "synthetic"
+    # (tool_addition's fixed placeholder responses, excluded from fidelity
+    # itself but real calls that happened), and "unresolved" (a replay MISS
+    # or protocol fault -- see `_run_fidelity`'s own docstring for why
+    # these can't be told apart from each other by this field alone).
+    # `None` exactly when `valid_runs == 0`, same convention as the other
+    # fields above.
+    provenance_breakdown: dict[str, int] | None = None
+
     @property
     def has_data(self) -> bool:
         """The one unambiguous "was anything computed" signal — prefer
@@ -300,6 +315,37 @@ def _run_fidelity(records: list, semantic_weight: float = 1.0) -> float:
     return weighted_hits / len(calls)
 
 
+def _provenance_counts(records: list) -> dict[str, int]:
+    """Categorizes every `ToolCall` in `records` into exactly one of
+    `BaselineResult.provenance_breakdown`'s four buckets — see that
+    field's own docstring for what each means and why "inverse" isn't
+    one of them yet. Synthetic calls are checked first since
+    `result_provenance` and `match_tier` are otherwise independent
+    fields (a synthetic call has no `match_tier` at all — it never went
+    through `ReplayStore.lookup`)."""
+    counts = {"exact": 0, "semantic": 0, "synthetic": 0, "unresolved": 0}
+    for call in records:
+        if not isinstance(call, ToolCall):
+            continue
+        if call.result_provenance == "synthetic":
+            counts["synthetic"] += 1
+        elif call.fault is not False:
+            counts["unresolved"] += 1
+        elif call.match_tier == "semantic":
+            counts["semantic"] += 1
+        else:
+            counts["exact"] += 1
+    return counts
+
+
+def _merge_provenance_counts(counts_list: list[dict[str, int]]) -> dict[str, int]:
+    merged = {"exact": 0, "semantic": 0, "synthetic": 0, "unresolved": 0}
+    for counts in counts_list:
+        for key, value in counts.items():
+            merged[key] += value
+    return merged
+
+
 def aggregate_baseline_runs(
     task_id: str,
     session_paths: Sequence[Path],
@@ -327,6 +373,7 @@ def aggregate_baseline_runs(
 
     valid_paths: list[tuple[str, ...]] = []
     valid_fidelities: list[float] = []
+    valid_provenance_counts: list[dict[str, int]] = []
     excluded_runs: list[ExcludedRun] = list(pre_excluded)
 
     for session_path in session_paths:
@@ -358,6 +405,7 @@ def aggregate_baseline_runs(
 
         valid_paths.append(_tool_path(records))
         valid_fidelities.append(fidelity)
+        valid_provenance_counts.append(_provenance_counts(records))
 
     if not valid_paths:
         return BaselineResult(
@@ -370,6 +418,7 @@ def aggregate_baseline_runs(
             baseline_spread=None,
             baseline_fidelity=None,
             excluded_runs=excluded_runs,
+            provenance_breakdown=None,
         )
 
     variant_frequencies: dict[tuple[str, ...], int] = {}
@@ -403,6 +452,7 @@ def aggregate_baseline_runs(
         baseline_spread=baseline_spread,
         baseline_fidelity=baseline_fidelity,
         excluded_runs=excluded_runs,
+        provenance_breakdown=_merge_provenance_counts(valid_provenance_counts),
     )
 
 

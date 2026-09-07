@@ -679,6 +679,91 @@ def test_fidelity_and_null_hash_exclusions_coexist_with_distinct_reasons(tmp_pat
     assert len(reasons) == 2  # genuinely distinct strings, not collapsed
 
 
+# --- provenance_breakdown: exact/semantic/synthetic/unresolved call counts -
+# Written and confirmed to fail against the pre-change BaselineResult (no
+# such field existed at all) BEFORE it was added, per CLAUDE.md's required
+# procedure for this class of change.
+
+
+def _write_mixed_provenance_session(dir_path: Path, session_id: str, calls: list[tuple[str, bool, str | None, str]]) -> Path:
+    """Full control over all three provenance-relevant fields at once --
+    each entry is (tool_name, fault, match_tier, result_provenance) --
+    since none of this file's other three-arg helpers can build a single
+    session mixing exact/semantic/synthetic/unresolved calls together,
+    which is exactly what a real `provenance_breakdown` needs to be
+    tested against."""
+    lines = [
+        SessionStart(
+            session_id=session_id, seq=0, started_at="2026-08-25T00:00:00Z",
+            environment=Environment(tool_manifest_hash="h"), raw_frame_offset=0,
+        ).model_dump_json()
+    ]
+    for i, (tool_name, fault, match_tier, provenance) in enumerate(calls, start=1):
+        lines.append(
+            ToolCall(
+                session_id=session_id, seq=i, timestamp="2026-08-25T00:00:01Z", server="fake",
+                tool_name=tool_name, arguments={},
+                result_shape=None if fault else {"type": "object", "keys": []},
+                is_error=None if fault else False, duration_ms=1.0, fault=fault,
+                match_tier=match_tier, result_provenance=provenance, raw_frame_offset=i * 100,
+            ).model_dump_json()
+        )
+    path = dir_path / f"{session_id}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_provenance_breakdown_categorizes_every_call_into_exactly_one_bucket(tmp_path):
+    calls = [
+        ("a", False, "exact", "real"),
+        ("b", False, None, "real"),  # pre-F-13 hit, treated as exact -- same rule as fidelity
+        ("c", False, "semantic", "real"),
+        ("d", False, None, "synthetic"),  # tool_addition's placeholder response
+        ("e", True, None, "real"),  # a MISS/fault -- unresolved
+    ]
+    path = _write_mixed_provenance_session(tmp_path, "sess_mixed_provenance", calls)
+    paths = iter([path])
+
+    result = run_baseline("task_provenance", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is True  # fidelity is 3/4 = 0.75, above the 0.70 floor
+    assert result.provenance_breakdown == {"exact": 2, "semantic": 1, "synthetic": 1, "unresolved": 1}
+
+
+def test_provenance_breakdown_merges_counts_across_multiple_valid_runs(tmp_path):
+    path1 = _write_mixed_provenance_session(tmp_path, "sess_a", [("a", False, "exact", "real")])
+    path2 = _write_mixed_provenance_session(tmp_path, "sess_b", [("b", False, "semantic", "real")])
+    paths = iter([path1, path2])
+
+    result = run_baseline("task_provenance_merge", run_once=lambda: next(paths), repeats=2)
+
+    assert result.provenance_breakdown == {"exact": 1, "semantic": 1, "synthetic": 0, "unresolved": 0}
+
+
+def test_provenance_breakdown_excludes_calls_from_runs_that_were_themselves_excluded(tmp_path):
+    """A run excluded for low fidelity (or a null hash) contributes nothing
+    to provenance_breakdown -- it's computed over VALID runs only, same
+    scope as baseline_fidelity itself, not every call ever attempted."""
+    excluded_run = _write_session_with_faults(tmp_path, "sess_excluded", [("a", True)])  # fidelity 0.0
+    valid_run = _write_mixed_provenance_session(tmp_path, "sess_valid", [("b", False, "exact", "real")])
+    paths = iter([excluded_run, valid_run])
+
+    result = run_baseline("task_provenance_exclusion", run_once=lambda: next(paths), repeats=2)
+
+    assert len(result.excluded_runs) == 1
+    assert result.provenance_breakdown == {"exact": 1, "semantic": 0, "synthetic": 0, "unresolved": 0}
+
+
+def test_provenance_breakdown_is_none_when_no_run_is_valid(tmp_path):
+    excluded_run = _write_session_with_faults(tmp_path, "sess_all_excluded", [("a", True)])
+    paths = iter([excluded_run])
+
+    result = run_baseline("task_provenance_none", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is False
+    assert result.provenance_breakdown is None
+
+
 # --- dominant path / variant frequency / natural_variation / spread ------
 
 

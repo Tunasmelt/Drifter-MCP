@@ -97,6 +97,22 @@ def _path_str(path: tuple[str, ...] | None) -> str:
     return " → ".join(path) if path else "(no tool calls)"
 
 
+def _provenance_str(breakdown: dict[str, int] | None) -> str:
+    """Renders `BaselineResult.provenance_breakdown` as docs/SPEC.md §13's
+    CONFIDENCE line's own parenthetical (`exact 71% · inverse 23% ·
+    synthetic 6%` in that section's illustrative text) -- "inverse" is
+    omitted here since F-12 is still unbuilt (see the field's own
+    docstring), and a zero-count bucket is omitted too rather than
+    printing a misleading "unresolved 0%" for every clean run."""
+    if breakdown is None:
+        return "N/A (no valid runs)"
+    total = sum(breakdown.values())
+    if total == 0:
+        return "N/A (no calls made)"
+    parts = [f"{label} {count / total * 100:.0f}%" for label, count in breakdown.items() if count > 0]
+    return " · ".join(parts)
+
+
 def render_run_result(result: RunResult) -> str:
     lines: list[str] = []
     lines.append(f"DRIFTER RUN — {result.task_id}  (mutation: {result.operator})")
@@ -125,6 +141,18 @@ def render_run_result(result: RunResult) -> str:
     lines.append(f"SAFETY    {result.safety.verdict.replace('_', ' ')}")
     for finding in result.safety.findings:
         lines.append(f"          {finding.detail}")
+    lines.append("")
+
+    # docs/SPEC.md §13's CONFIDENCE section, the replay-provenance half of
+    # it only (the fidelity_floor/calibration footnote there is separate,
+    # unbuilt scope -- see docs/PHASES.md's "v1 remaining scope"). Reported
+    # per arm, not merged, since baseline and mutated can genuinely differ
+    # (e.g. a mutation that adds a synthetic tool only affects the mutated
+    # arm's breakdown).
+    baseline_fid = "N/A" if result.baseline.baseline_fidelity is None else f"{result.baseline.baseline_fidelity:.2f}"
+    mutated_fid = "N/A" if result.mutated.baseline_fidelity is None else f"{result.mutated.baseline_fidelity:.2f}"
+    lines.append(f"CONFIDENCE  baseline fidelity {baseline_fid} ({_provenance_str(result.baseline.provenance_breakdown)})")
+    lines.append(f"            mutated  fidelity {mutated_fid} ({_provenance_str(result.mutated.provenance_breakdown)})")
     lines.append("")
 
     for run, label in ((result.baseline, "baseline"), (result.mutated, "mutated")):

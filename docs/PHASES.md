@@ -819,7 +819,13 @@ encountered yet; no current consumer needs it.
 
 ### v1 — remaining scope
 
-- Synthetic replay provenance surfaced fully in reports
+- ~~Synthetic replay provenance surfaced fully in reports~~ — built:
+  `BaselineResult.provenance_breakdown` (exact/semantic/synthetic/unresolved
+  call counts across valid runs) and a CONFIDENCE section in `render_run_result`
+  showing each arm's own fidelity + breakdown (see docs/CHANGELOG.md). The
+  `calibration.yaml`/`fidelity_floor` footnote from docs/SPEC.md §13's
+  illustrative CONFIDENCE block is separate, still-unbuilt scope — this closed
+  the provenance-breakdown half specifically, not the whole section.
 - Remaining Level 0–1 mutation operators beyond the two shipped in Gate 3
 - Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
   candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be

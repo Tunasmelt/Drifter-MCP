@@ -94,6 +94,50 @@ def test_render_run_result_handles_unknown_behavior_verdict_without_crashing():
     assert "N/A" in output
 
 
+def test_render_run_result_shows_confidence_provenance_breakdown_per_arm():
+    """The "synthetic replay provenance surfaced fully in reports" item
+    from docs/PHASES.md's v1 remaining scope: docs/SPEC.md §13's CONFIDENCE
+    section must show each arm's own replay-provenance breakdown, not just
+    a bare fidelity float -- and the two arms can genuinely differ (the
+    mutated arm here has a synthetic tool_addition call the baseline
+    doesn't)."""
+    baseline = BaselineResult(
+        task_id="t", total_runs=1, valid_runs=1, dominant_path=("a",),
+        variant_frequencies={("a",): 1}, natural_variation=0.0, baseline_spread=0.0,
+        baseline_fidelity=1.0, excluded_runs=[],
+        provenance_breakdown={"exact": 2, "semantic": 0, "synthetic": 0, "unresolved": 0},
+    )
+    mutated = BaselineResult(
+        task_id="t", total_runs=1, valid_runs=1, dominant_path=("a", "added_tool"),
+        variant_frequencies={("a", "added_tool"): 1}, natural_variation=0.0, baseline_spread=0.0,
+        baseline_fidelity=0.9, excluded_runs=[],
+        provenance_breakdown={"exact": 1, "semantic": 0, "synthetic": 1, "unresolved": 0},
+    )
+    result = RunResult(
+        task_id="t", operator="tool_addition", baseline=baseline, mutated=mutated,
+        effect=EffectSizeResult(deviation_rate=0.0, effect_size=0.0, verdict="NO_REGRESSION"),
+        mutation_log=[], safety=NO_VIOLATION,
+    )
+    output = render_run_result(result)
+    assert "CONFIDENCE  baseline fidelity 1.00 (exact 100%)" in output
+    assert "mutated  fidelity 0.90 (exact 50% · synthetic 50%)" in output
+
+
+def test_render_run_result_reports_confidence_as_na_when_no_valid_runs_exist():
+    empty = BaselineResult(
+        task_id="t", total_runs=1, valid_runs=0, dominant_path=None,
+        variant_frequencies={}, natural_variation=None, baseline_spread=None,
+        baseline_fidelity=None, excluded_runs=[], provenance_breakdown=None,
+    )
+    result = RunResult(
+        task_id="t", operator="description_update", baseline=empty, mutated=empty,
+        effect=EffectSizeResult(deviation_rate=None, effect_size=None, verdict="UNKNOWN"),
+        mutation_log=[], safety=NO_VIOLATION,
+    )
+    output = render_run_result(result)
+    assert "CONFIDENCE  baseline fidelity N/A (N/A (no valid runs))" in output
+
+
 # --- run_run: config resolution / actionable errors -------------------------
 
 
