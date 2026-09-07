@@ -59,7 +59,11 @@ table and docs/PHASES.md for gate-level narrative.
 dependency chain above (not a re-ranking, just made explicit in one place):
 1. ~~**F-13** (semantic key resolution)~~ — **built.** Was the tier-3 gap docs/SPEC.md
    §15 limitation 16's real evidence (Gate 4's real second-user test) confirmed as
-   blocking, not just "nice to have."
+   blocking, not just "nice to have." **Re-examined after building it (docs/SPEC.md
+   §15 limitation 16's own update): F-13 only matches identical VALUES under a
+   different parameter NAME — it cannot resolve the real, curious agent's actual
+   failure mode (different tools, different argument VALUES). Limitation 16 remains
+   open**; F-13 is a real, separate, narrower improvement, not the fix.
 2. ~~**F-15's remaining scope**~~ — **built.** `ToolCall` gained a `match_tier` field
    (F-13's own follow-on, same private-marker-key pattern `result_provenance` already
    used), and `_run_fidelity` now weights a semantic hit at `semantic_weight` (0.8)

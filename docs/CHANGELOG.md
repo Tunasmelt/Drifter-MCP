@@ -54,6 +54,47 @@ not a forced-green assertion of something that doesn't work.
 
 ---
 
+## Limitation 16 re-examined after F-13/F-15: still open, not fixed by association
+
+Explicit re-check, not an assumption: F-13 (semantic key resolution) and F-15's
+tier-weighted fidelity were both built citing limitation 16 (exact-match replay
+collapsing against a real, unscripted agent) as their motivating evidence. Whether
+they actually CLOSED that gap was never separately verified — until now.
+
+Read `replay_store.py`'s own `semantic_key` implementation directly rather than
+trusting the earlier framing: semantic matching requires the same tool name, the
+same argument count, and every argument VALUE to match exactly — it only tolerates
+a different parameter NAME carrying an identical value. The module's own docstring
+already said as much ("there is no fuzzy/partial-value matching at either tier"),
+but this connection — that this specific narrowness means limitation 16's actual
+documented failure mode (a real agent calling a near-universal unrecorded first
+move, then escalating through combinatorial, genuinely different argument VALUES
+across an open-ended sequence) is a VALUE-divergence and TOOL-divergence problem,
+not the KEY-naming problem F-13 solves — had not been stated explicitly anywhere
+until this pass.
+
+**Conclusion: limitation 16 remains open.** F-13 is a real, valuable, separate
+improvement (it will genuinely help a `parameter_rename`-shaped mutation, or a
+client library that renames an argument key), but it was never going to fix the
+real curious-agent divergence problem, and doesn't. F-15's fidelity-weighting fix
+is also real and valuable on its own terms — a semantic hit no longer silently
+counts as full confidence — but it improves the HONESTY of a low-fidelity report,
+not the underlying MISS rate limitation 16 is actually about.
+
+Deliberately did NOT spend another real second-user dogfood session to
+re-quantify the MISS rate: the architectural analysis above is sufficient to know
+F-13 doesn't close the gap, without paying for a live-agent re-run of a result
+that has no structural reason to have changed. `docs/SPEC.md` §15 limitation 16
+and `docs/FEATURES.md`'s F-13 priority-list entry are both updated to say this
+plainly rather than let the "built the priority-1 item" framing imply the
+underlying finding was resolved. The real open work — general structural
+response synthesis on MISS (F-14, still not built) or a genuinely fuzzy/
+partial-value matching tier beyond F-13's exact-value semantic tier — remains
+undecided, and is now the actual next thing worth deciding, not F-13/F-15
+themselves.
+
+---
+
 ## F-32 (budget and hard limits) built: the `policy/` module is now complete
 
 Following the priority list: `policy/budget.py` builds docs/SPEC.md §11/§13's

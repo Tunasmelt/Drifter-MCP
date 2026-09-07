@@ -731,3 +731,36 @@ when*.
     subagent's original test almost certainly compared against a differently-scoped
     or differently-resolved path than it believed, not an actual proxy fidelity gap.
     `record/proxy.py`'s error forwarding is correct for this case.
+
+    **Update after F-13/F-15 (docs/CHANGELOG.md) — re-examined deliberately, not
+    assumed fixed by association.** F-13 (semantic key resolution) and F-15's
+    tier-weighted fidelity were both built specifically citing this limitation as
+    their motivating evidence. Re-checked directly against `replay_store.py`'s own
+    `semantic_key` implementation before crediting it with anything: semantic
+    matching requires the SAME tool name, the SAME argument COUNT, and every
+    argument VALUE to match exactly (byte-for-byte, via canonical JSON) — it only
+    tolerates a DIFFERENT PARAMETER NAME carrying an identical value (e.g. a
+    `parameter_rename`-shaped mutation). `replay_store.py`'s own module docstring
+    already says this plainly: "there is no fuzzy/partial-value matching at either
+    tier." The actual failure mode this limitation documents — a real, curious
+    agent calling a near-universal but unrecorded first move
+    (`list_allowed_directories`), then escalating through combinatorial,
+    genuinely-different argument VALUES (different path strings, different
+    directory depths) across an open-ended, unenumerable sequence — is a VALUE-
+    divergence and TOOL-divergence problem, not a KEY-naming problem. F-13
+    structurally cannot resolve it, and was never going to: it solves a real,
+    separate, narrower case (a mutation or client library renaming an argument
+    key while preserving its value) that this project is glad to have, but it is
+    not the fix this limitation's own root-cause analysis called for. **This
+    limitation remains open and effectively unaddressed** for the specific
+    scenario it documents — a real, unscripted, curious agent against exact/
+    semantic-tier-only replay. F-15's fidelity-weighting fix is real and
+    valuable on its own terms (a semantic hit no longer silently counts as full
+    confidence), but it improves the HONESTY of a low-fidelity report, not the
+    underlying MISS rate this limitation is actually about. No further live-agent
+    test was run to re-quantify this, deliberately: the architectural analysis
+    above is sufficient to know F-13 does not close the gap, without spending
+    another real dogfood session to re-confirm a MISS rate that has no structural
+    reason to have improved. A real fix (general structural response synthesis on
+    MISS, F-14, still not built; or a genuinely fuzzy/partial value-matching tier
+    beyond F-13's exact-value semantic tier) remains the open, undecided work.
