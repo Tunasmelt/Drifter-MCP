@@ -261,6 +261,46 @@ connectivity error, and `2` assertion failure — reachable since F-24, but only
 when a task declares assertions. With none declared, TASK reports `UNKNOWN` and
 never `PASS`, so `2` cannot fire by accident.
 
+### Check your corpus before you spend agent runs
+
+`drifter run` excludes any run whose replay fidelity falls below the floor (0.70 by
+default). If your recordings don't cover what your agent actually does, most runs get
+excluded and the verdict comes back `UNKNOWN` — after you've paid for every one of them.
+
+`drifter coverage` answers that beforehand, from recordings alone. Zero execution, zero
+API cost:
+
+```
+drifter coverage --server filesystem
+```
+
+It reports projected coverage using leave-one-out cross-validation — each session is
+held out and resolved against the others — so it estimates how well your corpus answers
+a session it has *never seen*, not how well it answers itself. The per-tool breakdown is
+the actionable half: it names which tools your corpus covers worst, and those are the
+ones worth recording more of.
+
+Add `--curve` to see coverage as a function of corpus size:
+
+```
+drifter coverage --server filesystem --curve
+```
+
+This is the measurement that matters for deciding whether recording more will help. A
+curve that climbs toward the floor means corpus growth works and the only remaining cost
+is effort. A curve that flattens *below* the floor means no amount of recording fixes it
+for your agent, and the honest response is to narrow what you ask Drifter to do rather
+than record harder. The output says which of the two it sees, along with the spread, the
+subset count and the seed behind every point — see
+[`docs/SPEC.md` §15 limitation 16](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)
+for why that honesty is load-bearing here specifically.
+
+**To build a corpus for one task:** run your agent against `drifter observe` repeatedly
+on the *same* prompt — each run writes one session to `.drifter/runs/`. Vary nothing but
+the agent's own nondeterminism. Then re-run `drifter coverage --curve` and watch the
+gain-per-session column. Recordings of a *different* server or task are ignored by the
+curve and don't help; it tells you how many it dropped.
+
 ## Design principles
 
 The short version (full list in [`docs/SPEC.md` §3](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)):

@@ -6,6 +6,70 @@ not just a diff.
 
 ---
 
+## The coverage curve: the limitation-16 experiment gets its instrument, which promptly caught itself lying
+
+`replay/coverage.py` (DEC-027(c)) answers "how good is this corpus?" for one corpus.
+The question §15 limitation 16 actually turns on is the DERIVATIVE: as more sessions of
+the same task are recorded, does projected coverage climb toward the 0.70 fidelity
+floor, or flatten below it? Those outcomes mean opposite things — climbing means
+corpus-based replay works and the rest is recording effort; flattening means
+exact/semantic-tier replay cannot be made adequate for an exploratory agent by ANY
+amount of recording, and the honest response would be to narrow the claim rather than
+record harder.
+
+`replay/coverage_curve.py` plus `drifter coverage [--curve]` is that instrument. Three
+choices keep it honest: subsets are SAMPLED rather than taken as prefixes (prefixes
+would make the curve an artifact of recording order — it would describe your file
+naming), sampling is SEEDED (so a before/after comparison is meaningful), and every
+point carries its spread and subset count (at small n the between-subset variance is
+large, and a bare mean would imply precision the data cannot support — the same
+discipline the minimum-evidence gate enforces for verdicts).
+
+### The instrument's first real run was wrong, in limitation 16's own shape
+
+Run against `.drifter/runs/` for server `filesystem`, it printed ~96 rows of confident
+percentages and concluded **"PLATEAUED at 50.0%, below the 70% floor — recording more is
+not projected to close the gap."** Every part of that was wrong, and wrong in precisely
+the way limitation 16 documents: decisive-looking output resting on a foundation the
+output never showed.
+
+**One.** 108 sessions in the corpus; 4 carry any `filesystem` calls. The other 104
+counted toward "corpus size" while contributing nothing, so most sampled subsets held no
+relevant calls, were discarded as un-estimable, and the surviving points were computed
+from one or two subsets yet printed to a tenth of a percent. It was also answering the
+wrong question outright: "how many recordings of THIS task do I need" cannot be answered
+by counting recordings of a different one. Sessions with no calls for the server are now
+excluded, and the count dropped is reported.
+
+**Two.** A point built from 1 subset rendered identically to one built from 12. The call
+count underpinning the whole curve — 8 — appeared nowhere. Both are now printed.
+
+**Three, the actual bug.** At `corpus_size == N` there is exactly one possible subset, so
+that point's `marginal_gain` compares a sampled mean against a single deterministic
+value and is near-zero by construction. The detector read *running out of corpus* as
+evidence of flatness. Exhaustive points are now flagged and excluded from plateau
+detection.
+
+Corrected, the same data says the opposite: **STILL CLIMBING — 16.7% / 33.9% / 50.0% at
+2/3/4 sessions, +16.1% on the last session, 20 points short of the floor.** The plateau
+was entirely an artifact of the three defects above.
+
+That number should not be over-read: 4 sessions and 8 calls, and the linear
+extrapolation the renderer prints is explicitly labelled as having no reason to hold.
+What it is good for is direction, and it is the first honest data point the experiment
+has. Notably it is also consistent with DEC-027(c)'s earlier 10/17/22/27% measurement
+over a differently-composed corpus — both climbing, both well short of 0.70.
+
+### Why this is a shipped command rather than an experiment script
+
+The question generalizes. Any user pointing Drifter at their own agent needs to know
+whether their corpus is adequate BEFORE spending real agent runs finding out — which is
+exactly the mistake limitation 16 records a real user making, at a cost of twenty runs.
+README documents both the command and the recording protocol for building a
+single-task corpus.
+
+---
+
 ## Limitation and feature audit: two stale claims, and what the 16 limitations actually cost
 
 A full read of docs/SPEC.md §15's sixteen limitations and docs/FEATURES.md's forty

@@ -86,6 +86,16 @@ def _build_parser() -> argparse.ArgumentParser:
     score_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
     score_parser.add_argument("--runs-dir", type=Path, default=None, help="Corpus directory to read directly, bypassing drifter.yaml")
 
+    coverage_parser = subparsers.add_parser(
+        "coverage", help="Projected replay coverage from recordings alone, zero new execution (DEC-027(c))"
+    )
+    coverage_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+    coverage_parser.add_argument("--runs-dir", type=Path, default=None, help="Corpus directory to read directly, bypassing drifter.yaml")
+    coverage_parser.add_argument("--server", default=None, help="Server name (required if drifter.yaml defines more than one)")
+    coverage_parser.add_argument("--curve", action="store_true", help="Also show coverage as a function of corpus size, to test for a plateau")
+    coverage_parser.add_argument("--samples-per-size", type=int, default=12, help="Subsets sampled per corpus size for --curve")
+    coverage_parser.add_argument("--seed", type=int, default=0, help="Sampling seed for --curve, so a reported curve is reproducible")
+
     report_parser = subparsers.add_parser(
         "report", help="Re-render a prior `drifter run`'s full report from stored sessions, zero new execution (F-36)"
     )
@@ -194,6 +204,21 @@ def main() -> None:
             run_score(config_path=args.config, runs_dir=args.runs_dir)
         except ConfigError as e:
             print(f"drifter score: {e}", file=sys.stderr)
+            raise SystemExit(4) from None
+    elif args.command == "coverage":
+        from mcp_drifter.cli.coverage_cmd import run_coverage
+
+        try:
+            run_coverage(
+                config_path=args.config,
+                runs_dir=args.runs_dir,
+                server=args.server,
+                curve=args.curve,
+                samples_per_size=args.samples_per_size,
+                seed=args.seed,
+            )
+        except ConfigError as e:
+            print(f"drifter coverage: {e}", file=sys.stderr)
             raise SystemExit(4) from None
     elif args.command == "report":
         from mcp_drifter.cli.report import run_report
