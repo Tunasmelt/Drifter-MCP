@@ -6,6 +6,49 @@ not just a diff.
 
 ---
 
+## Limitation and feature audit: two stale claims, and what the 16 limitations actually cost
+
+A full read of docs/SPEC.md §15's sixteen limitations and docs/FEATURES.md's forty
+features, looking for what is genuinely open versus what the documents merely still
+SAY is open. Two of the latter, both material.
+
+**C8 retracted from the claims ledger.** §4's own rule is that everything citable in
+docs or marketing must trace to that table. C8 ("ttlMs/cacheScope honored by SDK
+client-side response cache") was marked VERIFIED — and §15 limitation 15 had already
+disproved it, in this same document, without the ledger being updated. The original
+verification was against the SDK's type definitions, which was the wrong evidence:
+limitation 15 root-caused it through the SDK's real dispatch chain and found those
+fields exist only on the draft `_v2026_07_28` surface model and are silently stripped
+on every currently-negotiable protocol version, confirmed by real wire capture. A
+retracted claim left sitting at VERIFIED in the one table that gates citation is worse
+than an unlisted one — it is pre-approved for use. Now marked RETRACTED and not
+citable, with the reason and the real mechanism named.
+
+**Limitation 16's tail was stale in the direction that flatters the project.** It
+closed by saying DEC-027's parts (b) corpus-based replay and (c) projected coverage
+were "not built." Both shipped. Corrected — and the correction matters more than a
+tick, because what (c) then measured is the most important number this limitation has
+produced: projected coverage of 10.0%/17.1%/22.2%/26.7% at 2/3/4/5 sessions. Rising
+monotonically, genuinely improved by (b), and visibly decelerating far short of the
+0.70 floor.
+
+The honest reading, now recorded: (b) supplied the only structurally sound lever, and
+(c) showed that pulling it at reachable corpus sizes does not clear the floor. Whether
+it CAN be is an empirical question with a defined experiment — 20-50 real recordings
+of one narrow task, plotting the curve for a plateau. Until that runs the limitation
+stays open and `mine/` stays unbuilt.
+
+Also recorded: limitation 16's secondary finding (a) — `drifter run` unconfigurable
+from README alone — is fixed; README documents the `agent:` block for both agent modes.
+
+The pattern across all three corrections, and across the PHASES checklist fixed in the
+previous commit, is one-directional: this project's documents drift toward
+understating what is built and overstating what is verified. Both directions are
+errors, but they fail differently — an unticked checkbox wastes a reader's time, while
+a stale VERIFIED in the claims ledger puts a false statement into anything citing it.
+
+---
+
 ## v1 scope close-out: F-14, F-18, and a checklist that had stopped telling the truth
 
 Three pieces of work, plus one documentation defect that was quietly the most

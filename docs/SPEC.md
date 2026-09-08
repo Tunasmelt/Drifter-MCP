@@ -79,7 +79,7 @@ Everything citable in docs/marketing must trace to this table. Nothing else is c
 | C5 | Worst operators: tool addition −0.96, tool integration −0.90, description update −0.81 | VERIFIED |
 | C6 | ECS = mean − std of task-fulfillment scores | VERIFIED |
 | C7 | 2026-07-28: stateless core, handshake/sessions removed, _meta carries version | VERIFIED — MCP blog |
-| C8 | ttlMs/cacheScope honored by SDK client-side response cache | VERIFIED |
+| C8 | ttlMs/cacheScope honored by SDK client-side response cache | **RETRACTED** — was VERIFIED against the SDK's type definitions, which was the wrong evidence. §15 limitation 15 root-caused it through the SDK's real dispatch chain: these fields exist ONLY on the draft `_v2026_07_28` surface model and are silently stripped (`extra="ignore"`) on every currently-negotiable protocol version. Confirmed by real wire capture, not inference. **Not citable.** The real, current invalidation mechanism is `notifications/tools/list_changed`, which addresses a different threat |
 | C9 | Python SDK v2 serves both protocol revisions from one endpoint, default-on | VERIFIED |
 | C10 | TypeScript v2 serves both revisions via one config flag (`legacy:'stateless'`) | VERIFIED |
 | C11 | Python SDK v2 ships OTel middleware by default, no-op without exporter | VERIFIED |
@@ -897,6 +897,29 @@ when*.
     single `--fixture`, attacking the MISS rate with coverage (the only honest lever)
     — not built. **(c) projected replay coverage surfaced pre-flight**, so a thin
     corpus is known before real agent runs are spent — not built; F-31's blast-radius
-    preview is its home. The headline MISS rate against a real agent remains real and
-    unimproved until (b); what has changed is that Drifter no longer reports a
-    confident verdict on top of it.
+    preview is its home.
+
+    **Status update — (b) and (c) are now BUILT** (`replay/corpus.py`,
+    `replay/coverage.py`, docs/CHANGELOG.md); the text above predates them and said
+    "not built" for both. What (c) then MEASURED is the most important number this
+    limitation has produced: projected replay coverage runs **10.0% / 17.1% / 22.2% /
+    26.7%** at 2/3/4/5 sessions — rising monotonically with corpus size, real, and
+    visibly decelerating well short of the 0.70 floor. Two independent corroborations
+    fell out of the same measurement: ~27% sits inside the 0.25–0.60 band of real
+    fidelities §7 recorded across 9 real agent attempts, and the per-tool breakdown
+    flagged `list_allowed_directories` at 0% — the exact missing first move §7 had
+    identified by hand.
+
+    So the honest reading is that (b) supplied the only structurally-sound lever
+    (coverage) and (c) revealed that pulling it at the corpus sizes reachable so far
+    does not clear the floor. The MISS rate is improved but not resolved, and whether
+    it CAN be resolved is now an empirical question with a defined experiment: 20-50
+    real recordings of one narrow task, plotting the coverage curve to find whether it
+    reaches 0.70 or plateaus. Until that runs, this limitation stays open, and
+    `mine/` (F-28-F-30) stays deliberately unbuilt — mining a 27%-coverage corpus
+    would yield task candidates for tasks Drifter cannot yet replay well enough to
+    score.
+
+    Secondary finding (a) above — `drifter run` unconfigurable from README alone — is
+    FIXED: README now documents the `agent:` block for both `mode: subprocess` and
+    `mode: http`.
