@@ -741,7 +741,7 @@ def test_provenance_breakdown_categorizes_every_call_into_exactly_one_bucket(tmp
     result = run_baseline("task_provenance", run_once=lambda: next(paths), repeats=1)
 
     assert result.has_data is True  # fidelity is 3/4 = 0.75, above the 0.70 floor
-    assert result.provenance_breakdown == {"exact": 2, "inverse": 0, "semantic": 1, "synthetic": 1, "unresolved": 1}
+    assert result.provenance_breakdown == {"exact": 2, "inverse": 0, "semantic": 1, "synthetic": 1, "synthetic_miss": 0, "unresolved": 1}
 
 
 def test_provenance_breakdown_merges_counts_across_multiple_valid_runs(tmp_path):
@@ -751,7 +751,7 @@ def test_provenance_breakdown_merges_counts_across_multiple_valid_runs(tmp_path)
 
     result = run_baseline("task_provenance_merge", run_once=lambda: next(paths), repeats=2)
 
-    assert result.provenance_breakdown == {"exact": 1, "inverse": 0, "semantic": 1, "synthetic": 0, "unresolved": 0}
+    assert result.provenance_breakdown == {"exact": 1, "inverse": 0, "semantic": 1, "synthetic": 0, "synthetic_miss": 0, "unresolved": 0}
 
 
 def test_provenance_breakdown_excludes_calls_from_runs_that_were_themselves_excluded(tmp_path):
@@ -765,7 +765,7 @@ def test_provenance_breakdown_excludes_calls_from_runs_that_were_themselves_excl
     result = run_baseline("task_provenance_exclusion", run_once=lambda: next(paths), repeats=2)
 
     assert len(result.excluded_runs) == 1
-    assert result.provenance_breakdown == {"exact": 1, "inverse": 0, "semantic": 0, "synthetic": 0, "unresolved": 0}
+    assert result.provenance_breakdown == {"exact": 1, "inverse": 0, "semantic": 0, "synthetic": 0, "synthetic_miss": 0, "unresolved": 0}
 
 
 def test_provenance_breakdown_is_none_when_no_run_is_valid(tmp_path):

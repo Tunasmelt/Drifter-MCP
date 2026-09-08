@@ -99,6 +99,7 @@ from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
 from mcp_drifter.record.proxy import Direction, MessageObserver
 from mcp_drifter.record.reader import read_session
+from mcp_drifter.replay.synthesis import synthesize_structured_content
 from mcp_drifter.record.schema import MATCH_TIER_MARKER_KEY, SYNTHETIC_RESULT_MARKER_KEY, ToolDescriptor, ToolsList
 from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore
 
@@ -196,6 +197,30 @@ def _synthesize_added_tool_result() -> types.CallToolResult:
     return types.CallToolResult(content=[placeholder], is_error=False)
 
 
+def _synthesize_missed_tool_result(output_schema: dict | None) -> types.CallToolResult:
+    """F-14 general synthesis: a structurally valid, content-empty answer
+    for a call replay has no recording for at all.
+
+    `structuredContent` is built from the tool's declared `outputSchema`
+    when it has one (see `replay/synthesis.py` for why every value is a
+    zero value and never a plausible sample). When the tool declared no
+    output contract -- `output_schema is None`, which also covers a
+    corpus recorded before that field existed -- there is nothing to
+    conform to, and the result is the same content-empty placeholder the
+    other synthesis paths return. Nothing is guessed in that case.
+
+    Text content is empty here as everywhere else in this module: see the
+    module-level note on the real agent that read explanatory placeholder
+    prose and refused to proceed, treating it as a prompt-injection
+    attempt.
+    """
+    structured = synthesize_structured_content(output_schema)
+    placeholder = types.TextContent(type="text", text="")
+    if structured is None:
+        return types.CallToolResult(content=[placeholder], is_error=False)
+    return types.CallToolResult(content=[placeholder], structuredContent=structured, is_error=False)
+
+
 def _synthesize_call_tool_result(hit: RecordedResponse) -> types.CallToolResult:
     """Structurally reconstructs a response matching `hit.result_shape`
     — never its original content, which was never recorded in the first
@@ -235,6 +260,7 @@ def build_replay_server(
     on_message: MessageObserver | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
     inverse_map: dict[str, dict[str, str]] | None = None,
+    synthesize_on_miss: bool = False,
 ) -> Server:
     """Builds the `mcp.server.lowlevel.Server` app that answers a session
     entirely from `replay_store`/`tools_served` — extracted out of
@@ -247,7 +273,12 @@ def build_replay_server(
     `run_replay_proxy` is now a two-line wrapper over this function.
     """
     tools = [_to_wire_tool(t) for t in tools_served]
+    output_schemas = {t.name: t.output_schema for t in tools_served}
     request_ids = count(1)
+
+    def _output_schema_for(tool_name: str) -> dict | None:
+        return output_schemas.get(tool_name)
+
     bootstrapped = False
 
     def _emit(direction: Direction, message) -> None:
@@ -344,6 +375,20 @@ def build_replay_server(
                 record_result[SYNTHETIC_RESULT_MARKER_KEY] = "synthetic"
                 _emit(Direction.SERVER_TO_AGENT, JSONRPCResponse(jsonrpc="2.0", id=req_id, result=record_result))
                 return result
+            if synthesize_on_miss:
+                # F-14. Opt-in, default off: erroring on a miss is the
+                # existing documented contract, and answering instead
+                # changes the agent's trajectory (it continues where it
+                # would have stopped). Per DEC-027 this changes what a
+                # miss DOES to a session, not the miss RATE -- the run's
+                # fidelity is identical either way, because the call is
+                # recorded with "synthetic_miss" provenance and counts in
+                # the denominator as a miss. Limitation 16 is untouched.
+                result = _synthesize_missed_tool_result(_output_schema_for(params.name))
+                record_result = result.model_dump(mode="json", by_alias=True, exclude_unset=True)
+                record_result[SYNTHETIC_RESULT_MARKER_KEY] = "synthetic_miss"
+                _emit(Direction.SERVER_TO_AGENT, JSONRPCResponse(jsonrpc="2.0", id=req_id, result=record_result))
+                return result
             message = f"replay MISS: no recorded response for {server_name}.{params.name} with these arguments"
             _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_MISS_CODE, message=message)))
             raise MCPError(code=REPLAY_MISS_CODE, message=message)
@@ -374,6 +419,7 @@ async def run_replay_proxy(
     on_message: MessageObserver | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
     inverse_map: dict[str, dict[str, str]] | None = None,
+    synthesize_on_miss: bool = False,
 ) -> None:
     """Serves one MCP session over `read_stream`/`write_stream` entirely
     from `replay_store` and `tools_served`. Stream-parameterized (matching
@@ -442,5 +488,5 @@ async def run_replay_proxy(
     same app across many connections instead of one `server.run()` per
     stream pair.
     """
-    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map)
+    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, synthesize_on_miss)
     await server.run(read_stream, write_stream, server.create_initialization_options())

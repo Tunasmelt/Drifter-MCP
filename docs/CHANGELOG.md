@@ -6,6 +6,113 @@ not just a diff.
 
 ---
 
+## v1 scope close-out: F-14, F-18, and a checklist that had stopped telling the truth
+
+Three pieces of work, plus one documentation defect that was quietly the most
+misleading thing in the repo.
+
+### The checklist had stopped telling the truth
+
+Through Gate 3 the per-gate **Status** blocks were maintained meticulously while the
+checkboxes above them were not. The result: `docs/PHASES.md` showed Gate 1's recorder,
+Gate 2's whole replay/analyzer stack and most of Gate 3 as unticked work, months after
+they were built, tested and shipped. Anyone reading the plan cold — the exact audience
+a phase plan exists for — would have badly misjudged where this project stands.
+
+Every box was re-checked against the actual code and artifacts and ticked only where a
+named module, test or file was confirmed present. 64 ticked, 8 left open, and the open
+ones now carry an explicit reason so an unticked box means "genuinely open, here is why"
+rather than "nobody updated this."
+
+One of those re-checks corrected a claim I had just made myself. F-20 (header stripping)
+looked unbuilt by grep — no header-stripping code exists anywhere in `src/`. It is
+actually SATISFIED BY CONSTRUCTION: `replay/replay_proxy.py`, the module serving the
+mutated arm, imports nothing capable of reaching a live server, so a mutated call cannot
+be forwarded at all and the header defense is moot. That was already documented in
+FEATURES.md and locked in by an import-inspecting test; the grep was evidence of the
+right thing and I read it as the wrong one.
+
+### F-14 general synthetic response generation
+
+Satisfying F-14's stated "Done when" — synthesized responses pass the tool's own
+declared schema validation — turned out to require capturing the schema first.
+`record/writer.py` recorded `inputSchema` and `annotations` and dropped `outputSchema`
+entirely, so a replayed session had nothing to validate against.
+`ToolDescriptor.output_schema` was therefore added under this project's schema-evolution
+procedure: nullable, `None` kept distinguishable from `{}`, red test against a
+hand-built pre-change corpus written and confirmed failing first. The committed golden
+fixture is itself a genuine pre-change recording, so it serves as permanent
+backward-compatibility evidence and is asserted against directly.
+
+The synthesizer (`replay/synthesis.py`) emits the ZERO value for every declared type and
+never a plausible sample: a synthesized `"/home/user/report.pdf"` would be a fabricated
+claim about a world the recording never observed, where `""` is the absence of a claim.
+`enum` is the single exception, since no zero value is a member and the first declared
+one is the only choice that is both schema-valid and not a guess about likelihood.
+Optional properties are omitted rather than zero-filled, and arrays are always empty even
+under `minItems` — under-claiming is the right failure mode here.
+
+**The trap this design exists to avoid, which nearly went the other way.** The obvious
+implementation reuses F-17's `"synthetic"` provenance for a synthesized miss. That
+provenance is EXCLUDED from the fidelity denominator, correctly, because a
+mutation-injected tool can have no prior recording by definition. A general miss is the
+opposite case — a recording could have existed and did not. Had they shared a
+provenance, a run that missed every single call would have had every call excluded, hit
+`_run_fidelity`'s vacuous 1.0 empty path, cleared the 0.70 floor, and produced a
+confident verdict founded on zero matched evidence. That is exactly the defect DEC-027's
+minimum-evidence gate closed, re-entered through a new door: not by inflating the
+numerator this time, but by emptying the denominator.
+
+There is a second, sharper edge in the same place. A synthesized miss answers on the
+wire rather than erroring, so it is recorded with `fault=False` — and `fault is False`
+is `_run_fidelity`'s "confirmed hit" signal. Without an explicit guard it would have
+scored as a full-weight HIT, driving fidelity UP in exact proportion to how badly replay
+was failing. Both are now guarded by a distinct `"synthetic_miss"` provenance that
+counts in the denominator, never as a hit, and reports in its own bucket.
+
+Off by default. Per DEC-027 this changes what a miss DOES to a session, not the miss
+RATE, and is explicitly not credited with improving limitation 16.
+
+### F-18 mutation audit log
+
+The gap was persistence, not structure. `MutationLogEntry` already carried most of what
+F-18 asks for, but only in memory for the duration of one `run_mutation_comparison`
+call — so after a real run nothing on disk could trace a verdict back to the edit that
+caused it, which is precisely when a paper trail is worth having.
+
+Now written to `<session_dir>/mutations.jsonl` BEFORE the mutated arm runs, not after,
+so the trail survives a crash, a budget abort or an interrupt during that arm — the
+cases where "what exactly did it change?" is hardest to reconstruct from memory.
+
+Two fields added. `mutation_id` is a deterministic digest over the fields that define
+the mutation, not a uuid4: re-running the same operator at the same seed against the
+same manifest must yield the SAME id, which is what makes "this verdict came from that
+exact edit" a checkable claim rather than a hopeful one. `target` names what was
+actually edited — `parameter_rename` changes one specific parameter, and `tool_name`
+alone cannot reproduce that edit by hand.
+
+Two things the tests found rather than assumed. The golden fixture produces no real
+inverse mapping under `parameter_rename` at all: every tool in it takes single-word
+parameters (`path`, `content`), none eligible for snake_case→camelCase renaming — found
+by running the operator against it, and the test was rebuilt on a purpose-made manifest
+instead. And a tool with nothing eligible to rename was being logged with target
+`parameter:None`, which reads as "a parameter named None was renamed"; it now records an
+explicit `parameter:<none eligible>`.
+
+### What remains unbuilt, deliberately
+
+`mine/` (F-28/F-29/F-30) is untouched and stays that way for now. It is not blocked
+technically — it is blocked on evidence. DEC-027(c)'s coverage measurement puts
+projected replay coverage at 10%/17%/22%/27% across 2/3/4/5 sessions against a 0.70
+floor, rising but visibly decelerating. Mining frequent subsequences from a corpus that
+thin would produce task candidates for tasks Drifter cannot yet replay well enough to
+score. The decisive experiment — 20-50 real recordings of one narrow task, plotting the
+coverage curve to find out whether corpus-based replay ever clears the floor — comes
+first, and its answer determines whether `mine/` has real fuel or is tuned to a corpus
+regime that does not exist.
+
+---
+
 ## Pre-publish round 2: the gaps the first audit left, and a version decision reversed
 
 The first audit fixed what `pip install` would *break*. This one fixes what it would

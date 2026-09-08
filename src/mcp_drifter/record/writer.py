@@ -425,6 +425,12 @@ class SessionRecorder:
                 # reinterpreted" rule) and policy/classify.py reads the
                 # same camelCase keys the wire actually used.
                 annotations=t.get("annotations") or None,
+                # F-14: `.get(...)` with no `or None` fallback, deliberately
+                # unlike `annotations` above -- an explicitly-sent `{}` must
+                # survive as `{}` rather than being coerced to None, since
+                # ToolDescriptor.output_schema's own docstring makes that
+                # distinction load-bearing for synthesis.
+                output_schema=t.get("outputSchema"),
             )
             for t in result.get("tools", [])
         ]

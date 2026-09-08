@@ -322,6 +322,28 @@ empty-but-correctly-shaped fake answer rather than making something up with an A
 **Depends on:** F-11.
 **Done when:** synthetic responses pass the tool's own declared schema validation.
 
+**As built** (`replay/synthesis.py`, docs/CHANGELOG.md): satisfying that criterion first
+required capturing the schema at all — `record/writer.py` recorded `inputSchema` and
+`annotations` and dropped `outputSchema` entirely, so a replayed session had nothing to
+validate against. `ToolDescriptor.output_schema` was added under this project's
+schema-evolution procedure (nullable, `None` distinguishable from `{}`, red test against
+a pre-change corpus first).
+
+Two boundaries this deliberately keeps. Every synthesized value is the ZERO value for
+its declared type, never a plausible sample — a synthesized path would be a fabricated
+claim about a world the recording never observed; `""` is the absence of one. And a
+synthesized miss is recorded with its own `"synthetic_miss"` provenance, which counts in
+the fidelity denominator as a MISS. It must NOT reuse F-17's `"synthetic"`, which is
+excluded from that denominator because a mutation-injected tool can have no prior
+recording: a general miss could have had one. Reusing it would let a run that missed
+every call exclude every call, compute fidelity 1.0 vacuously, clear the 0.70 floor and
+report a confident verdict on nothing — the DEC-027 defect re-entered by emptying the
+denominator instead of inflating the numerator.
+
+Off by default. Per DEC-027 this changes what a miss DOES to a session (the agent
+continues rather than receiving a protocol error), not the miss RATE — limitation 16 is
+untouched by it.
+
 ### F-15 Fidelity computation and gating
 
 **Technical:** Per mutation arm (and per baseline arm — SPEC.md §7/§8), computes

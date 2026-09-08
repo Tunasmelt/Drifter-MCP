@@ -323,18 +323,27 @@ def _run_fidelity(records: list, semantic_weight: float = 1.0) -> float:
         return 1.0
     weighted_hits = 0.0
     for c in calls:
+        # F-14: a synthesized miss answered on the wire, so it carries
+        # fault=False -- the same signal a genuine hit carries. Guarded
+        # explicitly and BEFORE the fault check, because without this it
+        # would score as a full-weight hit and drive fidelity UP in exact
+        # proportion to how badly replay was failing. It stays in `calls`
+        # (and so in the denominator) on purpose: it is a miss, not an
+        # exclusion. See tests/evaluate/test_synthetic_miss_fidelity.py.
+        if c.result_provenance == "synthetic_miss":
+            continue
         if c.fault is not False:
             continue
         weighted_hits += semantic_weight if c.match_tier == "semantic" else 1.0
     return weighted_hits / len(calls)
 
 
-_PROVENANCE_BUCKETS = ("exact", "inverse", "semantic", "synthetic", "unresolved")
+_PROVENANCE_BUCKETS = ("exact", "inverse", "semantic", "synthetic", "synthetic_miss", "unresolved")
 
 
 def _provenance_counts(records: list) -> dict[str, int]:
     """Categorizes every `ToolCall` in `records` into exactly one of
-    `BaselineResult.provenance_breakdown`'s five buckets — see that
+    `BaselineResult.provenance_breakdown`'s six buckets — see that
     field's own docstring for what each means. Synthetic calls are
     checked first since `result_provenance` and `match_tier` are
     otherwise independent fields (a synthetic call has no `match_tier`
@@ -345,6 +354,14 @@ def _provenance_counts(records: list) -> dict[str, int]:
             continue
         if call.result_provenance == "synthetic":
             counts["synthetic"] += 1
+        # F-14: checked before the fault branch for the same reason
+        # `_run_fidelity` guards it first -- a synthesized miss carries
+        # fault=False and would otherwise land in `exact`. Reported in
+        # its own bucket rather than folded into `unresolved`, since
+        # "replay answered with a fabricated shape" and "the call
+        # hard-failed" are different operational facts.
+        elif call.result_provenance == "synthetic_miss":
+            counts["synthetic_miss"] += 1
         elif call.fault is not False:
             counts["unresolved"] += 1
         elif call.match_tier == "semantic":

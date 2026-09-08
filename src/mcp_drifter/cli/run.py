@@ -70,6 +70,7 @@ from mcp_drifter.evaluate.assertions import TaskAssertions, evaluate_task
 from mcp_drifter.evaluate.baseline import run_baseline
 from mcp_drifter.evaluate.scheduling import run_mutated_adaptively
 from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.mutate.audit import write_mutation_audit
 from mcp_drifter.mutate.description_update import mutate_tool_manifest
 from mcp_drifter.mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
 from mcp_drifter.mutate.tool_addition import add_tool
@@ -207,6 +208,19 @@ def run_mutation_comparison(
     # recording under their original parameter names with no translation
     # needed.
     inverse_map = inverse_map_from_log(mutation_log) or None
+
+    # F-18: written BEFORE the mutated arm runs, not after, so the paper
+    # trail survives a crash, a budget abort, or an interrupt during that
+    # arm -- the cases where "what exactly did it change?" is hardest to
+    # answer from memory and most worth having on disk.
+    mutation_audit_path = session_dir / "mutations.jsonl"
+    write_mutation_audit(
+        mutation_audit_path,
+        mutation_log,
+        server=server_name,
+        operator=operator,
+        task_id=task_id,
+    )
 
     mutated_run_once = budget_limited(
         make_run_once(

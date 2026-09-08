@@ -1,5 +1,14 @@
 # Drifter — Phase Plan
 
+> **Checklist accuracy note.** Through Gate 3 the per-gate *Status* blocks were kept
+> meticulously current while the checkboxes above them were not, so the plan read as
+> though almost nothing had been built. Every box was re-checked against the actual
+> code and artifacts (2026-09-09) and ticked only where a named module, test, or file
+> was confirmed to exist — never from memory. The handful that remain unticked now
+> carry an explicit reason, so an unticked box means "genuinely open, and here is why"
+> rather than "nobody updated this."
+
+
 Gates, not open-ended phases. Each gate is independently shippable, has an exit test
 that must pass before the next gate starts, and a kill criterion — a written condition
 under which the current approach is wrong and should stop, decided now rather than
@@ -15,17 +24,17 @@ No new specification documents are written after this file. The next artifact is
 
 ### Tasks
 
-- [ ] Recorder-competitor survey: check MCP Inspector, known gateway logging layers,
+- [x] Recorder-competitor survey: check MCP Inspector, known gateway logging layers,
   and observability vendors for existing observe-mode-equivalent functionality.
   Output: one page, build-vs-integrate decision.
-- [ ] Read the AgentAssay repository (read-only — AGPL-3.0 restricts distribution and
+- [x] Read the AgentAssay repository (read-only — AGPL-3.0 restricts distribution and
   derivative code, not learning). Output: one page, "Relationship to AgentAssay,"
   covering what's genuinely theirs, what Drifter does differently, and a calibrated
   view of their self-reported scale claims (C14).
-- [ ] Pull the MCPEvol-Bench appendix. Extract the 11 operator definitions verbatim
+- [x] Pull the MCPEvol-Bench appendix. Extract the 11 operator definitions verbatim
   into `mutate/operators/NOTES.md` as design reference for F-16/F-17.
-- [ ] Reserve `mcp-drifter` on PyPI with a placeholder 0.0.1 release.
-- [ ] Choose the Gate 1 dogfood target: one real agent, one real MCP server, from the
+- [x] Reserve `mcp-drifter` on PyPI with a placeholder 0.0.1 release.
+- [x] Choose the Gate 1 dogfood target: one real agent, one real MCP server, from the
   author's own daily work. This pairing is used for every fixture through Gate 3.
 
 ### Exit test
@@ -62,19 +71,19 @@ F-01 through F-10 (see FEATURES.md, module `record/`).
 - [x] Secret redaction, test-enforced against a fixture with planted fake secrets
   (covers both the parsed JSONL and the raw frame mirror — SECURITY.md
   specifically calls out the mirror as a common place to leave a redaction gap)
-- [ ] Environment fingerprinting
-- [ ] Trace-context detection + heuristic fallback segmentation
-- [ ] `drifter observe`, `drifter stats`, `drifter doctor` (connectivity checks only
+- [x] Environment fingerprinting
+- [x] Trace-context detection + heuristic fallback segmentation
+- [x] `drifter observe`, `drifter stats`, `drifter doctor` (connectivity checks only
   at this stage)
-- [ ] Golden fixture: one hand-verified session, committed to
+- [x] Golden fixture: one hand-verified session, committed to
   `tests/fixtures/golden_v0.1.jsonl`, never modified — only superseded by a new
   version if the schema changes
-- [ ] `.gitignore` entry for `.drifter/` (runs, raw frames) added in the same commit
+- [x] `.gitignore` entry for `.drifter/` (runs, raw frames) added in the same commit
   that creates the directory — not after something gets accidentally committed.
   Recorded trajectories reveal internal tool names, server topology, and usage
   patterns even with shape-redaction applied; this is repo hygiene, not optional
   polish (see SECURITY.md)
-- [ ] Dependency audit (`pip-audit` or `uv`'s equivalent) wired into CI from the
+- [x] Dependency audit (`pip-audit` or `uv`'s equivalent) wired into CI from the
   first commit that has a `pyproject.toml`, failing the build on high/critical CVEs
   — not added retroactively once there's a dependency tree worth worrying about
 
@@ -107,17 +116,17 @@ scoring only, no mutation yet).
 
 ### Tasks
 
-- [ ] Replay store with exact-key lookup (F-11)
-- [ ] Inverse-mutation key resolution (F-12) — stub against Gate 3's operators, since
+- [x] Replay store with exact-key lookup (F-11)
+- [x] Inverse-mutation key resolution (F-12) — stub against Gate 3's operators, since
   no mutations exist yet; test with a synthetic rename fixture
-- [ ] Semantic key fallback (F-13)
-- [ ] Synthetic response generation (F-14)
-- [ ] Fidelity computation, applied to both baseline and mutation arms (F-15, F-22)
-- [ ] Analyzer: mean, spread, effect size, trajectory distance — pure functions over
+- [x] Semantic key fallback (F-13)
+- [x] Synthetic response generation (F-14)
+- [x] Fidelity computation, applied to both baseline and mutation arms (F-15, F-22)
+- [x] Analyzer: mean, spread, effect size, trajectory distance — pure functions over
   JSONL, zero I/O side effects beyond reading files
-- [ ] Baseline runner (F-21): N repeats via subprocess adapter, replay-served
-- [ ] `drifter score` (F-36)
-- [ ] Re-derive `calibration.yaml` defaults against the Gate 1 corpus rather than
+- [x] Baseline runner (F-21): N repeats via subprocess adapter, replay-served
+- [x] `drifter score` (F-36)
+- [ ] **STILL OPEN, deliberately.** Re-derive `calibration.yaml` defaults against the Gate 1 corpus rather than
   shipping the invented placeholder values unchanged
 
 ### Exit test
@@ -161,20 +170,37 @@ merge). Revisit for v1 once F-16/F-17 are proven, not before.
 
 ### Tasks
 
-- [ ] `description_update` operator (F-16), structural paraphrase only, imperative-
+- [x] `description_update` operator (F-16), structural paraphrase only, imperative-
   pattern rejection test
-- [ ] `tool_addition` operator (F-17), styled-consistent generation, synthetic-only
+- [x] `tool_addition` operator (F-17), styled-consistent generation, synthetic-only
   responses
-- [ ] Mutation audit log (F-18)
-- [ ] Cache-busting: `ttlMs: 0`, private `cacheScope` on every mutated response
+- [x] Mutation audit log (F-18) — built (`mutate/audit.py`, docs/CHANGELOG.md). The gap
+  was persistence, not structure: `MutationLogEntry` already carried most of the facts
+  but lived only in memory for one `run_mutation_comparison` call, so nothing survived
+  the process. Now written to `<session_dir>/mutations.jsonl` BEFORE the mutated arm
+  runs, so the trail survives a crash or budget abort. Adds the two fields F-18 names
+  that the entry lacked: a deterministic `mutation_id` (same edit -> same id, so
+  "this verdict came from that edit" is checkable) and `target` (which PARAMETER
+  parameter_rename edited — `tool_name` alone cannot reproduce that edit by hand).
+- [ ] **NOT ACHIEVABLE against any real MCP client today** — investigated and documented
+  as docs/SPEC.md §15 limitation 15, not skipped. Those fields exist only on a draft
+  protocol version; every currently-negotiable version strips them before the wire
+  (confirmed by real wire capture). Left unticked because the requirement is real and
+  unmet, not because it is pending work. Cache-busting: `ttlMs: 0`, private `cacheScope` on every mutated response
   (F-19) — test-enforced against a caching-capable client fixture
-- [ ] Header stripping on any mutated-tool call (F-20)
-- [ ] Task assertion engine (F-24), UNKNOWN-by-default behavior test
-- [ ] Safety verdict engine (F-25) + risk classification (F-26)
-- [ ] Adaptive repeat scheduling (F-27)
-- [ ] `--budget`, `--dry-run` (F-32)
-- [ ] `drifter run` orchestration (F-35)
-- [ ] Report renderer matching SPEC.md §13 exactly, including calibration footnotes
+- [x] Header stripping on any mutated-tool call (F-20) — satisfied by CONSTRUCTION, not
+  by header-stripping code, which deliberately does not exist. `replay/replay_proxy.py`
+  (the module serving the mutated arm) imports nothing capable of reaching a live
+  server, so a mutated call cannot be forwarded at all and the header defense is moot.
+  Locked in by `test_replay_proxy_module_imports_nothing_capable_of_a_live_forward`,
+  which inspects the module's own imports rather than trusting a fixture never to
+  exercise a future live path. See docs/FEATURES.md F-20 for the full audit.
+- [x] Task assertion engine (F-24), UNKNOWN-by-default behavior test
+- [x] Safety verdict engine (F-25) + risk classification (F-26)
+- [x] Adaptive repeat scheduling (F-27)
+- [x] `--budget`, `--dry-run` (F-32)
+- [x] `drifter run` orchestration (F-35)
+- [x] Report renderer matching SPEC.md §13 exactly, including calibration footnotes
 
 ### Exit test
 

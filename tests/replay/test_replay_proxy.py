@@ -15,6 +15,8 @@ what this component actually is.
 
 from pathlib import Path
 
+import functools
+
 import anyio
 import pytest
 from mcp import ClientSession
@@ -22,7 +24,7 @@ from mcp.shared.exceptions import MCPError
 from mcp.shared.memory import create_client_server_memory_streams
 
 from mcp_drifter.record.reader import read_session
-from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.record.schema import ToolDescriptor, ToolCall
 from mcp_drifter.replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE, run_replay_proxy, tools_served_from_session
 from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore, replay_key
 
@@ -625,3 +627,101 @@ async def test_call_to_a_tool_addition_injected_tool_resolves_as_synthetic_not_m
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+# --- F-14: general synthesis on a miss, opt-in --------------------------
+
+
+@pytest.fixture
+async def synthesizing_session():
+    """Same golden-fixture replay proxy, but with F-14 synthesis on."""
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                functools.partial(
+                    run_replay_proxy,
+                    *server_streams,
+                    store,
+                    GOLDEN_SERVER,
+                    tools_served,
+                    synthesize_on_miss=True,
+                )
+            )
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                yield session
+            tg.cancel_scope.cancel()
+
+
+@pytest.mark.anyio
+async def test_synthesis_is_off_by_default_so_a_miss_still_errors(golden_session):
+    """Guards the opt-in itself. Erroring on a miss is the existing
+    documented contract; F-14 must not silently change it for callers
+    that never asked, since answering instead changes the agent's
+    trajectory (it continues where it would have stopped).
+    """
+    with pytest.raises(MCPError) as exc_info:
+        await golden_session.call_tool("list_directory", {"path": "C:\nowhere\never\recorded"})
+    assert exc_info.value.code == REPLAY_MISS_CODE
+
+
+@pytest.mark.anyio
+async def test_with_synthesis_on_a_miss_answers_instead_of_erroring(synthesizing_session):
+    result = await synthesizing_session.call_tool("list_directory", {"path": "C:\nowhere\never\recorded"})
+
+    assert result.is_error is False
+    # Content-empty, exactly like every other synthesis path here -- see
+    # this module's note on the real agent that read explanatory
+    # placeholder prose and refused to proceed.
+    assert [c.text for c in result.content] == [""]
+
+
+@pytest.mark.anyio
+async def test_a_synthesized_miss_carries_no_structured_content_when_the_tool_declared_no_output_schema(
+    synthesizing_session,
+):
+    """The golden fixture predates `output_schema` entirely, so every
+    tool in it reads back as `None`. Nothing is guessed in that case --
+    the absence of an output contract must produce no structured claim
+    at all, rather than a fabricated `{}`.
+    """
+    result = await synthesizing_session.call_tool("list_directory", {"path": "C:\nowhere\never\recorded"})
+
+    assert result.structured_content is None
+
+
+@pytest.mark.anyio
+async def test_a_synthesized_miss_conforms_to_a_declared_output_schema():
+    """F-14's stated "Done when": the synthesized response passes the
+    tool's own declared schema validation.
+    """
+    jsonschema = pytest.importorskip("jsonschema")
+
+    declared = {
+        "type": "object",
+        "properties": {"entries": {"type": "array", "items": {"type": "string"}}, "count": {"type": "integer"}},
+        "required": ["entries", "count"],
+    }
+    tools_served = [
+        ToolDescriptor(name="list_directory", description="", input_schema={"type": "object"}, output_schema=declared),
+    ]
+    store = ReplayStore()  # empty: every call is a miss
+
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                functools.partial(
+                    run_replay_proxy, *server_streams, store, GOLDEN_SERVER, tools_served, synthesize_on_miss=True
+                )
+            )
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                result = await session.call_tool("list_directory", {"path": "/anything"})
+            tg.cancel_scope.cancel()
+
+    assert result.structured_content == {"entries": [], "count": 0}
+    jsonschema.validate(instance=result.structured_content, schema=declared)

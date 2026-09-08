@@ -43,7 +43,18 @@ ClassificationSource = Literal[
     "unresolved",
 ]
 
-ResultProvenance = Literal["real", "synthetic"]
+# "synthetic" is F-17 tool_addition's placeholder: a mutation-injected
+# tool that CANNOT have a prior recording, and so is excluded from the
+# fidelity denominator entirely (docs/SPEC.md §7).
+#
+# "synthetic_miss" is F-14's general synthesis, and is deliberately a
+# SEPARATE value rather than a reuse: a general miss is a call that
+# could have had a recording and did not, so it counts in the
+# denominator as a miss. Collapsing the two would let a run that missed
+# every call exclude every call, compute fidelity 1.0 vacuously, and
+# clear the floor on no evidence -- the DEC-027 defect via a new route.
+# See tests/evaluate/test_synthetic_miss_fidelity.py.
+ResultProvenance = Literal["real", "synthetic", "synthetic_miss"]
 
 # A private key a synthetic-response producer (e.g. replay_proxy.py's
 # tool_addition support, F-14-scoped-to-tool_addition) can set on the
@@ -114,6 +125,22 @@ class ToolDescriptor(BaseModel):
     # since either way tier 1 has nothing to work with and falls through
     # to tier 2 identically.
     annotations: dict | None = None
+    # F-14: the tool's declared `outputSchema` from the `tools/list` wire
+    # response, if the server sent one -- what a synthesized miss response
+    # is built from and validated against. Same class of field as
+    # `annotations` above (real wire data, capturable only at the moment
+    # tools/list is observed, never reconstructible afterward), and added
+    # under the same schema-evolution procedure.
+    #
+    # Unlike `annotations`, the None-vs-{} distinction here IS load-bearing
+    # downstream and must not be collapsed: `None` means "no output
+    # contract known" (the server declared none, or the record predates
+    # this field), while `{}` means the server explicitly sent an empty
+    # schema. F-14 synthesizes structured content only for a real non-empty
+    # schema; treating `None` as `{}` would let it claim a schema
+    # conformance it never verified. See
+    # tests/record/test_output_schema_field.py.
+    output_schema: dict | None = None
     # F-26. Populated once policy/ exists; None at Gate 1.
     risk: RiskLevel | None = None
     classification_source: ClassificationSource | None = None
