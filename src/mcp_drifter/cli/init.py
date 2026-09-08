@@ -50,6 +50,7 @@ import os
 import platform
 import sys
 from dataclasses import dataclass
+from importlib import resources
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -194,6 +195,19 @@ def _render_drifter_yaml(servers: list[ServerConfig]) -> str:
     return header + yaml.safe_dump(body, default_flow_style=False, sort_keys=False)
 
 
+def starter_calibration_text() -> str:
+    """Returns the packaged starter `calibration.yaml` verbatim.
+
+    Read from package data rather than reconstructed from
+    `record/calibration.py`'s field defaults on purpose: the file's
+    comments carry the reasoning for each constant (docs/SPEC.md §9
+    requires every knob be labeled as the guess it is), and regenerating
+    it from dataclass fields would silently drop exactly that. A test
+    asserts this stays byte-identical to the repo's own copy.
+    """
+    return resources.files("mcp_drifter").joinpath("calibration.yaml").read_text(encoding="utf-8")
+
+
 def run_init(
     output_path: Path = Path("drifter.yaml"),
     search_root: Path = Path("."),
@@ -227,9 +241,23 @@ def run_init(
 
     output_path.write_text(_render_drifter_yaml(servers), encoding="utf-8")
 
+    # Written beside the config, and never overwritten -- not even under
+    # --force, which is about the drifter.yaml init generates. Once a user
+    # has tuned a threshold, calibration.yaml is hand-authored data init
+    # cannot reconstruct; clobbering it as a side effect of a flag aimed at
+    # a different file would be a quiet destructive action.
+    calibration_path = output_path.parent / "calibration.yaml"
+    wrote_calibration = not calibration_path.exists()
+    if wrote_calibration:
+        calibration_path.write_text(starter_calibration_text(), encoding="utf-8")
+
     print(f"Wrote {output_path} with {len(servers)} server(s):", file=status_stream)
     for s in servers:
         print(f"  - {s.name}: {' '.join(s.command)}", file=status_stream)
+    if wrote_calibration:
+        print(f"Wrote {calibration_path} with the starter thresholds (docs/SPEC.md §9).", file=status_stream)
+    else:
+        print(f"Left the existing {calibration_path} untouched.", file=status_stream)
     if skipped:
         print(f"Skipped {len(skipped)} non-stdio or malformed entry(ies):", file=status_stream)
         for s in skipped:

@@ -6,6 +6,63 @@ not just a diff.
 
 ---
 
+## Pre-publish round 2: the gaps the first audit left, and a version decision reversed
+
+The first audit fixed what `pip install` would *break*. This one fixes what it would
+*claim*. Four findings, all of them things only a published artifact — not a checkout —
+would expose.
+
+**A README that argues against installing the thing it ships with.** The README carried
+a prominent warning: "Do not `pip install mcp-drifter` yet — that name resolves to an
+empty placeholder." True when written, false the instant we publish, and the README is
+baked into the wheel metadata and rendered as the PyPI project page. We would have
+published a package whose own front page told people not to install it. Rewritten to
+lead with the install command, keep an honest alpha caveat, and point developers at the
+checkout. Two adjacent claims were stale for the same reason and fixed with it: the
+header's "reserved but not yet a real release", and an exit-code paragraph asserting
+that code `2` "can't fire yet" — F-24 made it reachable and that sentence outlived it.
+
+**Eleven relative doc links that break off-repo.** `](docs/SPEC.md)` resolves fine on
+GitHub and nowhere else. PyPI renders the README with no repo context, and `docs/` is
+not in the sdist either, so every one of them would have 404'd for the audience most
+likely to click. Absolutized to `blob/master` URLs.
+
+**`Typing :: Typed` with no `py.typed`.** The classifier claimed PEP 561 support the
+wheel did not honor — without the marker file, type checkers ignore an installed
+package entirely. Either the classifier or the marker had to go; the marker is correct
+here (the codebase is annotated throughout), so `src/mcp_drifter/py.typed` now ships.
+
+**`calibration.yaml`, deferred by the first audit, now fixed.** Every doc tells the user
+to edit `calibration.yaml`; a pip-installed user had no such file, because it lived only
+in the checkout. Never a correctness bug — `record/calibration.py` falls back to field
+defaults that were verified identical field-by-field — but the knobs SPEC.md §9 calls
+tunable were unreachable without cloning. `drifter init`, already the "get me a working
+setup" command, now writes it alongside `drifter.yaml`.
+
+Two deliberate choices in that last one. It is **never overwritten, not even under
+`--force`** — that flag is about the `drifter.yaml` init generates and can regenerate,
+whereas a tuned calibration file is hand-authored data init cannot reconstruct;
+clobbering it as a side effect of a flag aimed at a different file is exactly the quiet
+destructive action this project's rules forbid. And the starter is shipped as package
+data read verbatim, not regenerated from dataclass fields, because the file's comments
+carry the reasoning that each constant is a documented guess — regenerating would drop
+precisely that. A test asserts the packaged copy stays byte-identical to the repo's, so
+drift fails loudly instead of silently giving installed users thresholds no test ever
+validated.
+
+**The version decision, reversed on evidence.** The recommendation had been `0.1.0a1`,
+on the reasoning that an alpha version string carries the project's real uncertainty
+more honestly than a flat `0.1.0`. Checking PyPI before setting it showed why that would
+have backfired: the index holds exactly one release, the `0.0.1` placeholder, and pip
+ignores pre-releases by default. `0.1.0a1` would therefore have left
+`pip install mcp-drifter` resolving to the empty placeholder — reinstating the exact
+trap this audit exists to close, while looking like extra caution. Shipping flat
+`0.1.0`; the alpha signal lives in the `Development Status :: 3 - Alpha` classifier and
+the README caveat, neither of which breaks resolution. The honest label was not worth
+paying for in broken installs.
+
+---
+
 ## Pre-publish audit: a packaging bug that would have broken other people's environments
 
 Before a first real PyPI release, an audit of what `pip install mcp-drifter` would

@@ -231,3 +231,63 @@ def test_run_init_handles_windows_style_backslash_paths_without_yaml_corruption(
 
     config = load_config(output_path)
     assert config.servers[0].command[-1] == "C:\\Users\\user\\Desktop"
+
+
+# --- run_init: the starter calibration.yaml (pre-publish gap) ---------------
+#
+# Found in the pre-publish packaging audit: every doc tells the user to
+# "edit calibration.yaml", but a pip-installed user has no such file --
+# it lived only in the repo checkout. `record/calibration.py` falls back
+# to its own field defaults when the file is absent, so this was never a
+# correctness bug (the numbers are identical either way), purely a
+# discoverability one: the knobs docs/SPEC.md §9 says are tunable were
+# not reachable without cloning. `drifter init` -- already the "get me a
+# working setup" command -- now writes the starter file alongside
+# drifter.yaml. See docs/CHANGELOG.md.
+
+
+def test_run_init_writes_a_starter_calibration_yaml_next_to_the_config(tmp_path):
+    _write_json(tmp_path / ".mcp.json", {"mcpServers": {"a": {"command": "x"}}})
+    output_path = tmp_path / "drifter.yaml"
+
+    run_init(output_path=output_path, search_root=tmp_path)
+
+    calibration_path = tmp_path / "calibration.yaml"
+    assert calibration_path.exists()
+    written = yaml.safe_load(calibration_path.read_text(encoding="utf-8"))
+    # Exact values, not mere presence -- this project's recurring bug
+    # pattern is plausible-but-wrong values, so assert the ones the
+    # gating logic actually reads.
+    assert written["fidelity_floor"] == 0.70
+    assert written["semantic_weight"] == 0.8
+    assert written["min_valid_runs"] == 3
+
+
+def test_run_init_never_overwrites_an_existing_calibration_yaml_even_with_force(tmp_path):
+    """--force is about drifter.yaml, which init generates and can
+    regenerate. calibration.yaml is the opposite: once a user has tuned a
+    threshold, that file is hand-authored data init cannot reconstruct.
+    Clobbering it as a side effect of a flag aimed at a different file
+    would be exactly the kind of quiet destructive action this project's
+    operating rules forbid.
+    """
+    _write_json(tmp_path / ".mcp.json", {"mcpServers": {"a": {"command": "x"}}})
+    tuned = "calibration:\n  fidelity_floor: 0.95  # tuned by hand\n"
+    (tmp_path / "calibration.yaml").write_text(tuned, encoding="utf-8")
+
+    run_init(output_path=tmp_path / "drifter.yaml", search_root=tmp_path, force=True)
+
+    assert (tmp_path / "calibration.yaml").read_text(encoding="utf-8") == tuned
+
+
+def test_starter_calibration_is_byte_identical_to_the_repo_calibration(tmp_path):
+    """The packaged starter and the repo's own calibration.yaml are two
+    copies of one thing. Tests and dev runs read the repo copy from the
+    CWD; installed users get the packaged one. If they drift, installed
+    users silently get different thresholds than every test in this suite
+    validated -- so make drift a failing test rather than a discovery.
+    """
+    from mcp_drifter.cli.init import starter_calibration_text
+
+    repo_copy = Path(__file__).resolve().parents[2] / "calibration.yaml"
+    assert starter_calibration_text() == repo_copy.read_text(encoding="utf-8")

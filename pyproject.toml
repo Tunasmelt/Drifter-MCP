@@ -69,6 +69,11 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
+# py.typed backs the `Typing :: Typed` classifier (PEP 561 -- without the
+# marker, type checkers ignore the package entirely and the classifier is
+# a claim the wheel does not honor). calibration.yaml is the starter file
+# `drifter init` writes for installed users, who have no repo checkout.
+package-data = { "mcp_drifter" = ["py.typed", "calibration.yaml"] }
 packages = [
     "mcp_drifter",
     "mcp_drifter.record",

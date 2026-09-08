@@ -5,8 +5,8 @@ agent and its tools. It records real tool-use trajectories, replays them safely
 offline, mutates the tool interface in controlled ways, and reports behavioral, task,
 and safety regressions with explicit uncertainty — never a silent guess.
 
-Console command: `drifter`. PyPI name `mcp-drifter` is reserved but **not yet a real
-release** — see [Install](#install).
+Console command: `drifter`. Install with `uv tool install mcp-drifter` — see
+[Install](#install).
 
 ## The problem
 
@@ -44,9 +44,9 @@ agent ──MCP──▶ drifter (replayed, mutated)        (drifter replay-serv
    rarely covers what it does on the next run. Calls Drifter has no recording for
    MISS, those runs are excluded for low fidelity, and if too few survive you get
    `UNKNOWN` with the counts shown — never a confident verdict resting on two
-   surviving runs. See [`docs/SPEC.md` §15, limitation 16](docs/SPEC.md) for the real
+   surviving runs. See [`docs/SPEC.md` §15, limitation 16](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md) for the real
    measurements behind that, and DEC-027 in
-   [`docs/CHANGELOG.md`](docs/CHANGELOG.md) for what is and isn't being done about it.
+   [`docs/CHANGELOG.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/CHANGELOG.md) for what is and isn't being done about it.
 3. **Mutate** — three structural operators, all closed-set: `description_update`
    (bounded synonym substitution and sentence reordering, never touches a tool's
    name or schema), `tool_addition` (a small, fixed pool of generic tool
@@ -59,7 +59,7 @@ agent ──MCP──▶ drifter (replayed, mutated)        (drifter replay-serv
 
 ## Status
 
-Pre-v1, under active gated development (see [`docs/PHASES.md`](docs/PHASES.md)).
+Pre-v1, under active gated development (see [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/PHASES.md)).
 Gates 0–3 are closed:
 
 - **Record & replay** (`drifter observe`, exact-key replay, redaction, trajectory
@@ -82,25 +82,38 @@ Gates 0–3 are closed:
   verdict is provably settled.
 
 Mutation mining/approval (`mine/`) is not built yet — see
-[`docs/FEATURES.md`](docs/FEATURES.md) for the complete per-feature breakdown and
-[`docs/SPEC.md` §15](docs/SPEC.md) for known limitations, stated plainly, including
+[`docs/FEATURES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/FEATURES.md) for the complete per-feature breakdown and
+[`docs/SPEC.md` §15](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md) for known limitations, stated plainly, including
 two found only by testing against a real agent rather than a scripted stand-in.
 
 ## Install
 
-**Install from a checkout — not from PyPI yet:**
+```
+uv tool install mcp-drifter    # or: pip install mcp-drifter
+drifter --help
+```
+
+Then generate a starter config and calibration file in the directory you want to
+work in:
+
+```
+drifter init
+```
+
+> **This is an alpha release.** The recording, replay, scoring and safety paths are
+> exercised end to end and independently validated. Behavioral regression detection
+> against a real (non-scripted) agent is *not* proven — see
+> [limitation 16](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md) and the "What is and isn't validated" section above.
+> Expect the interface to change.
+
+To work on Drifter itself, install from a checkout instead:
 
 ```
 git clone https://github.com/Tunasmelt/Drifter-MCP
 cd Drifter-MCP
 uv sync
-uv run drifter --help
+uv run pytest
 ```
-
-> ⚠️ **Do not `pip install mcp-drifter` yet.** That name currently resolves to an
-> empty 0.0.1 placeholder published only to reserve it — it installs successfully,
-> contains no code, and gives you no `drifter` command. It will be replaced by a real
-> release; until then the checkout above is the only working install.
 
 ## Quickstart
 
@@ -137,7 +150,7 @@ drifter score                          # re-analyze already-recorded sessions, f
 
 `drifter run` additionally needs an `agent:` block in `drifter.yaml` — it doesn't know
 how to spawn or reach the agent under test otherwise (full schema:
-[`docs/SPEC.md` §11](docs/SPEC.md)):
+[`docs/SPEC.md` §11](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)):
 
 ```yaml
 # drifter.yaml, in addition to `servers:` above
@@ -189,8 +202,8 @@ without setting up a run.
 `drifter run`'s current scope is deliberately minimal (see its own module docstring)
 — one task, one operator, a behavioral comparison. It is not yet the full orchestrated
 `v1` command surface. **Known limitation, confirmed against a real, non-scripted
-agent** (see [`docs/SPEC.md` §15, limitation 16](docs/SPEC.md) and DEC-027 in
-[`docs/CHANGELOG.md`](docs/CHANGELOG.md)): replay frequently fails to match a real
+agent** (see [`docs/SPEC.md` §15, limitation 16](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md) and DEC-027 in
+[`docs/CHANGELOG.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/CHANGELOG.md)): replay frequently fails to match a real
 agent's actual call pattern, which excludes runs for low fidelity. Drifter no longer
 reports a confident verdict on top of that — below `calibration.min_valid_runs` per
 arm you get `UNKNOWN` with the surviving counts — but a thin corpus still means fewer
@@ -242,15 +255,15 @@ actually mutated (that detail isn't persisted to disk yet), but everything else 
 identical to the original run's own output.
 
 Both `drifter run` and `drifter report` exit with a verdict-specific code for
-scripting/CI use (see [`docs/SPEC.md` §12](docs/SPEC.md)): `0` clean, `1`
+scripting/CI use (see [`docs/SPEC.md` §12](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)): `0` clean, `1`
 behavior regression, `3` safety violation, `5` budget exceeded, `4` config/
-connectivity error. `2` (assertion failure) is defined but can't fire yet —
-TASK always reports `UNKNOWN` until task assertions ship as an authored
-feature.
+connectivity error, and `2` assertion failure — reachable since F-24, but only
+when a task declares assertions. With none declared, TASK reports `UNKNOWN` and
+never `PASS`, so `2` cannot fire by accident.
 
 ## Design principles
 
-The short version (full list in [`docs/SPEC.md` §3](docs/SPEC.md)):
+The short version (full list in [`docs/SPEC.md` §3](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)):
 
 - **Replay-first.** Mutation testing runs against recorded or synthesized responses
   by default — a live call under a mutated schema never happens.
