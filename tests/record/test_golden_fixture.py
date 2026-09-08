@@ -16,12 +16,12 @@ never a same-file overwrite.
 
 from pathlib import Path
 
-from record.reader import (
+from mcp_drifter.record.reader import (
     SchemaVersionError,
     UnknownRecordTypeError,
     read_session,
 )
-from record.schema import SCHEMA_VERSION, SessionStart, ToolCall, ToolsList, TrajectoryEnd
+from mcp_drifter.record.schema import SCHEMA_VERSION, SessionStart, ToolCall, ToolsList, TrajectoryEnd
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 

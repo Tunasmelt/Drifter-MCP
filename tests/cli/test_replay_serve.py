@@ -18,8 +18,8 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from record.reader import read_session
-from record.schema import ToolCall
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 GOLDEN_SERVER = "filesystem"
@@ -42,7 +42,7 @@ async def test_replay_serve_baseline_over_a_real_subprocess_connection(tmp_path)
     params = StdioServerParameters(
         command=sys.executable,
         args=[
-            "-m", "cli", "replay-serve",
+            "-m", "mcp_drifter.cli", "replay-serve",
             "--fixture", str(GOLDEN_FIXTURE),
             "--server", GOLDEN_SERVER,
             "--runs-dir", str(runs_dir),
@@ -54,7 +54,7 @@ async def test_replay_serve_baseline_over_a_real_subprocess_connection(tmp_path)
         async with ClientSession(read, write) as session:
             await session.initialize()
             tools = await session.list_tools()
-            from replay.replay_proxy import tools_served_from_session
+            from mcp_drifter.replay.replay_proxy import tools_served_from_session
 
             expected_names = {t.name for t in tools_served_from_session(GOLDEN_FIXTURE)}
             assert {t.name for t in tools.tools} == expected_names  # the real fixture's manifest, served for real
@@ -81,7 +81,7 @@ async def test_replay_serve_with_description_update_serves_a_changed_manifest(tm
     params = StdioServerParameters(
         command=sys.executable,
         args=[
-            "-m", "cli", "replay-serve",
+            "-m", "mcp_drifter.cli", "replay-serve",
             "--fixture", str(GOLDEN_FIXTURE),
             "--server", GOLDEN_SERVER,
             "--runs-dir", str(runs_dir),
@@ -94,7 +94,7 @@ async def test_replay_serve_with_description_update_serves_a_changed_manifest(tm
             await session.initialize()
             tools = await session.list_tools()
 
-    from replay.replay_proxy import tools_served_from_session
+    from mcp_drifter.replay.replay_proxy import tools_served_from_session
 
     original_descriptions = {t.name: t.description for t in tools_served_from_session(GOLDEN_FIXTURE)}
     changed = [t for t in tools.tools if original_descriptions.get(t.name) != t.description]
@@ -105,8 +105,8 @@ async def test_replay_serve_with_description_update_serves_a_changed_manifest(tm
 async def test_replay_serve_with_tool_addition_serves_an_extra_tool_and_it_resolves_synthetic(tmp_path):
     import sys
 
-    from mutate.tool_addition import add_tool
-    from replay.replay_proxy import tools_served_from_session
+    from mcp_drifter.mutate.tool_addition import add_tool
+    from mcp_drifter.replay.replay_proxy import tools_served_from_session
 
     siblings = tools_served_from_session(GOLDEN_FIXTURE)
     added_tool, _ = add_tool(siblings, seed=1)
@@ -115,7 +115,7 @@ async def test_replay_serve_with_tool_addition_serves_an_extra_tool_and_it_resol
     params = StdioServerParameters(
         command=sys.executable,
         args=[
-            "-m", "cli", "replay-serve",
+            "-m", "mcp_drifter.cli", "replay-serve",
             "--fixture", str(GOLDEN_FIXTURE),
             "--server", GOLDEN_SERVER,
             "--runs-dir", str(runs_dir),

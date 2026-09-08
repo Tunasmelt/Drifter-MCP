@@ -5,6 +5,25 @@ description = "Proxy-based regression-testing harness for MCP tool interfaces."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"
+keywords = ["mcp", "model-context-protocol", "agent", "testing", "regression", "llm"]
+classifiers = [
+    # Alpha, deliberately and not as boilerplate: the record/observe/score and
+    # safety paths are exercised and independently validated, but behavioral
+    # regression detection against a real (non-scripted) agent is unproven --
+    # see docs/SPEC.md section 15 limitation 16. Claiming Beta here would
+    # overstate evidence this project does not have.
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Testing",
+    "Topic :: Software Development :: Quality Assurance",
+    "Typing :: Typed",
+]
+
 dependencies = [
     "mcp>=2.0.0",
     "pydantic>=2.0",
@@ -30,8 +49,14 @@ dependencies = [
     "httpx2>=2.10",
 ]
 
+[project.urls]
+Homepage = "https://github.com/Tunasmelt/Drifter-MCP"
+Repository = "https://github.com/Tunasmelt/Drifter-MCP"
+Issues = "https://github.com/Tunasmelt/Drifter-MCP/issues"
+Changelog = "https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/CHANGELOG.md"
+
 [project.scripts]
-drifter = "cli.app:main"
+drifter = "mcp_drifter.cli.app:main"
 
 [dependency-groups]
 dev = [
@@ -44,4 +69,13 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-packages = ["record", "replay", "mutate", "evaluate", "mine", "policy", "cli"]
+packages = [
+    "mcp_drifter",
+    "mcp_drifter.record",
+    "mcp_drifter.replay",
+    "mcp_drifter.mutate",
+    "mcp_drifter.evaluate",
+    "mcp_drifter.mine",
+    "mcp_drifter.policy",
+    "mcp_drifter.cli",
+]

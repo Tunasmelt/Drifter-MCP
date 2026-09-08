@@ -58,9 +58,9 @@ import re
 
 import pytest
 
-from mutate.description_update import mutate_description, mutate_tool_manifest
-from mutate.tool_addition import add_tool
-from record.schema import ToolDescriptor
+from mcp_drifter.mutate.description_update import mutate_description, mutate_tool_manifest
+from mcp_drifter.mutate.tool_addition import add_tool
+from mcp_drifter.record.schema import ToolDescriptor
 
 _NO_SCHEMA: dict = {"type": "object", "properties": {}, "required": []}
 

@@ -20,9 +20,9 @@ from pathlib import Path
 
 import pytest
 
-from cli.score import render_score, run_score
-from evaluate.baseline import aggregate_baseline_runs
-from record.schema import Environment, SessionStart, ToolCall
+from mcp_drifter.cli.score import render_score, run_score
+from mcp_drifter.evaluate.baseline import aggregate_baseline_runs
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall
 
 GOLDEN_FIXTURE_DIR = Path(__file__).parent.parent / "fixtures"
 
@@ -68,7 +68,7 @@ def test_score_module_imports_nothing_that_could_reach_a_live_connection():
     network/MCP connection. Checked by inspecting the actual file's
     imports, not by trusting the module docstring's claim.
     """
-    source = (Path(__file__).parent.parent.parent / "src" / "cli" / "score.py").read_text(encoding="utf-8")
+    source = (Path(__file__).parent.parent.parent / "src" / "mcp_drifter" / "cli" / "score.py").read_text(encoding="utf-8")
     tree = ast.parse(source)
 
     imported_modules = set()

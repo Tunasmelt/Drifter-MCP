@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from evaluate.assertions import TaskAssertions, evaluate_run, evaluate_task
-from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+from mcp_drifter.evaluate.assertions import TaskAssertions, evaluate_run, evaluate_task
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
 
 
 def _records(calls: list[tuple[str, dict, bool]]):

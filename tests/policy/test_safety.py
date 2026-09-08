@@ -9,8 +9,8 @@ where a real recording matters" precedent).
 
 from pathlib import Path
 
-from record.schema import ToolCall, ToolDescriptor
-from policy.safety import evaluate_safety, evaluate_safety_for_session
+from mcp_drifter.record.schema import ToolCall, ToolDescriptor
+from mcp_drifter.policy.safety import evaluate_safety, evaluate_safety_for_session
 
 
 def _tool(name: str) -> ToolDescriptor:
@@ -156,8 +156,8 @@ def _record_session(tmp_path: Path, calls: list[tuple[str, dict]]) -> Path:
     from mcp.shared.message import SessionMessage
     from mcp_types import JSONRPCRequest, JSONRPCResponse
 
-    from record.proxy import Direction
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.proxy import Direction
+    from mcp_drifter.record.writer import SessionRecorder
 
     runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
     recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name="fake", session_id="sess_safety")

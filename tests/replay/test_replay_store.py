@@ -10,9 +10,9 @@ passing its exit test, precisely because that corpus was never produced).
 
 from pathlib import Path
 
-from record.reader import read_session
-from record.schema import ToolCall
-from replay.replay_store import RecordedResponse, ReplayStore, replay_key, semantic_key
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore, replay_key, semantic_key
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 
@@ -322,8 +322,8 @@ def test_a_renamed_parameter_resolves_via_semantic_match_when_exact_misses(tmp_p
     (`customerId`) carrying the identical value -- the exact scenario a
     `tool_integration`/rename-shaped mutation or a real agent's own
     natural divergence produces."""
-    from record.proxy import Direction
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.proxy import Direction
+    from mcp_drifter.record.writer import SessionRecorder
     from mcp.shared.message import SessionMessage
     from mcp_types import JSONRPCRequest, JSONRPCResponse
 
@@ -352,8 +352,8 @@ def test_exact_match_is_preferred_over_semantic_when_both_would_hit(tmp_path):
     ordering: exact, then inverse, then semantic, decreasing specificity).
     Falling to the looser tier when the tighter one is available would
     throw away confidence for no reason."""
-    from record.proxy import Direction
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.proxy import Direction
+    from mcp_drifter.record.writer import SessionRecorder
     from mcp.shared.message import SessionMessage
     from mcp_types import JSONRPCRequest, JSONRPCResponse
 
@@ -410,8 +410,8 @@ def test_a_renamed_parameter_resolves_via_inverse_when_the_map_is_given(tmp_path
     F-13's own semantic test above, but here the caller (replay_proxy.py,
     standing in for it) supplies the exact inverse mapping a real
     mutate.parameter_rename operator would have produced."""
-    from record.proxy import Direction
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.proxy import Direction
+    from mcp_drifter.record.writer import SessionRecorder
     from mcp.shared.message import SessionMessage
     from mcp_types import JSONRPCRequest, JSONRPCResponse
 

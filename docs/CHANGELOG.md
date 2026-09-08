@@ -6,6 +6,83 @@ not just a diff.
 
 ---
 
+## Pre-publish audit: a packaging bug that would have broken other people's environments
+
+Before a first real PyPI release, an audit of what `pip install mcp-drifter` would
+actually do. It found one hard blocker, one live trap, and several gaps — none of which
+any test could have caught, because every test runs from the repo where the layout
+never mattered.
+
+**The blocker: seven generic top-level packages.** `pyproject.toml` declared
+`packages = ["record", "replay", "mutate", "evaluate", "mine", "policy", "cli"]` with
+`package-dir = {"" = "src"}`, so installing Drifter would have dropped all seven into
+site-packages as TOP-LEVEL names. Six are real, existing PyPI distributions — checked
+directly rather than assumed:
+
+| name | also on PyPI as |
+|---|---|
+| `evaluate` | HuggingFace's evaluation library |
+| `record` | Zope record objects |
+| `replay` | replay of random function calls |
+| `mutate` | CDM data-processing tool |
+| `mine` | Dropbox state sharing |
+| `policy` | RBAC policy enforcement |
+
+Whichever installed second would silently shadow the other. `import evaluate` in an ML
+environment could get Drifter's; `from mcp_drifter...` could get HuggingFace's. A
+wrong-import, not an error — the exact failure class this project treats as most
+dangerous, and it would have been *other people's* environments breaking, not ours.
+
+Fixed by nesting everything under a single `mcp_drifter/` package. Deliberately NOT
+`drifter/`: that name is already taken on PyPI (a VirtualBox control tool), so nesting
+under it would have recreated the same collision class in miniature. Matching the
+distribution name exactly means nothing else can claim it. The module dependency order
+CLAUDE.md fixes is untouched — `record/` → ... → `cli/`, now as `mcp_drifter.record`
+and so on.
+
+The mechanical part was 341 import statements across 84 files. Two classes of reference
+a naive `from X import` rewrite misses, both found by tests failing rather than by
+reading: subprocess invocations passing a module name as a STRING (`["-m", "cli",
+"observe", ...]` in 14 test files, which failed with a bare `No module named record`
+from the child process), and `monkeypatch.setattr("cli.run.run_run", ...)` targets.
+Also updated: the AST import-cleanliness tests, which read source by path
+(`src/cli/...` → `src/mcp_drifter/cli/...`) and assert on module-name strings
+(`"cli.run"` → `"mcp_drifter.cli.run"`).
+
+Verified the way it actually matters — a clean venv with no repo on the path: the wheel
+installs, `drifter --help` works, `drifter init` exits 4 on a missing config,
+`drifter score` runs, and site-packages contains `mcp_drifter` and nothing else.
+
+**The live trap: `pip install mcp-drifter` succeeds today and gives you nothing.** The
+name carries only the 0.0.1 placeholder published in Gate 0 to reserve it — 1.5 KB, no
+code, no `drifter` command, and it installs *successfully* rather than erroring. The
+README's `pip install mcp-drifter # not yet published` line was accurate but its failure
+mode was quiet. Rewritten to lead with the checkout and warn explicitly.
+
+**Metadata gaps**, all real for a package meant to be found: no classifiers, no
+project URLs, no keywords. Added, with `Development Status :: 3 - Alpha` chosen
+deliberately rather than as boilerplate — the record/observe/score and safety paths are
+exercised and independently validated, but behavioral regression detection against a
+real non-scripted agent is unproven (§15 limitation 16). Beta would overstate the
+evidence.
+
+**A build break I introduced and caught in the same pass**, worth recording because the
+symptom was misleading: adding `[project.urls]` immediately after `requires-python` put
+it mid-`[project]`, so TOML absorbed the *following* `dependencies` array into it. The
+wheel still built; only the sdist failed, with `project.urls.dependencies must be
+string`. Moved after the array. Both artifacts now build, and the sdist was checked for
+completeness rather than assumed good.
+
+**One gap found and deliberately NOT fixed here:** `calibration.yaml` isn't shipped, so
+a pip-installed user has no file to edit even though the docs say to edit it. Verified
+this is a discoverability gap and not a correctness one — the packaged defaults were
+compared field-by-field against the YAML and match exactly, so an installed user gets
+identical numbers. The real fix is `drifter init` writing a starter calibration.yaml
+alongside `drifter.yaml`; that is a behavior change with its own test, not something to
+slip into a packaging commit.
+
+---
+
 ## F-27: adaptive scheduling — a stopping rule that is a proof, not a peek
 
 The last unbuilt item on v1's priority list. F-27's own bar is "fewer runs than

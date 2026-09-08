@@ -3,7 +3,7 @@
 import pytest
 from mcp.client.stdio import StdioServerParameters
 
-from cli.config import ConfigError, ServerConfig, assertions_for, find_task, load_config, server_target
+from mcp_drifter.cli.config import ConfigError, ServerConfig, assertions_for, find_task, load_config, server_target
 
 VALID_YAML = """
 version: 1

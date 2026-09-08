@@ -20,13 +20,13 @@ import io
 
 import pytest
 
-from cli.config import ConfigError
-from cli.doctor import run_doctor
-from cli.init import run_init
+from mcp_drifter.cli.config import ConfigError
+from mcp_drifter.cli.doctor import run_doctor
+from mcp_drifter.cli.init import run_init
 
 
 def test_user_3_init_fails_actionably_with_zero_configs_found(tmp_path, monkeypatch):
-    import cli.init as init_mod
+    import mcp_drifter.cli.init as init_mod
 
     # No real platform config should leak into this scenario -- this
     # persona genuinely has nothing configured anywhere.

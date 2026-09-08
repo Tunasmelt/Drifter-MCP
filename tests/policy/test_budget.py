@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from evaluate.baseline import run_baseline
-from policy.budget import BudgetExceededError, BudgetTracker, budget_limited
-from record.schema import Environment, SessionStart, ToolCall
+from mcp_drifter.evaluate.baseline import run_baseline
+from mcp_drifter.policy.budget import BudgetExceededError, BudgetTracker, budget_limited
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall
 
 
 def _write_session_with_n_calls(dir_path: Path, session_id: str, n_calls: int) -> Path:

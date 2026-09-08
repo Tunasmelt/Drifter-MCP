@@ -7,7 +7,7 @@ an over-eager catch-all would make Drifter's recordings useless (every tool
 name and identifier redacted) in the name of a guarantee nothing needed.
 """
 
-from record.redact import is_redaction_marker, redact_rpc_payload, redact_secrets, redact_string
+from mcp_drifter.record.redact import is_redaction_marker, redact_rpc_payload, redact_secrets, redact_string
 
 PLANTED_OPENAI_KEY = "sk-" + "abcd1234EFGH5678ijkl9012MNOP3456qrst7890UVWX"
 PLANTED_BEARER_TOKEN = "Bearer xT9fL2mQ8vC4nR7pW1sD6hK3jY5bE0gA"

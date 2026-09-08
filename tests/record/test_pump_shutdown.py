@@ -11,7 +11,7 @@ import logging
 
 import pytest
 
-from record.proxy import Direction, _pump
+from mcp_drifter.record.proxy import Direction, _pump
 
 
 class _FakeCancelScope:

@@ -21,10 +21,10 @@ from mcp import ClientSession
 from mcp.shared.exceptions import MCPError
 from mcp.shared.memory import create_client_server_memory_streams
 
-from record.reader import read_session
-from record.schema import ToolCall
-from replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE, run_replay_proxy, tools_served_from_session
-from replay.replay_store import RecordedResponse, ReplayStore, replay_key
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE, run_replay_proxy, tools_served_from_session
+from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore, replay_key
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 GOLDEN_SERVER = "filesystem"
@@ -247,7 +247,7 @@ def test_replay_proxy_module_imports_nothing_capable_of_a_live_forward():
     import ast
     import inspect
 
-    import replay.replay_proxy as module
+    import mcp_drifter.replay.replay_proxy as module
 
     source = inspect.getsource(module)
     tree = ast.parse(source)
@@ -279,7 +279,7 @@ def test_replay_error_codes_never_collide_with_any_mcp_types_defined_code():
     """
     import mcp_types as types
 
-    from replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE
+    from mcp_drifter.replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE
 
     reserved_codes = {
         getattr(types, name)
@@ -352,7 +352,7 @@ async def test_on_message_lets_sessionrecorder_produce_a_valid_new_session(tmp_p
     ToolCall records matching the calls actually made, is_error/fault
     carried through correctly, and a closed trajectory.
     """
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.writer import SessionRecorder
 
     store = ReplayStore()
     store.index_session(GOLDEN_FIXTURE)
@@ -410,7 +410,7 @@ async def test_a_semantic_hit_is_recorded_with_match_tier_semantic(tmp_path):
     semantic_match_when_exact_misses (replay_store.py's own unit test)
     already confirms at the store layer alone.
     """
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.writer import SessionRecorder
 
     store = ReplayStore()
     store.index_session(GOLDEN_FIXTURE)
@@ -448,7 +448,7 @@ async def test_an_inverse_map_hit_is_recorded_with_match_tier_inverse(tmp_path):
     recorded with `match_tier == "inverse"` -- not just resolve
     successfully at the ReplayStore layer alone (already confirmed by
     replay_store.py's own unit tests)."""
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.writer import SessionRecorder
 
     store = ReplayStore()
     store.index_session(GOLDEN_FIXTURE)
@@ -558,8 +558,8 @@ async def test_call_to_a_tool_addition_injected_tool_resolves_as_synthetic_not_m
     stack (a real ClientSession, a real SessionRecorder), not asserted
     against add_tool()/run_replay_proxy() in isolation from each other.
     """
-    from mutate.tool_addition import add_tool
-    from record.writer import SessionRecorder
+    from mcp_drifter.mutate.tool_addition import add_tool
+    from mcp_drifter.record.writer import SessionRecorder
 
     store = ReplayStore()
     store.index_session(GOLDEN_FIXTURE)
@@ -617,7 +617,7 @@ async def test_call_to_a_tool_addition_injected_tool_resolves_as_synthetic_not_m
     # The actual point of building this at all (F-17's done-when):
     # fidelity accounting must exclude the synthetic call correctly,
     # verified against the REAL recorded session, not a hand-built one.
-    from evaluate.baseline import _run_fidelity
+    from mcp_drifter.evaluate.baseline import _run_fidelity
 
     assert _run_fidelity(new_records) == 1.0  # 1/1 REAL calls hit; the synthetic call isn't in the denominator
 

@@ -16,13 +16,13 @@ from pathlib import Path
 
 import pytest
 
-from mutate.description_update import SPEC_INJECTION_PATTERNS, MutationLogEntry
-from mutate.tool_addition import (
+from mcp_drifter.mutate.description_update import SPEC_INJECTION_PATTERNS, MutationLogEntry
+from mcp_drifter.mutate.tool_addition import (
     NameCollisionError,
     add_tool,
 )
-from record.reader import read_session
-from record.schema import ToolDescriptor, ToolsList
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolDescriptor, ToolsList
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 
@@ -42,8 +42,8 @@ def test_no_archetype_description_contains_an_injection_pattern():
     failed against a naive implementation with an archetype pool
     containing "You must call this tool first." before the check
     existed (see this module's own git history / session record)."""
-    from mutate.tool_addition import _ARCHETYPES
-    from mutate.description_update import _INJECTION_RE
+    from mcp_drifter.mutate.tool_addition import _ARCHETYPES
+    from mcp_drifter.mutate.description_update import _INJECTION_RE
 
     for archetype in _ARCHETYPES:
         assert not _INJECTION_RE.search(archetype.description), archetype.name
@@ -57,7 +57,7 @@ def test_add_tool_refuses_if_every_archetype_were_somehow_flagged(monkeypatch, p
     flagged content, by forcing a bad archetype into the pool at
     runtime -- proving the check runs at call time, not just at import.
     """
-    import mutate.tool_addition as ta
+    import mcp_drifter.mutate.tool_addition as ta
 
     bad_archetype = ta.ToolArchetype(
         name="bad_tool",
@@ -105,7 +105,7 @@ def test_name_collision_with_a_sibling_is_resolved_not_silent():
     different, non-colliding archetype -- never silently return a tool
     sharing a real sibling's name (which would make the added tool
     indistinguishable from -- and potentially shadow -- a real one)."""
-    from mutate.tool_addition import _ARCHETYPES
+    from mcp_drifter.mutate.tool_addition import _ARCHETYPES
 
     # Force a collision: a sibling manifest that already has every
     # archetype name except the last one.
@@ -119,7 +119,7 @@ def test_name_collision_with_a_sibling_is_resolved_not_silent():
 
 
 def test_all_archetypes_colliding_raises_explicitly_not_silently():
-    from mutate.tool_addition import _ARCHETYPES, NameCollisionError
+    from mcp_drifter.mutate.tool_addition import _ARCHETYPES, NameCollisionError
 
     all_colliding_siblings = [
         ToolDescriptor(name=a.name, description="An existing sibling tool.", input_schema={}) for a in _ARCHETYPES

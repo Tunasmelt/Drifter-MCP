@@ -16,11 +16,11 @@ from pathlib import Path
 
 import pytest
 
-from cli.subprocess_adapter import make_run_once, run_agent_subprocess_http
-from record.reader import read_session
-from record.schema import ToolCall
-from replay.replay_proxy import tools_served_from_session
-from replay.replay_store import ReplayStore
+from mcp_drifter.cli.subprocess_adapter import make_run_once, run_agent_subprocess_http
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.replay.replay_proxy import tools_served_from_session
+from mcp_drifter.replay.replay_store import ReplayStore
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 SCRIPTED_AGENT = Path(__file__).parent.parent / "fixtures" / "scripted_agent.py"

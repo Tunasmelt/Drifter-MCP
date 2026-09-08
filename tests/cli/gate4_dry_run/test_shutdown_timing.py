@@ -54,7 +54,7 @@ def _drifter_yaml(tmp_path: Path, runs_dir: Path) -> Path:
 async def _connect_call_then_disconnect_abruptly(config_path: Path) -> None:
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
     )
     with anyio.fail_after(15):  # generous but bounded -- a real hang would exceed this by a lot, not a little
         async with stdio_client(params) as (read, write):

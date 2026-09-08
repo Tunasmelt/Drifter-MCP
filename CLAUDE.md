@@ -33,6 +33,16 @@ order within a module, and modules have a strict dependency order:
 `record/` → `replay/` → `mutate/` → `evaluate/` → `mine/` → `policy/` → `cli/`.
 Don't start `mutate/` work while `record/`'s golden fixture test is still red.
 
+**On disk these all live under one nest package: `src/mcp_drifter/`.** So
+`record/proxy.py` throughout these docs means `src/mcp_drifter/record/proxy.py`, and
+its import path is `mcp_drifter.record.proxy`. The prose keeps the short form — the
+module names and their dependency order are unchanged, and rewriting ~300 references
+would be diff noise without clarity. The nest exists because the seven modules were
+previously installed as SEPARATE top-level packages, and six of those names
+(`record`, `replay`, `mutate`, `evaluate`, `mine`, `policy`) are real existing PyPI
+distributions — `evaluate` is HuggingFace's. Installing Drifter alongside any of them
+meant whichever landed second silently shadowed the other. See docs/CHANGELOG.md.
+
 ## Non-negotiable invariants (docs/SPEC.md §3) — check these on every relevant PR
 
 - Recording never writes payload data by default, only shapes. If a change to

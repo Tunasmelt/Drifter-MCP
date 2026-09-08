@@ -6,7 +6,7 @@ and assert equality. This is the seed of the golden fixture test — it must
 never break as the schema evolves.
 """
 
-from record.schema import (
+from mcp_drifter.record.schema import (
     DataFlowReference,
     Environment,
     SessionStart,

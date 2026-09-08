@@ -5,7 +5,8 @@ agent and its tools. It records real tool-use trajectories, replays them safely
 offline, mutates the tool interface in controlled ways, and reports behavioral, task,
 and safety regressions with explicit uncertainty — never a silent guess.
 
-`mcp-drifter` on PyPI. Console command: `drifter`.
+Console command: `drifter`. PyPI name `mcp-drifter` is reserved but **not yet a real
+release** — see [Install](#install).
 
 ## The problem
 
@@ -87,16 +88,19 @@ two found only by testing against a real agent rather than a scripted stand-in.
 
 ## Install
 
-```
-pip install mcp-drifter    # not yet published — see pyproject.toml for local install
-```
-
-For now, from a checkout:
+**Install from a checkout — not from PyPI yet:**
 
 ```
+git clone https://github.com/Tunasmelt/Drifter-MCP
+cd Drifter-MCP
 uv sync
 uv run drifter --help
 ```
+
+> ⚠️ **Do not `pip install mcp-drifter` yet.** That name currently resolves to an
+> empty 0.0.1 placeholder published only to reserve it — it installs successfully,
+> contains no code, and gives you no `drifter` command. It will be replaced by a real
+> release; until then the checkout above is the only working install.
 
 ## Quickstart
 

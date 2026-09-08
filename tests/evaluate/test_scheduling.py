@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pytest
 
-from evaluate.baseline import BaselineResult, aggregate_baseline_runs, run_baseline
-from evaluate.effect_size import compute_behavior_effect_size
-from evaluate.scheduling import next_decision, run_mutated_adaptively
-from record.calibration import Calibration
-from record.schema import Environment, SessionStart, ToolCall
+from mcp_drifter.evaluate.baseline import BaselineResult, aggregate_baseline_runs, run_baseline
+from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.evaluate.scheduling import next_decision, run_mutated_adaptively
+from mcp_drifter.record.calibration import Calibration
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall
 
 
 def _write_session(dir_path: Path, session_id: str, tool_names: list[str]) -> Path:

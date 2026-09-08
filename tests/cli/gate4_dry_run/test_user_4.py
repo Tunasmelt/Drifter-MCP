@@ -27,10 +27,10 @@ import anyio
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from cli.init import run_init
-from cli.run import run_run
-from record.reader import read_session
-from record.schema import ToolCall
+from mcp_drifter.cli.init import run_init
+from mcp_drifter.cli.run import run_run
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
 
 ANNOTATED_SERVER = str(Path(__file__).parent.parent.parent / "fixtures" / "fake_server_annotated.py")
 SCRIPTED_AGENT = str(Path(__file__).parent.parent.parent / "fixtures" / "scripted_agent.py")
@@ -46,7 +46,7 @@ def _write_mcp_json(home: Path) -> None:
 async def _record_persona_session(config_path: Path) -> None:
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "annotated"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "annotated"],
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

@@ -25,14 +25,14 @@ from pathlib import Path
 
 import pytest
 
-from mutate.description_update import (
+from mcp_drifter.mutate.description_update import (
     SPEC_INJECTION_PATTERNS,
     MutationResult,
     mutate_description,
     mutate_tool_manifest,
 )
-from record.reader import read_session
-from record.schema import ToolDescriptor, ToolsList
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolDescriptor, ToolsList
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 

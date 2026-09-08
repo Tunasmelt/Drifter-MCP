@@ -12,7 +12,7 @@ interleaved in one session cross-contaminate each other's state.
 
 from __future__ import annotations
 
-from record.segment import TrajectoryTracker, extract_trace_id
+from mcp_drifter.record.segment import TrajectoryTracker, extract_trace_id
 
 IDLE_GAP = 30.0
 HEURISTIC_CONFIDENCE = 0.6

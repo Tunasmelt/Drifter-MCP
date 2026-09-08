@@ -16,10 +16,10 @@ from pathlib import Path
 import mcp_types as types
 from mcp.shared.message import SessionMessage
 
-from record.proxy import Direction
-from record.reader import read_session
-from record.schema import SessionStart, ToolCall, TrajectoryEnd
-from record.writer import SessionRecorder
+from mcp_drifter.record.proxy import Direction
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import SessionStart, ToolCall, TrajectoryEnd
+from mcp_drifter.record.writer import SessionRecorder
 
 JSONRPCRequest = types.JSONRPCRequest
 JSONRPCResponse = types.JSONRPCResponse
@@ -251,7 +251,7 @@ def test_tools_list_captures_the_raw_annotations_block(tmp_path):
     """policy/classify.py's tier-1 (docs/SPEC.md §10) input: the real wire
     `annotations` dict, camelCase keys as MCP actually sends them, captured
     unmodified -- not renamed, not reinterpreted here."""
-    from record.schema import ToolsList
+    from mcp_drifter.record.schema import ToolsList
 
     recorder = _recorder(tmp_path)
     _initialize(recorder)
@@ -275,7 +275,7 @@ def test_tools_list_captures_the_raw_annotations_block(tmp_path):
 def test_tools_list_with_no_annotations_key_leaves_it_none(tmp_path):
     """A real, common case (annotations is optional in the spec) -- must
     stay None, not `{}` or some other falsy-but-present placeholder."""
-    from record.schema import ToolsList
+    from mcp_drifter.record.schema import ToolsList
 
     recorder = _recorder(tmp_path)
     _initialize(recorder)

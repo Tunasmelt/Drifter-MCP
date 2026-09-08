@@ -27,8 +27,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from cli.config import ConfigError, load_config
-from cli.init import ServerConfig, run_init, scan_mcp_configs
+from mcp_drifter.cli.config import ConfigError, load_config
+from mcp_drifter.cli.init import ServerConfig, run_init, scan_mcp_configs
 
 
 def _write_json(path: Path, data: dict) -> None:
@@ -116,7 +116,7 @@ def test_scan_tolerates_invalid_json_without_crashing(tmp_path):
 
 
 def test_scan_returns_no_servers_and_no_found_files_when_nothing_exists(tmp_path, monkeypatch):
-    import cli.init as init_mod
+    import mcp_drifter.cli.init as init_mod
 
     monkeypatch.setattr(init_mod, "claude_desktop_config_path", lambda: None)
     servers, skipped, found_files = scan_mcp_configs(tmp_path)
@@ -177,7 +177,7 @@ def test_run_init_force_overwrites_an_existing_drifter_yaml(tmp_path):
 
 
 def test_run_init_raises_actionable_config_error_when_no_servers_found(tmp_path, monkeypatch):
-    import cli.init as init_mod
+    import mcp_drifter.cli.init as init_mod
 
     monkeypatch.setattr(init_mod, "claude_desktop_config_path", lambda: None)
     output_path = tmp_path / "drifter.yaml"

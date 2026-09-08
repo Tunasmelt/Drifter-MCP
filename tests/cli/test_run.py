@@ -19,21 +19,21 @@ from pathlib import Path
 
 import pytest
 
-from cli.config import ConfigError
-from cli.run import (
+from mcp_drifter.cli.config import ConfigError
+from mcp_drifter.cli.run import (
     RunResult,
     _template_command,
     render_run_result,
     run_mutation_comparison,
     run_run,
 )
-from evaluate.baseline import BaselineResult
-from evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
-from mutate.tool_addition import add_tool
-from policy.safety import SafetyResult
-from record.reader import read_session
-from record.schema import ToolCall
-from replay.replay_proxy import tools_served_from_session
+from mcp_drifter.evaluate.baseline import BaselineResult
+from mcp_drifter.evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
+from mcp_drifter.mutate.tool_addition import add_tool
+from mcp_drifter.policy.safety import SafetyResult
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.replay.replay_proxy import tools_served_from_session
 
 NO_VIOLATION = SafetyResult(verdict="NO_VIOLATION", findings=())
 
@@ -359,7 +359,7 @@ def test_run_mutation_comparison_budget_limits_the_number_of_real_agent_runs(tmp
     # F-32's own signal survives the change: budget exhaustion is still
     # detected (from the baseline arm's exclusions), so exit code 5 is
     # unaffected by scheduling skipping the mutated arm.
-    from cli.report_format import budget_exceeded_from_excluded_runs
+    from mcp_drifter.cli.report_format import budget_exceeded_from_excluded_runs
 
     assert budget_exceeded_from_excluded_runs(result) is True
     assert result.budget_exceeded is True
@@ -414,7 +414,7 @@ def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_over
     though Behavior itself is a clean NO_REGRESSION, matching docs/SPEC.md §8's
     "reported even when Behavior shows NO_REGRESSION" framing.
     """
-    from cli.config import PolicyConfig
+    from mcp_drifter.cli.config import PolicyConfig
 
     calls = _golden_calls()[:3]
     command = [sys.executable, str(SCRIPTED_AGENT), *(_spec(c.tool_name, c.arguments) for c in calls)]

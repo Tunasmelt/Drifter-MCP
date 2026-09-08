@@ -5,8 +5,8 @@ chosen to match what an actual `tools/list` response looks like, not
 invented shorthand.
 """
 
-from record.schema import ToolDescriptor
-from policy.classify import (
+from mcp_drifter.record.schema import ToolDescriptor
+from mcp_drifter.policy.classify import (
     Classification,
     _classify_from_observed_behavior,
     classify_manifest,
@@ -116,7 +116,7 @@ def test_heuristic_checks_most_severe_prefix_first():
     reviewed, disjoint prefix set, but checked defensively per this
     module's own docstring) must resolve to the more cautious result --
     confirmed here by construction, not just claimed."""
-    from policy.classify import _DESTRUCTIVE_PREFIXES, _READ_ONLY_PREFIXES
+    from mcp_drifter.policy.classify import _DESTRUCTIVE_PREFIXES, _READ_ONLY_PREFIXES
 
     assert not any(d.startswith(r) or r.startswith(d) for d in _DESTRUCTIVE_PREFIXES for r in _READ_ONLY_PREFIXES)
 

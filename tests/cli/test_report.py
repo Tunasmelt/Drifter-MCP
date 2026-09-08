@@ -15,11 +15,11 @@ from pathlib import Path
 
 import pytest
 
-from cli.config import ConfigError, PolicyConfig
-from cli.report import build_report_result, run_report
-from cli.report_format import render_run_result
-from record.reader import read_session
-from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+from mcp_drifter.cli.config import ConfigError, PolicyConfig
+from mcp_drifter.cli.report import build_report_result, run_report
+from mcp_drifter.cli.report_format import render_run_result
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 SCRIPTED_AGENT = Path(__file__).parent.parent / "fixtures" / "scripted_agent.py"
@@ -74,7 +74,7 @@ def test_module_imports_nothing_that_could_reach_a_live_connection(filename):
     is worthless if the module it depends on for RunResult/render_run_result
     secretly isn't clean too.
     """
-    source = (Path(__file__).parent.parent.parent / "src" / "cli" / filename).read_text(encoding="utf-8")
+    source = (Path(__file__).parent.parent.parent / "src" / "mcp_drifter" / "cli" / filename).read_text(encoding="utf-8")
     tree = ast.parse(source)
 
     imported_modules = set()
@@ -92,7 +92,7 @@ def test_module_imports_nothing_that_could_reach_a_live_connection(filename):
     # against: report.py must never import cli.run directly (that's the
     # one path that WOULD transitively reach cli.subprocess_adapter despite
     # neither name appearing in the forbidden-prefix list above).
-    assert "cli.run" not in imported_modules, f"cli/{filename} imports cli.run, which is not execution-free"
+    assert "mcp_drifter.cli.run" not in imported_modules, f"cli/{filename} imports cli.run, which is not execution-free"
 
 
 # --- build_report_result: reconstructing a RunResult from disk --------------
@@ -198,7 +198,7 @@ def test_report_reconstructs_the_same_verdict_a_real_drifter_run_produced(tmp_pa
     replay-served agent, real recorded sessions), then confirm drifter
     report reconstructs the identical verdict from those same sessions
     alone, with zero new agent execution."""
-    from cli.run import run_mutation_comparison
+    from mcp_drifter.cli.run import run_mutation_comparison
 
     calls = [r for r in read_session(GOLDEN_FIXTURE) if isinstance(r, ToolCall)][:2]
 

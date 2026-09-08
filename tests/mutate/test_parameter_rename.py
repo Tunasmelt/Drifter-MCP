@@ -4,8 +4,8 @@ mutation key resolution) specifically to give it a real inverse to
 resolve against.
 """
 
-from record.schema import ToolDescriptor
-from mutate.parameter_rename import (
+from mcp_drifter.record.schema import ToolDescriptor
+from mcp_drifter.mutate.parameter_rename import (
     camel_to_snake,
     inverse_map_from_log,
     rename_tool_parameters,
@@ -131,7 +131,7 @@ def test_inverse_map_from_log_is_generic_across_operators_with_no_inverse():
     always None -- inverse_map_from_log must not choke on or misreport
     those, since cli/run.py calls it unconditionally regardless of which
     operator produced the log."""
-    from mutate.description_update import MutationLogEntry
+    from mcp_drifter.mutate.description_update import MutationLogEntry
 
     log = [
         MutationLogEntry(

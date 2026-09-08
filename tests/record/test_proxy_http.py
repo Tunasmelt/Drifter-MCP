@@ -24,12 +24,12 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from cli.http_proxy import serve_replay_over_http
-from record.proxy import connect_to_server
-from record.reader import read_session
-from record.schema import ToolCall
-from replay.replay_proxy import tools_served_from_session
-from replay.replay_store import ReplayStore
+from mcp_drifter.cli.http_proxy import serve_replay_over_http
+from mcp_drifter.record.proxy import connect_to_server
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.replay.replay_proxy import tools_served_from_session
+from mcp_drifter.replay.replay_store import ReplayStore
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 GOLDEN_SERVER = "filesystem"

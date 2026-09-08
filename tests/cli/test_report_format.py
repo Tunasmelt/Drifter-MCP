@@ -8,11 +8,11 @@ test is pure verdict-reading, not comparison machinery.
 
 import dataclasses
 
-from evaluate.baseline import BaselineResult, ExcludedRun
-from evaluate.effect_size import EffectSizeResult
-from cli.report_format import RunResult, budget_exceeded_from_excluded_runs, compute_exit_code
-from evaluate.assertions import AssertionFailure, TaskResult
-from policy.safety import SafetyResult
+from mcp_drifter.evaluate.baseline import BaselineResult, ExcludedRun
+from mcp_drifter.evaluate.effect_size import EffectSizeResult
+from mcp_drifter.cli.report_format import RunResult, budget_exceeded_from_excluded_runs, compute_exit_code
+from mcp_drifter.evaluate.assertions import AssertionFailure, TaskResult
+from mcp_drifter.policy.safety import SafetyResult
 
 _EMPTY_BASELINE = BaselineResult(
     task_id="t", total_runs=0, valid_runs=0, excluded_runs=(),

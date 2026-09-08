@@ -29,9 +29,9 @@ import json
 import sys
 from pathlib import Path
 
-from cli.run import run_mutation_comparison
-from mutate.description_update import mutate_tool_manifest
-from replay.replay_proxy import tools_served_from_session
+from mcp_drifter.cli.run import run_mutation_comparison
+from mcp_drifter.mutate.description_update import mutate_tool_manifest
+from mcp_drifter.replay.replay_proxy import tools_served_from_session
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 SCRIPTED_AGENT = Path(__file__).parent.parent / "fixtures" / "scripted_agent.py"

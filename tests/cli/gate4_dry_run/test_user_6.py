@@ -46,12 +46,12 @@ import anyio
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from cli.init import run_init
-from cli.score import run_score
-from cli.stats import run_stats
-from evaluate.baseline import aggregate_baseline_runs
-from record.reader import read_session
-from record.schema import SessionStart, ToolCall
+from mcp_drifter.cli.init import run_init
+from mcp_drifter.cli.score import run_score
+from mcp_drifter.cli.stats import run_stats
+from mcp_drifter.evaluate.baseline import aggregate_baseline_runs
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import SessionStart, ToolCall
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent.parent / "fixtures" / "fake_server.py")
 
@@ -72,7 +72,7 @@ async def _record_real_session(config_path: Path) -> None:
     incidental, for whether this session even gets a manifest hash."""
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -86,7 +86,7 @@ async def _record_connectivity_check_artifact(config_path: Path) -> None:
     then disconnects without ever calling a tool."""
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -149,7 +149,7 @@ def test_user_6_connectivity_artifact_reproduced_end_to_end_then_stats_and_score
 async def _record_tool_call_before_list_tools(config_path: Path) -> None:
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:

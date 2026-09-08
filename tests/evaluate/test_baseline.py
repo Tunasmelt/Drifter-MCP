@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-from evaluate.baseline import _NULL_HASH_REASON, ExcludedRun, aggregate_baseline_runs, run_baseline
-from record.calibration import Calibration
-from record.schema import Environment, SessionStart, ToolCall
+from mcp_drifter.evaluate.baseline import _NULL_HASH_REASON, ExcludedRun, aggregate_baseline_runs, run_baseline
+from mcp_drifter.record.calibration import Calibration
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall
 
 
 def _write_session(

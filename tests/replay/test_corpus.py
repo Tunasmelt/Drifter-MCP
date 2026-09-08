@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
-from replay.corpus import CorpusError, load_corpus, render_corpus_summary, resolve_session_paths
-from replay.replay_store import ReplayStore
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+from mcp_drifter.replay.corpus import CorpusError, load_corpus, render_corpus_summary, resolve_session_paths
+from mcp_drifter.replay.replay_store import ReplayStore
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 GOLDEN_SERVER = "filesystem"

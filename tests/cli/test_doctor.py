@@ -19,20 +19,20 @@ from pathlib import Path
 import anyio
 import pytest
 
-from cli.doctor import _check_server, run_doctor
-from record.calibration import Calibration
+from mcp_drifter.cli.doctor import _check_server, run_doctor
+from mcp_drifter.record.calibration import Calibration
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
 
 
 def _server(name: str, command: list[str]):
-    from cli.config import ServerConfig
+    from mcp_drifter.cli.config import ServerConfig
 
     return ServerConfig(name=name, command=command)
 
 
 def _url_server(name: str, url: str):
-    from cli.config import ServerConfig
+    from mcp_drifter.cli.config import ServerConfig
 
     return ServerConfig(name=name, url=url)
 
@@ -321,7 +321,7 @@ def test_run_doctor_reports_failure_when_loopback_binding_is_unavailable(tmp_pat
     source alone."""
     import types
 
-    import cli.doctor as doctor_module
+    import mcp_drifter.cli.doctor as doctor_module
 
     class _FakeSocket:
         def bind(self, *args, **kwargs):
@@ -390,7 +390,7 @@ def _record_dir_config(tmp_path: Path, runs_dir: Path) -> Path:
 
 
 def _session(dir_path: Path, session_id: str, paths: list[str], server: str = "srv") -> None:
-    from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+    from mcp_drifter.record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
 
     dir_path.mkdir(parents=True, exist_ok=True)
     served = [ToolDescriptor(name="read_file", description="d", input_schema={})]

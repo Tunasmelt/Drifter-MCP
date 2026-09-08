@@ -8,11 +8,11 @@ function returns the right number.
 
 import pytest
 
-import cli.app as app
-from cli.report_format import RunResult
-from evaluate.baseline import BaselineResult
-from evaluate.effect_size import EffectSizeResult
-from policy.safety import SafetyResult
+import mcp_drifter.cli.app as app
+from mcp_drifter.cli.report_format import RunResult
+from mcp_drifter.evaluate.baseline import BaselineResult
+from mcp_drifter.evaluate.effect_size import EffectSizeResult
+from mcp_drifter.policy.safety import SafetyResult
 
 _EMPTY_BASELINE = BaselineResult(
     task_id="t", total_runs=0, valid_runs=0, excluded_runs=[],
@@ -32,7 +32,7 @@ def _result(effect_verdict, safety_verdict="NO_VIOLATION", budget_exceeded=False
 
 
 def test_run_command_exits_1_on_a_real_regression(monkeypatch):
-    monkeypatch.setattr("cli.run.run_run", lambda **kwargs: _result("REGRESSION"))
+    monkeypatch.setattr("mcp_drifter.cli.run.run_run", lambda **kwargs: _result("REGRESSION"))
     monkeypatch.setattr("sys.argv", ["drifter", "run", "--fixture", "f.jsonl", "--server", "s"])
     with pytest.raises(SystemExit) as exc:
         app.main()
@@ -40,7 +40,7 @@ def test_run_command_exits_1_on_a_real_regression(monkeypatch):
 
 
 def test_run_command_exits_3_on_a_safety_violation(monkeypatch):
-    monkeypatch.setattr("cli.run.run_run", lambda **kwargs: _result("NO_REGRESSION", safety_verdict="VIOLATION"))
+    monkeypatch.setattr("mcp_drifter.cli.run.run_run", lambda **kwargs: _result("NO_REGRESSION", safety_verdict="VIOLATION"))
     monkeypatch.setattr("sys.argv", ["drifter", "run", "--fixture", "f.jsonl", "--server", "s"])
     with pytest.raises(SystemExit) as exc:
         app.main()
@@ -48,7 +48,7 @@ def test_run_command_exits_3_on_a_safety_violation(monkeypatch):
 
 
 def test_run_command_exits_0_on_dry_run_with_no_result(monkeypatch):
-    monkeypatch.setattr("cli.run.run_run", lambda **kwargs: None)
+    monkeypatch.setattr("mcp_drifter.cli.run.run_run", lambda **kwargs: None)
     monkeypatch.setattr("sys.argv", ["drifter", "run", "--fixture", "f.jsonl", "--server", "s", "--dry-run"])
     with pytest.raises(SystemExit) as exc:
         app.main()
@@ -56,7 +56,7 @@ def test_run_command_exits_0_on_dry_run_with_no_result(monkeypatch):
 
 
 def test_report_command_exits_5_on_budget_exceeded(monkeypatch):
-    monkeypatch.setattr("cli.report.run_report", lambda **kwargs: _result("NO_REGRESSION", budget_exceeded=True))
+    monkeypatch.setattr("mcp_drifter.cli.report.run_report", lambda **kwargs: _result("NO_REGRESSION", budget_exceeded=True))
     monkeypatch.setattr("sys.argv", ["drifter", "report", "--task-id", "t"])
     with pytest.raises(SystemExit) as exc:
         app.main()
@@ -64,7 +64,7 @@ def test_report_command_exits_5_on_budget_exceeded(monkeypatch):
 
 
 def test_report_command_exits_0_on_clean_no_regression(monkeypatch):
-    monkeypatch.setattr("cli.report.run_report", lambda **kwargs: _result("NO_REGRESSION"))
+    monkeypatch.setattr("mcp_drifter.cli.report.run_report", lambda **kwargs: _result("NO_REGRESSION"))
     monkeypatch.setattr("sys.argv", ["drifter", "report", "--task-id", "t"])
     with pytest.raises(SystemExit) as exc:
         app.main()

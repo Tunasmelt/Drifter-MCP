@@ -27,9 +27,9 @@ import anyio
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from cli.init import run_init
-from record.reader import read_session
-from record.schema import ToolCall
+from mcp_drifter.cli.init import run_init
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent.parent / "fixtures" / "fake_server.py")
 
@@ -44,7 +44,7 @@ def _write_mcp_json(home: Path) -> None:
 async def _record_persona_session(config_path: Path) -> None:
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -57,7 +57,7 @@ async def _replay_and_verify(fixture_path: Path, replayed_runs_dir: Path) -> lis
     params = StdioServerParameters(
         command=sys.executable,
         args=[
-            "-m", "cli", "replay-serve",
+            "-m", "mcp_drifter.cli", "replay-serve",
             "--fixture", str(fixture_path),
             "--server", "fake",
             "--runs-dir", str(replayed_runs_dir),

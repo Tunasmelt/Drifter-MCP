@@ -18,12 +18,12 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.message import SessionMessage
 from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
-from cli.stats import collect_stats, render_stats, run_stats
-from record.proxy import Direction
-from record.reader import read_session
-from record.redact import is_redaction_marker
-from record.schema import ToolCall
-from record.writer import SessionRecorder
+from mcp_drifter.cli.stats import collect_stats, render_stats, run_stats
+from mcp_drifter.record.proxy import Direction
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.redact import is_redaction_marker
+from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.record.writer import SessionRecorder
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
 
@@ -523,7 +523,7 @@ async def test_stats_against_a_real_observe_session(tmp_path):
 
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
     )
     async with stdio_client(params) as (read, write):
         async with ClientSession(read, write) as session:
@@ -555,7 +555,7 @@ def test_stats_subprocess_stdout_is_valid_utf8_not_mangled_by_console_codepage(t
     _record_synthetic_session(runs_dir, raw_dir, "sess1")
 
     result = subprocess.run(
-        [sys.executable, "-m", "cli", "stats", "--runs-dir", str(runs_dir)],
+        [sys.executable, "-m", "mcp_drifter.cli", "stats", "--runs-dir", str(runs_dir)],
         capture_output=True,
         check=True,
     )

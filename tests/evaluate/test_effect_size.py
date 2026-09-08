@@ -10,9 +10,9 @@ import dataclasses
 
 import pytest
 
-from evaluate.baseline import BaselineResult
-from evaluate.effect_size import compute_behavior_effect_size
-from record.calibration import Calibration
+from mcp_drifter.evaluate.baseline import BaselineResult
+from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.record.calibration import Calibration
 
 
 def _result(

@@ -19,7 +19,7 @@ from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
-DRIFTER_PROXY_COMMAND = [sys.executable, "-m", "record", sys.executable, FIXTURE_SERVER]
+DRIFTER_PROXY_COMMAND = [sys.executable, "-m", "mcp_drifter.record", sys.executable, FIXTURE_SERVER]
 
 # Realistic-shaped planted fakes — not real credentials. The JWT is the
 # canonical public example from jwt.io.

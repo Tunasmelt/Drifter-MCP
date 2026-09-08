@@ -17,7 +17,7 @@ import sys
 
 import anyio
 
-from record.proxy import run_passthrough_proxy
+from mcp_drifter.record.proxy import run_passthrough_proxy
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

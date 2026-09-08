@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-from record.schema import ToolDescriptor
-from policy.blast_radius import compute_blast_radius, render_blast_radius
+from mcp_drifter.record.schema import ToolDescriptor
+from mcp_drifter.policy.blast_radius import compute_blast_radius, render_blast_radius
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 
@@ -25,8 +25,8 @@ def test_planned_agent_runs_is_repeats_times_two_arms():
 
 
 def test_estimated_tool_calls_scales_with_the_fixtures_own_call_count_and_repeats():
-    from record.reader import read_session
-    from record.schema import ToolCall
+    from mcp_drifter.record.reader import read_session
+    from mcp_drifter.record.schema import ToolCall
 
     fixture_call_count = len([r for r in read_session(GOLDEN_FIXTURE) if isinstance(r, ToolCall)])
     assert fixture_call_count == 7  # matches the golden fixture's known, reviewed content
@@ -52,8 +52,8 @@ def test_destructive_override_reclassifies_the_estimate():
     """A tool the fixture actually calls, forced into policy.destructive,
     must shift the estimate's destructive count up by exactly that tool's
     own per-run call frequency times the planned run count."""
-    from record.reader import read_session
-    from record.schema import ToolCall
+    from mcp_drifter.record.reader import read_session
+    from mcp_drifter.record.schema import ToolCall
 
     calls = [r for r in read_session(GOLDEN_FIXTURE) if isinstance(r, ToolCall)]
     target_tool = calls[0].tool_name
@@ -65,7 +65,7 @@ def test_destructive_override_reclassifies_the_estimate():
 
 
 def test_a_fixture_with_no_tool_calls_produces_an_all_zero_estimate(tmp_path):
-    from record.schema import Environment, SessionStart
+    from mcp_drifter.record.schema import Environment, SessionStart
 
     path = tmp_path / "empty.jsonl"
     path.write_text(

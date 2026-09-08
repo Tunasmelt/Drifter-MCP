@@ -20,10 +20,10 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from cli.config import ConfigError
-from cli.observe import LiveStatus, handle_sigint, run_observe, select_server
-from record.reader import read_session
-from record.schema import ToolCall, TrajectoryEnd
+from mcp_drifter.cli.config import ConfigError
+from mcp_drifter.cli.observe import LiveStatus, handle_sigint, run_observe, select_server
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall, TrajectoryEnd
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
 
@@ -120,8 +120,8 @@ def test_handle_sigint_flushes_open_trajectory_and_exits(tmp_path):
     from mcp.shared.message import SessionMessage
     from mcp_types import JSONRPCRequest, JSONRPCResponse
 
-    from record.proxy import Direction
-    from record.writer import SessionRecorder
+    from mcp_drifter.record.proxy import Direction
+    from mcp_drifter.record.writer import SessionRecorder
 
     runs_dir, raw_dir = tmp_path / "runs", tmp_path / "raw"
     recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name="fake")
@@ -172,7 +172,7 @@ async def test_observe_records_a_session_and_keeps_status_off_stdout(tmp_path):
 
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
     )
 
     with stderr_path.open("w", encoding="utf-8") as errlog:
@@ -242,7 +242,7 @@ async def test_observe_env_override_keeps_the_real_dot_drifter_untouched(tmp_pat
     scratch_runs, scratch_raw = tmp_path / "scratch_runs", tmp_path / "scratch_raw"
     params = StdioServerParameters(
         command=sys.executable,
-        args=["-m", "cli", "observe", "--config", str(config_path), "--server", "fake"],
+        args=["-m", "mcp_drifter.cli", "observe", "--config", str(config_path), "--server", "fake"],
         env={"DRIFTER_RUNS_DIR": str(scratch_runs), "DRIFTER_RAW_DIR": str(scratch_raw)},
     )
 

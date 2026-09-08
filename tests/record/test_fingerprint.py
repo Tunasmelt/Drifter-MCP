@@ -9,7 +9,7 @@ docs/SPEC.md's stated requirement.
 
 import pytest
 
-from record.fingerprint import (
+from mcp_drifter.record.fingerprint import (
     FingerprintMismatchError,
     build_environment,
     compute_fingerprint,
@@ -17,7 +17,7 @@ from record.fingerprint import (
     diff_environments,
     require_matching_environments,
 )
-from record.schema import SessionStart
+from mcp_drifter.record.schema import SessionStart
 
 BASE_KWARGS = dict(
     agent_identity="claude-code/1.0",

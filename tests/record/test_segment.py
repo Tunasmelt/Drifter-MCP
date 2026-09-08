@@ -17,11 +17,11 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from record.reader import read_session
-from record.schema import ToolCall, TrajectoryEnd
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall, TrajectoryEnd
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
-DRIFTER_PROXY_COMMAND = [sys.executable, "-m", "record", sys.executable, FIXTURE_SERVER]
+DRIFTER_PROXY_COMMAND = [sys.executable, "-m", "mcp_drifter.record", sys.executable, FIXTURE_SERVER]
 
 
 def _proxied_params(runs_dir: Path, raw_dir: Path, extra_env: dict | None = None) -> StdioServerParameters:

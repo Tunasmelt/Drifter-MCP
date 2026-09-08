@@ -8,8 +8,8 @@ whether growing a corpus actually helps.
 
 from pathlib import Path
 
-from record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
-from replay.coverage import estimate_coverage, render_coverage
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+from mcp_drifter.replay.coverage import estimate_coverage, render_coverage
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
 GOLDEN_SERVER = "filesystem"

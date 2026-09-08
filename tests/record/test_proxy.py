@@ -29,15 +29,15 @@ import pytest
 from mcp import ClientSession
 from mcp.client.stdio import StdioServerParameters, stdio_client
 
-from record.reader import read_session
-from record.schema import SessionStart, ToolCall, ToolsList
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import SessionStart, ToolCall, ToolsList
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
 CRASHING_SERVER = str(Path(__file__).parent.parent / "fixtures" / "crashing_server.py")
 
 # Drifter itself, invoked exactly as an MCP client config would invoke it:
 # `python -m record <real command> <real args...>`. See record/__main__.py.
-DRIFTER_PROXY_COMMAND = [sys.executable, "-m", "record", sys.executable, FIXTURE_SERVER]
+DRIFTER_PROXY_COMMAND = [sys.executable, "-m", "mcp_drifter.record", sys.executable, FIXTURE_SERVER]
 
 
 @asynccontextmanager
@@ -174,7 +174,7 @@ async def test_proxy_shuts_down_promptly_when_the_real_server_crashes(tmp_path):
     CLAUDE.md's own standard for this codebase's three-times-confirmed
     shutdown-hang bug shape: a passing result alone isn't sufficient
     evidence, the bound itself is the actual assertion."""
-    proxy_command = [sys.executable, "-m", "record", sys.executable, CRASHING_SERVER]
+    proxy_command = [sys.executable, "-m", "mcp_drifter.record", sys.executable, CRASHING_SERVER]
     env = {"DRIFTER_RUNS_DIR": str(tmp_path / "runs"), "DRIFTER_RAW_DIR": str(tmp_path / "raw")}
     proxied_params = StdioServerParameters(command=proxy_command[0], args=proxy_command[1:], env=env)
 
