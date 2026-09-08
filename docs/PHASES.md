@@ -863,8 +863,14 @@ encountered yet; no current consumer needs it.
   a hardcoded `UNKNOWN` string. F-24's stated dependency on F-30 was also wrong (that
   covers auto-DISCOVERING tasks, not authoring one), and had been holding a whole
   verdict axis hostage. docs/SPEC.md §12's exit code `2` is reachable as a result.
-- Adaptive scheduling tuning based on Gate 1–4 real usage data (F-27, the last
-  unbuilt v1 priority-list item)
+- ~~Adaptive scheduling (F-27)~~ — built (`evaluate/scheduling.py`,
+  docs/CHANGELOG.md), reframed as sequential early stopping within one comparison
+  since the spec's screen/confirm/resolve ladder presumes multi-mutation
+  orchestration `drifter run` doesn't have. Stops only when no remaining run could
+  change the verdict, so verdicts are provably identical to fixed-N. Tuning against
+  real usage data remains open — the savings measured so far are synthetic plus
+  one real-agent equivalence check, since deterministic test agents produce
+  zero-spread baselines where the rule (correctly) cannot stop early.
 - ~~The docs/SPEC.md §12 exit-code scheme (`1`/`2`/`3`/`5` for verdict-specific
   outcomes) is not wired up anywhere — every command still exits `0`/`4` only~~
   — built: `run`/`report` now exit per `cli.report_format.compute_exit_code`

@@ -41,7 +41,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-24 | Task assertion engine | ✅ Built | `evaluate/assertions.py` + `drifter.yaml`'s `tasks:` block. 3 of docs/SPEC.md §8's 4 named types built; `result_contains` is structurally unevaluable under shape-only recording and is rejected loudly, with `result_has_keys`/`no_errors` offered instead. Did NOT need F-30 — that dependency was about auto-DISCOVERING tasks, and was blocking a whole verdict axis |
 | F-25 | Safety verdict engine | ✅ Built | `policy/safety.py`, 2 of docs/SPEC.md §8's 5 check categories built (destructive invocation, confirmation_required bypass), 3 real documented gaps — wired into `drifter run`'s real report, evaluated with no fidelity gate |
 | F-26 | Tool risk classification | ✅ Built | `policy/classify.py`'s 4-tier resolution (user override → MCP annotations → name heuristics → observed behavior), wired into `drifter doctor`. Tier 4 (observed behavior) is a documented, deliberate stub — no signal currently recorded can honestly distinguish write from read-only |
-| F-27 | Adaptive repeat scheduling | ❌ Not built | **Needs building** — v1 scope |
+| F-27 | Adaptive repeat scheduling | ✅ Built, reframed | `evaluate/scheduling.py`. The three-stage screen/confirm/resolve ladder allocates budget across MANY mutations, which `drifter run` doesn't have — and `screen: 1` can no longer produce a verdict at all under DEC-027's min_valid_runs. Same principle rebuilt as sequential early stopping within one comparison, with a PROVABLE stopping rule (stops only when no remaining run could change the verdict), so verdicts are identical to fixed-N by construction |
 | F-28 | Signature grouping | ❌ Not built | **Needs building** — `mine/` is empty; deferred past Gate 3 deliberately (no real multi-week corpus yet) |
 | F-29 | Frequent subsequence mining (PrefixSpan) | ❌ Not built | **Needs building** — depends on F-28 |
 | F-30 | Task candidate generation + approval | ❌ Not built | **Needs building** — depends on F-29; blocks F-24's real authoring UX |
@@ -624,7 +624,19 @@ looked suspicious.
 **Depends on:** F-23.
 **Done when:** total run count on a mixed fixture (some clearly-broken, some
 clearly-fine mutations) is measurably lower than a fixed-N-for-everything approach,
-with the same final verdicts.
+with the same final verdicts. **Both met, with one honest asymmetry.** Verdict
+equivalence is guaranteed by construction (the scheduler stops only when no reachable
+outcome could differ) and asserted directly against a fixed-N run over the same data.
+Measured savings at a ceiling of 20: a clear regression settles in 3 runs (17 saved); a
+clean result against a baseline with real natural variation settles in 8 (12 saved); a
+genuinely mixed case in 15 (5 saved). **Zero saved** when the baseline has exactly zero
+spread — the verdict rule is then infinitely sharp, so one deviating run among those
+remaining would flip NO_REGRESSION to REGRESSION and no number of clean runs rules that
+out. That is the scheduler correctly refusing certainty it doesn't have; softening it
+would mean changing the verdict rule, a separate decision. Note this also means F-27
+saves nothing against this project's own deterministic scripted test agents (they
+produce zero-spread baselines) — its value is realized against real, stochastic agents,
+which is exactly where the cost is.
 
 ---
 

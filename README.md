@@ -74,11 +74,13 @@ Gates 0–3 are closed:
 - **Setup** (`drifter init`) — scans `.mcp.json`/`.cursor/mcp.json`/Claude Desktop's
   config for existing stdio MCP servers and writes a starter `drifter.yaml`, so you
   don't have to hand-write your server list.
-
 - **All three verdict axes** — Behavior (effect size vs. baseline), Task (opt-in
   assertions you author), Safety (evaluated on every run, never gated by the others).
+- **Cost controls** — blast-radius preview, budget/wall-time ceilings, projected
+  replay coverage before you spend, and adaptive scheduling that stops once the
+  verdict is provably settled.
 
-Mutation mining/approval and adaptive scheduling are not built yet — see
+Mutation mining/approval (`mine/`) is not built yet — see
 [`docs/FEATURES.md`](docs/FEATURES.md) for the complete per-feature breakdown and
 [`docs/SPEC.md` §15](docs/SPEC.md) for known limitations, stated plainly, including
 two found only by testing against a real agent rather than a scripted stand-in.
@@ -223,6 +225,11 @@ pass `--yes`/`-y` to skip the prompt for scripted/non-interactive use, `--dry-ru
 see the preview without running anything, or `--budget N` (a tool-call ceiling, not
 literally model calls — this proxy can't see those) / `--max-wall-time SECONDS` to
 cap real cost, checked before each repeat starts.
+
+The mutated arm also stops early once the verdict is settled — if the first few runs
+already put the answer beyond doubt, the rest aren't spent. This can't change a
+verdict: it stops only when no remaining run *could* alter it, and the report says
+what it did and why. Pass `--no-adaptive` to always run the full count.
 
 Want that report again later without spending anything? `drifter report --task-id
 my-task` re-renders the exact same BEHAVIOR/TASK/SAFETY output from the sessions

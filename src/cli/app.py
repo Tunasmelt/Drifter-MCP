@@ -115,6 +115,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Skip the blast-radius preview confirmation prompt (F-31, docs/SPEC.md §10)",
     )
     run_parser.add_argument(
+        "--no-adaptive", dest="adaptive", action="store_false",
+        help="Always run the full --repeats count on the mutated arm instead of stopping "
+             "once the verdict is provably settled (F-27). Verdicts are identical either way; "
+             "this only spends more real agent runs.",
+    )
+    run_parser.add_argument(
         "--dry-run", dest="dry_run", action="store_true",
         help="Show the blast-radius preview and exit without running anything (F-32)",
     )
@@ -219,6 +225,7 @@ def main() -> None:
                 dry_run=args.dry_run,
                 budget=args.budget,
                 max_wall_time_s=args.max_wall_time_s,
+                adaptive=args.adaptive,
             )
         except ConfigError as e:
             print(f"drifter run: {e}", file=sys.stderr)

@@ -6,6 +6,85 @@ not just a diff.
 
 ---
 
+## F-27: adaptive scheduling — a stopping rule that is a proof, not a peek
+
+The last unbuilt item on v1's priority list. F-27's own bar is "fewer runs than
+fixed-N, with the same final verdicts," and the second half is the one that matters: a
+scheduler that saves runs by changing answers hasn't implemented this feature, it has
+broken the one above it.
+
+**Reframed against two premises that no longer hold**, the same way F-31/F-32 were.
+docs/SPEC.md §8 specifies a three-stage ladder — 1 run × all mutations (screen), 5 on
+the flagged, 20 on the still-inconclusive. First, that allocates budget ACROSS many
+mutations; `drifter run` compares exactly one operator against one baseline, so there
+is no set to triage between. Second, and newly true: `screen: 1` cannot produce a
+verdict at all any more. DEC-027's minimum-evidence gate makes a one-run arm UNKNOWN by
+construction, so a one-run screening stage could only ever report "don't know" — it
+could never flag or clear anything. That is this session's own earlier work invalidating
+a pre-existing calibration constant, which is worth stating plainly rather than quietly
+working around: `calibration.yaml`'s `mutation.repeats.screen`/`confirm` are now stale
+and unread, annotated as such in place (kept, not deleted — they are the right shape for
+a future multi-mutation `drifter run`). `resolve: 20` survives intact as the ceiling.
+
+The same PRINCIPLE — stop spending once the answer is settled — applies within a single
+comparison as sequential early stopping, and that is what got built.
+
+**The stopping rule is a proof.** The obvious implementation is to recompute the verdict
+after each run and stop when it looks decided. That is optional stopping, which inflates
+false positives precisely because the decision to stop correlates with noise favouring
+the current answer. Rather than build that and caveat it, this stops only when it is
+CERTAIN: after each run it evaluates the best and worst cases still reachable by every
+remaining run, and stops only if both yield the same verdict. When no remaining outcome
+can change the answer, stopping cannot bias it. The bound is stated explicitly in the
+module (with `m` valid runs, `matching` matches and `r` attempts left, the final ratio
+lies in `[matching/(m+r), (matching+r)/(m+r)]`, and an EXCLUDED remaining run leaves it
+at `matching/m`, which sits between those — so exclusions need no separate case).
+
+To make divergence structurally impossible, the verdict rule itself was extracted from
+`compute_behavior_effect_size` into a shared `verdict_for_deviation`. A scheduler with
+its own copy of the rule could stop on a verdict the scorer then disagrees with —
+silently returning a different answer than fixed-N. One function, one rule.
+
+**The largest single saving falls out of DEC-027's gate.** If the BASELINE arm didn't
+clear `min_valid_runs`, the comparison is UNKNOWN no matter what the mutated arm does —
+so every mutated run is guaranteed waste, and the scheduler now skips the entire arm
+without spawning one agent. Before that gate existed there was no way to know this in
+advance.
+
+**Measured savings, at a ceiling of 20:** a clear regression settles in 3 runs (17
+saved); a clean result against a baseline with real natural variation settles in 8 (12
+saved); a genuinely mixed case in 15 (5 saved); a thin baseline spends 0 of 20.
+
+**And one honest asymmetry, found by running it rather than reasoning about it.**
+Against a baseline with exactly ZERO spread, it saves nothing — 20 of 20. That is
+correct, not a defect: zero spread makes the verdict rule infinitely sharp (any
+deviation at all outranks a natural variation of zero), so a single deviating run among
+those remaining would flip NO_REGRESSION to REGRESSION, and no number of clean runs
+rules that out in advance. Pinned by its own test so a future "optimization" has to
+argue with it rather than quietly reintroduce optional-stopping bias. A direct
+consequence worth stating: F-27 saves nothing against this project's own deterministic
+scripted test agents, which produce exactly those zero-spread baselines — its value is
+realized against real, stochastic agents, which is precisely where the real cost is.
+The end-to-end check against a real spawned agent therefore confirms verdict
+EQUIVALENCE (adaptive and fixed both NO_REGRESSION, 8/8 runs) rather than a saving.
+
+On by default, since verdicts are provably unchanged; `--no-adaptive` opts out. The
+report prints what scheduling did and why, because an unexplained short run looks like
+a crash rather than a saving.
+
+One interaction with F-32 (budgets) surfaced in the existing test suite and is worth
+recording, since it changes observable behavior. F-32's end-to-end test sets a budget
+tight enough that the baseline survives one valid run and the mutated arm previously
+attempted five more, all failing on the spent budget. The mutated arm is now skipped
+outright — the baseline's single valid run is below `min_valid_runs`, so the verdict
+was UNKNOWN regardless and those five agent spawns were pure waste. Checked rather
+than assumed that this doesn't cost anything real: budget exhaustion is still detected
+from the BASELINE arm's own exclusions, so `budget_exceeded` and docs/SPEC.md §12's exit
+code 5 are unaffected. The test now asserts the new behavior and says why the old
+expectation was worse.
+
+---
+
 ## F-24: the Task axis is real — authored assertions, and exit code 2 finally reachable
 
 docs/SPEC.md §3 principle 4 promises "three independent verdicts. Behavior / Task /

@@ -68,6 +68,7 @@ from cli.stats import resolve_runs_dir
 from cli.subprocess_adapter import make_run_once
 from evaluate.assertions import TaskAssertions, evaluate_task
 from evaluate.baseline import run_baseline
+from evaluate.scheduling import run_mutated_adaptively
 from evaluate.effect_size import compute_behavior_effect_size
 from mutate.description_update import mutate_tool_manifest
 from mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
@@ -125,6 +126,7 @@ def run_mutation_comparison(
     budget: int | None = None,
     max_wall_time_s: float | None = None,
     assertions: TaskAssertions | None = None,
+    adaptive: bool = True,
 ) -> RunResult:
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
@@ -222,7 +224,26 @@ def run_mutation_comparison(
         ),
         tracker,
     )
-    mutated_result = run_baseline(f"{task_id}__mutated_{operator}", mutated_run_once, repeats=repeats, calibration=calibration)
+    mutated_task_id = f"{task_id}__mutated_{operator}"
+    effective_repeats = repeats if repeats is not None else calibration.baseline.repeats
+    if adaptive:
+        # F-27: stops as soon as no remaining run could change the verdict.
+        # Provably verdict-preserving, so this is on by default -- see
+        # evaluate/scheduling.py for the bound and why it is a proof rather
+        # than a peek at an interim result.
+        scheduled = run_mutated_adaptively(
+            mutated_task_id, mutated_run_once, baseline_result, effective_repeats, calibration=calibration
+        )
+        mutated_result = scheduled.result
+        scheduling_note = (
+            f"{scheduled.attempts_made}/{scheduled.attempts_allowed} mutated run(s) spent"
+            f"{f' ({scheduled.runs_saved} saved)' if scheduled.runs_saved else ''} — {scheduled.stop_reason}"
+        )
+    else:
+        mutated_result = run_baseline(
+            mutated_task_id, mutated_run_once, repeats=repeats, calibration=calibration
+        )
+        scheduling_note = None
 
     effect = compute_behavior_effect_size(baseline_result, mutated_result, calibration=calibration)
     effective_policy = policy or PolicyConfig()
@@ -249,6 +270,7 @@ def run_mutation_comparison(
         budget_exceeded=tracker.exceeded(),
         baseline_task=baseline_task,
         mutated_task=mutated_task,
+        scheduling_note=scheduling_note,
     )
 
 
@@ -269,6 +291,7 @@ def run_run(
     dry_run: bool = False,
     budget: int | None = None,
     max_wall_time_s: float | None = None,
+    adaptive: bool = True,
 ) -> RunResult | None:
     """F-31's own "Done when" bar, reframed honestly for what this command
     actually does today (no live MCP server mode exists — see
@@ -384,6 +407,7 @@ def run_run(
         policy=config.policy,
         budget=budget,
         max_wall_time_s=max_wall_time_s,
+        adaptive=adaptive,
     )
     output_stream.write(render_run_result(result))
     return result

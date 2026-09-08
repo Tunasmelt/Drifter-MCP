@@ -346,6 +346,17 @@ gate exists because `natural_variation`/`baseline_spread` are statistical estima
 meaningless at n=1, whereas an assertion is a deterministic check on one real
 trajectory. Run counts are always reported so a reader can weigh the evidence.
 
+*Adaptive scheduling (F-27, docs/CHANGELOG.md).* The mutated arm stops as soon as no
+remaining run could change the verdict — a certainty bound, not a peek at an interim
+result, so verdicts are identical to running the full count. §8's original three-stage
+screen/confirm/resolve ladder is NOT what got built: it allocates budget across many
+mutations, which `drifter run` (one operator per invocation) doesn't have, and its
+`screen: 1` stage cannot produce a verdict at all under §15 limitation 16's
+minimum-evidence gate. Largest saving: an arm whose baseline already failed that gate is
+skipped entirely, since its verdict is UNKNOWN regardless. Saves nothing when
+`baseline_spread` is exactly zero — the rule is then infinitely sharp and one deviating
+run could still flip the answer, so certainty is unreachable early.
+
 **Safety.** Evaluated on every run regardless of configuration: unexpected write/
 destructive tool invocation, capability outside `allowed_capabilities`, bypassed
 `confirmation_required` step, secrets detected in output, or observed behavior

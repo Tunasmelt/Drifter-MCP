@@ -128,22 +128,42 @@ def compute_behavior_effect_size(
 
     matching = mutated.variant_frequencies.get(baseline.dominant_path, 0)
     deviation_rate = 1.0 - (matching / mutated.valid_runs)
-
-    if baseline.baseline_spread == 0.0:
-        if deviation_rate == baseline.natural_variation:
-            effect_size: float | None = 0.0
-            verdict: Verdict = "NO_REGRESSION"
-        else:
-            effect_size = None
-            verdict = "REGRESSION" if deviation_rate > baseline.natural_variation else "NO_REGRESSION"
-        return EffectSizeResult(deviation_rate=deviation_rate, effect_size=effect_size, verdict=verdict)
-
-    effect_size = (deviation_rate - baseline.natural_variation) / baseline.baseline_spread
-    if effect_size < calibration.effect_size.inconclusive:
-        verdict = "NO_REGRESSION"
-    elif effect_size < calibration.effect_size.regression:
-        verdict = "INCONCLUSIVE"
-    else:
-        verdict = "REGRESSION"
-
+    verdict, effect_size = verdict_for_deviation(
+        deviation_rate, baseline.natural_variation, baseline.baseline_spread, calibration
+    )
     return EffectSizeResult(deviation_rate=deviation_rate, effect_size=effect_size, verdict=verdict)
+
+
+def verdict_for_deviation(
+    deviation_rate: float,
+    natural_variation: float,
+    baseline_spread: float,
+    calibration: Calibration,
+) -> tuple[Verdict, float | None]:
+    """The verdict rule alone, given a deviation rate and an already-
+    established baseline — extracted so `evaluate/scheduling.py` (F-27) can
+    ask "what verdict would THIS deviation produce" without reimplementing
+    it.
+
+    That sharing is not a convenience: adaptive scheduling decides whether
+    to stop by proving that no remaining run could change the verdict, and
+    a scheduler whose verdict rule drifted from the scorer's would stop on
+    a verdict the scorer then disagrees with — silently returning a
+    different answer than a fixed-N run would. One function, one rule, no
+    possibility of divergence.
+
+    Returns `(verdict, effect_size)`; `effect_size` is `None` in the
+    zero-spread case where the magnitude is genuinely undefined but the
+    direction is not (see this module's docstring).
+    """
+    if baseline_spread == 0.0:
+        if deviation_rate == natural_variation:
+            return "NO_REGRESSION", 0.0
+        return ("REGRESSION" if deviation_rate > natural_variation else "NO_REGRESSION"), None
+
+    effect_size = (deviation_rate - natural_variation) / baseline_spread
+    if effect_size < calibration.effect_size.inconclusive:
+        return "NO_REGRESSION", effect_size
+    if effect_size < calibration.effect_size.regression:
+        return "INCONCLUSIVE", effect_size
+    return "REGRESSION", effect_size

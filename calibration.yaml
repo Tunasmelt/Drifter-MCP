@@ -38,8 +38,21 @@ baseline:
 
 mutation:
   repeats:
+    # SPEC.md §8's original three-stage ladder (screen every mutation once,
+    # confirm the flagged ones at 5, resolve the stubborn ones at 20).
+    # `screen`/`confirm` are STALE and unread as of F-27 — two reasons,
+    # both real (see evaluate/scheduling.py):
+    #   1. the ladder allocates budget ACROSS many mutations; `drifter run`
+    #      compares exactly one operator, so there is nothing to triage.
+    #   2. `screen: 1` cannot produce a verdict at all now — DEC-027's
+    #      min_valid_runs (3) makes a one-run arm UNKNOWN by construction,
+    #      so a 1-run screening stage could never flag or clear anything.
+    # Kept rather than deleted: they are the right shape for a future
+    # multi-mutation `drifter run`, and deleting them would lose that.
     screen: 1
     confirm: 5
+    # Read for real: adaptive scheduling's ceiling, the most runs one
+    # mutated arm may spend before it stops regardless of certainty.
     resolve: 20
 
 doctor:

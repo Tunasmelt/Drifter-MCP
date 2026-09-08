@@ -341,10 +341,28 @@ def test_run_mutation_comparison_budget_limits_the_number_of_real_agent_runs(tmp
     assert result.baseline.valid_runs == 1
     assert len(result.baseline.excluded_runs) == 4
     assert all("budget exhausted" in e.reason for e in result.baseline.excluded_runs)
-    # the mutated arm shares the SAME tracker -- budget was already spent
-    # entirely by the baseline arm, so every mutated repeat is skipped too.
+
+    # The mutated arm is now SKIPPED ENTIRELY rather than attempted-and-
+    # excluded five times (F-27). Both arms share one tracker, so with the
+    # budget already spent every mutated repeat was guaranteed to fail --
+    # but more decisively, the baseline survived only 1 valid run, below
+    # calibration.min_valid_runs, so the verdict is UNKNOWN no matter what
+    # the mutated arm does. Adaptive scheduling proves that up front and
+    # spawns nothing. This assertion previously expected 5 excluded mutated
+    # runs; those five agent spawns were pure waste and not spawning them is
+    # the improvement, not a regression in coverage.
     assert result.mutated.valid_runs == 0
-    assert len(result.mutated.excluded_runs) == 5
+    assert result.mutated.total_runs == 0
+    assert result.scheduling_note is not None
+    assert "regardless of the mutated arm" in result.scheduling_note
+
+    # F-32's own signal survives the change: budget exhaustion is still
+    # detected (from the baseline arm's exclusions), so exit code 5 is
+    # unaffected by scheduling skipping the mutated arm.
+    from cli.report_format import budget_exceeded_from_excluded_runs
+
+    assert budget_exceeded_from_excluded_runs(result) is True
+    assert result.budget_exceeded is True
 
 
 # --- real end-to-end: description_update ------------------------------------

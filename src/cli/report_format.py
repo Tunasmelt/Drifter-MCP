@@ -58,6 +58,11 @@ class RunResult:
             reason="no assertions configured for this task",
         )
     )
+    # F-27: what adaptive scheduling actually did, or None when the run was
+    # fixed-N. Surfaced because "why did this stop at 4 runs when I asked
+    # for 20" is exactly the question a cost-conscious user asks, and an
+    # unexplained short run looks like a crash rather than a saving.
+    scheduling_note: str | None = None
 
 
 _BUDGET_EXCEEDED_REASON_MARKER = "budget exhausted"
@@ -212,6 +217,9 @@ def render_run_result(result: RunResult) -> str:
     mutated_fid = "N/A" if result.mutated.baseline_fidelity is None else f"{result.mutated.baseline_fidelity:.2f}"
     lines.append(f"CONFIDENCE  baseline fidelity {baseline_fid} ({_provenance_str(result.baseline.provenance_breakdown)})")
     lines.append(f"            mutated  fidelity {mutated_fid} ({_provenance_str(result.mutated.provenance_breakdown)})")
+    if result.scheduling_note:
+        for chunk in textwrap.wrap(f"scheduling: {result.scheduling_note}", width=66):
+            lines.append(f"            {chunk}")
     lines.append("")
 
     for run, label in ((result.baseline, "baseline"), (result.mutated, "mutated")):
