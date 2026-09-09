@@ -81,7 +81,13 @@ def run_coverage(
         output_stream.write("\n")
         output_stream.write(
             render_curve(
-                coverage_curve(session_paths, server, samples_per_size=samples_per_size, seed=seed),
+                coverage_curve(
+                    session_paths,
+                    server,
+                    samples_per_size=samples_per_size,
+                    seed=seed,
+                    plateau=calibration.plateau,
+                ),
                 floor=calibration.fidelity_floor,
             )
         )

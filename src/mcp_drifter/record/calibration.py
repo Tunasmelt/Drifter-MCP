@@ -57,6 +57,38 @@ class Doctor(BaseModel):
     connectivity_timeout_seconds: float = 10
 
 
+class Plateau(BaseModel):
+    """When `drifter coverage --curve` calls a corpus-growth curve flat.
+
+    Both constants are guesses with stated reasoning and NEITHER has been
+    derived from a real single-task corpus yet -- the experiment that would
+    do that (20-50 recordings of one narrow task, docs/SPEC.md §15
+    limitation 16) has not been run. They live here rather than in
+    `replay/coverage_curve.py` per CLAUDE.md's rule that an invented
+    constant belongs in this file, and specifically so they can be tuned
+    against that experiment's own output without a code change.
+
+    Expect `gain_per_session` in particular to need revisiting. Coverage
+    approaches an asymptote, so gain-per-session shrinks as the corpus
+    grows even while genuinely still climbing; a fixed absolute threshold
+    that reads correctly at 5 sessions may fire spuriously at 50. If the
+    real curve declares a plateau while its own numbers are still visibly
+    rising, this constant is the first thing to suspect -- not the curve.
+    """
+
+    model_config = ConfigDict(extra="allow")
+    # Mean coverage gained per added session, below which a point counts as
+    # flat. Deliberately a stated threshold rather than a significance
+    # test: n is small, the effect being looked for is large (a 0.20-0.43
+    # gap to the floor), and a test would imply more statistical machinery
+    # than the data supports.
+    gain_per_session: float = 0.02
+    # How many consecutive non-exhaustive points must all be under that
+    # threshold. Two small gains is weak evidence; three is where "still
+    # climbing slowly" stops being the simpler explanation.
+    window: int = 3
+
+
 class Calibration(BaseModel):
     model_config = ConfigDict(extra="allow")
     semantic_weight: float = 0.8
@@ -78,6 +110,7 @@ class Calibration(BaseModel):
     # where a zero spread is weak evidence rather than no evidence.
     # Re-derive against real corpus data before defending this number.
     min_valid_runs: int = 3
+    plateau: Plateau = Plateau()
     effect_size: EffectSize = EffectSize()
     segmentation: Segmentation = Segmentation()
     baseline: Baseline = Baseline()

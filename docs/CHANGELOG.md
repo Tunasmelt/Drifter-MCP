@@ -6,6 +6,113 @@ not just a diff.
 
 ---
 
+## Dogfooding the wheel as a new user: limitation 16's real root cause, and it is not what limitation 16 says
+
+Installed the built wheel into a clean venv with no repo on the path — byte-for-byte
+what publishing would ship — and ran the whole loop as a new user, against a real
+Claude Code 2.1.259 agent and a real `@modelcontextprotocol/server-filesystem`. Not a
+scripted stand-in; the first time this project has done that end to end.
+
+Most of it worked. `drifter init` found the real `.mcp.json` and wrote both config
+files (the `calibration.yaml` fix from earlier this session earned its keep
+immediately — a pip-installed user previously had no such file). `doctor` classified
+14 tools over a real handshake. Ten real agent sessions recorded cleanly:
+`agent_identity: claude-code/2.1.259`, real server version, manifest hash populated,
+shapes only, no payload. `stats`, `score` and `coverage` all read them correctly.
+
+### The finding: shape-only recording destroys the agent's own navigation
+
+`drifter coverage` scored that corpus at **100% (exact 40, missed 0 of 40)**.
+`drifter run` against the same corpus produced **0/4 valid baseline runs**, fidelities
+0.20/0.67/0.67/0.67, all excluded, verdict correctly UNKNOWN.
+
+The side-by-side explains it exactly. Recorded live:
+
+    list_allowed_directories {}
+    list_directory           {.../project}        -> listing shows `data/`
+    list_directory           {.../project/data}   -> listing shows readings.csv
+    read_text_file           {.../project/data/readings.csv}
+
+Replayed:
+
+    list_allowed_directories {}                   HIT
+    list_directory           {.../project}        HIT, content EMPTY
+    read_text_file           {.../project/readings.csv}   MISS
+
+The second `list_directory` never happens. The replayed listing is content-empty, so
+the agent never learns `data/` exists, guesses one directory up, and issues a call
+that was never recorded. Three of four runs reproduced this identical shape; the
+fourth degenerated further, the agent inventing `{"random_string": "x"}` arguments
+after repeated empty results.
+
+Each step in the chain is individually correct and required: recording captures shapes
+not payloads (§3's secrets invariant); limitation 11 then forced synthesized content to
+be genuinely empty rather than descriptive prose; a real agent builds its next call's
+ARGUMENTS from the previous response's CONTENT; with content gone it cannot reconstruct
+them. Recorded as §15 limitation 17.
+
+### Why this reframes limitation 16 rather than confirming it
+
+Limitation 16 attributes the miss rate to "a real, curious agent" exploring
+"combinatorially unenumerable" argument values — to agent exploration. This corpus
+falsifies that. The agent was not exploring: given a tightly-specified prompt it
+produced a byte-identical 4-call trajectory across all 10 live recordings
+(`natural_variation: 0.000`). It diverged ONLY under replay, and only where an argument
+depended on content it no longer received. The variable is information loss in the
+recording, not curiosity in the agent.
+
+Two consequences follow, both of which retire work this project was counting on:
+
+**DEC-027(b)'s lever cannot reach this.** Corpus growth attacks coverage, and coverage
+was already 100%. More sessions of the same task add no information about `data/` to a
+replay, because replay serves shapes however many times the content was observed.
+
+**F-14 as built cannot fix it either.** `replay/synthesis.py` emits the zero value for
+every declared type — an empty array for a directory listing. That is the right choice
+for not fabricating claims about the world, and it reproduces precisely the information
+loss above.
+
+### A correction to a claim made earlier in this same session
+
+Two hours before this run I reported the vague-prompt coverage curve (68.8% → 91.7%
+across 6 sessions) as "the first empirical validation of DEC-027(b) — corpus growth
+demonstrably closes the gap." That over-claimed. The curve measures corpus
+self-consistency, and this run shows self-consistency does not predict replay
+viability: the 100%-coverage corpus produced zero valid runs. The curve is still a
+correct measurement of what it measures; it is not evidence that growing a corpus makes
+replay work.
+
+`render_coverage` now says this on the GOOD path, where it is easiest to omit and most
+likely to mislead: a low projection reliably predicts exclusions, a high one promises
+nothing, because coverage replays RECORDED calls whose arguments already encode content
+the agent will not receive.
+
+### Not fixed
+
+The only fixes addressing the root cause require recording or reconstructing enough
+response content to preserve data flow, which runs straight into §3's secrets
+invariant — the one principle treated as non-negotiable from commit one. That is a
+design tension needing the scrutiny CLAUDE.md reserves for invariant-level findings,
+not a patch. Candidates named in limitation 17, none decided: a redacted structural
+skeleton (names and ids, values redacted); a content-aware synthesis tier that
+reconstructs listings from OTHER recorded calls' arguments (the corpus's own paths
+reveal `data/` exists, even with no response body kept); or narrowing Drifter's stated
+scope to agents whose arguments do not depend on response content.
+
+### Two README defects, found by following it literally
+
+`drifter run` rejected README's own documented config. `agent.command` was shown as a
+shell string where the schema requires `list[str]`, and the `mode: http` example
+omitted `command` entirely though it is required with no default. Both examples fail
+validation, so every new user stops at their first `drifter run` — the same class as
+limitation 16's secondary finding (a), and equally unreachable from inside the repo
+where nobody reads the README to learn the schema. Fixed, with a worked Claude Code
+wrapper for http mode, and locked in by `tests/cli/test_readme_examples_are_valid.py`,
+which parses README's own fenced YAML against the real schema. Verified red against the
+original README before being accepted.
+
+---
+
 ## The coverage curve: the limitation-16 experiment gets its instrument, which promptly caught itself lying
 
 `replay/coverage.py` (DEC-027(c)) answers "how good is this corpus?" for one corpus.

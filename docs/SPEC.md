@@ -923,3 +923,85 @@ when*.
     Secondary finding (a) above — `drifter run` unconfigurable from README alone — is
     FIXED: README now documents the `agent:` block for both `mode: subprocess` and
     `mode: http`.
+
+17. **Shape-only recording removes the response content a real agent navigates by, so
+    it cannot reproduce its own trajectory under replay — and `drifter coverage`
+    cannot see this.** This is limitation 16's actual root cause, established causally
+    rather than inferred, and it is materially different from what limitation 16
+    claims. Found by installing the published wheel as a new user and running the full
+    loop against a real Claude Code agent and a real
+    `@modelcontextprotocol/server-filesystem`.
+
+    The evidence is a direct, reproduced side-by-side. Recorded live, the agent did:
+
+        list_allowed_directories {}
+        list_directory           {.../project}          -> listing shows `data/`
+        list_directory           {.../project/data}     -> listing shows readings.csv
+        read_text_file           {.../project/data/readings.csv}
+
+    Replayed against a corpus that `drifter coverage` scored at **100% (exact 40,
+    missed 0 of 40)**, the same agent did:
+
+        list_allowed_directories {}                     HIT
+        list_directory           {.../project}          HIT  (content EMPTY)
+        read_text_file           {.../project/readings.csv}   MISS
+
+    The second `list_directory` never happens. The replayed listing is content-empty
+    (F-02/F-04 record shapes only; limitation 11 then forced synthesized content to be
+    genuinely empty rather than descriptive prose), so the agent never learns that
+    `data/` exists, guesses the file is one directory up, and issues a call that was
+    never recorded. Three of four baseline runs produced this identical shape; the
+    fourth degenerated further, the agent inventing `{"random_string": "x"}` and
+    `{"path": "."}` arguments after repeated empty results. Baseline: **0/4 valid,
+    fidelities 0.20/0.67/0.67/0.67**, all excluded, verdict correctly UNKNOWN.
+
+    **The causal chain**, each step individually correct and required:
+      1. Recording captures shapes, never payloads (docs/SPEC.md §3, the secrets invariant).
+      2. Replay therefore has no content to serve, and limitation 11 established the
+         placeholder must be genuinely empty rather than descriptive.
+      3. A real agent constructs its next call's ARGUMENTS from the previous
+         response's CONTENT — paths from a directory listing, ids from a search.
+      4. With content removed, it cannot reconstruct those arguments, so it diverges.
+      5. Divergent calls miss, fidelity collapses, runs are excluded.
+
+    **Why limitation 16's framing is wrong.** It attributes the miss rate to "a real,
+    curious agent" exploring "combinatorially unenumerable" argument values — i.e. to
+    agent exploration. This corpus falsifies that: the agent was NOT exploring. Given
+    a tightly-specified prompt it produced a byte-identical 4-call trajectory in all
+    10 live recordings (`natural_variation: 0.000`). It diverged only under replay,
+    and only where an argument depended on content it no longer received. The variable
+    is information loss in the recording, not curiosity in the agent.
+
+    **Why DEC-027(b)'s lever cannot reach this.** Corpus growth attacks coverage, and
+    coverage was already 100% here. Recording more sessions of the same task adds no
+    information about `data/` to a REPLAY, because replay serves shapes regardless of
+    how many times the content was observed. A corpus at 100% coverage still produced
+    0/4 valid runs.
+
+    **Why F-14 as built cannot fix it either.** `replay/synthesis.py` deliberately
+    emits the ZERO value for every declared type — an empty array for a directory
+    listing. That is the correct choice for not fabricating claims about the world,
+    and it reproduces exactly the information loss above. F-14 improves session
+    continuity (the agent gets a valid shape instead of a protocol error) without
+    restoring the navigational content, which is what actually matters here.
+
+    **`drifter coverage` is systematically optimistic for any content-dependent
+    agent, and its 100% here was not wrong so much as answering a different
+    question.** It replays RECORDED calls against the corpus — and a recorded call's
+    arguments already encode information the agent will not have at replay time. It
+    therefore measures corpus self-consistency, not reproducibility under
+    content-free replay. Any agent whose arguments derive from prior response content
+    (most real agents doing real work) will score higher on coverage than it achieves
+    in practice. The gap here was 100% projected versus 0.20-0.67 actual.
+
+    **Not fixed.** The only fixes that address the root cause require recording or
+    reconstructing enough response content to preserve data flow, which runs directly
+    into docs/SPEC.md §3's secrets invariant — the one architectural principle this
+    project has treated as non-negotiable from commit one. That is a genuine design
+    tension, not a patch, and per CLAUDE.md it needs the same scrutiny the original
+    invariant got. Candidate directions, none decided: recording a redacted structural
+    skeleton of responses (names/ids only, values redacted) sufficient for navigation;
+    a content-aware synthesis tier that reconstructs listings from OTHER recorded
+    calls' arguments (the paths in the corpus reveal that `data/` exists, even though
+    no response body was kept); or narrowing Drifter's stated scope to agents whose
+    arguments do not depend on response content.

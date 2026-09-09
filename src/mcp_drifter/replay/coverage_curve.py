@@ -44,9 +44,10 @@ from __future__ import annotations
 import itertools
 import random
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
+from mcp_drifter.record.calibration import Plateau
 from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.schema import ToolCall
 from mcp_drifter.replay.coverage import estimate_coverage
@@ -56,18 +57,14 @@ from mcp_drifter.replay.coverage import estimate_coverage
 # handling, which reports un-estimable rather than a misleading 0%.
 MIN_CROSS_VALIDATABLE = 2
 
-# A curve is called plateaued when its last few points gain less than this
-# per added session. Deliberately a stated constant rather than a
-# significance test: the experiment's n is small, the effect being looked
-# for is large (a 0.43 gap to the floor), and a test would imply more
-# statistical machinery than the data supports. Named here so a reader can
-# disagree with the threshold rather than have to reverse-engineer it.
-PLATEAU_GAIN_PER_SESSION = 0.02
-
-# How many of the trailing points must all be under that threshold. Two
-# consecutive small gains is weak evidence; three is the point at which
-# "still climbing slowly" stops being the simpler explanation.
-PLATEAU_WINDOW = 3
+# The two plateau constants now live in `calibration.yaml` under
+# `plateau:` (CLAUDE.md: an invented constant belongs there, not
+# hardcoded), specifically so they can be tuned against the real
+# single-task corpus this instrument exists to measure, without a code
+# change. Imported here only as the fallback when no calibration is
+# passed. See `record/calibration.Plateau` for the reasoning and for why
+# `gain_per_session` is the first thing to suspect if a real curve
+# declares a plateau while still visibly rising.
 
 
 @dataclass(frozen=True)
@@ -110,6 +107,10 @@ class CoverageCurve:
     total_calls: int
     seed: int
     samples_per_size: int
+    # The thresholds this curve's own plateau call was made against,
+    # carried on the result so a rendered curve states the constants it
+    # used rather than leaving a reader to look them up.
+    plateau: Plateau = field(default_factory=Plateau)
 
     def reaches(self, floor: float) -> bool:
         """True when the corpus already projects at or above `floor`.
@@ -120,7 +121,7 @@ class CoverageCurve:
         """
         return bool(self.points) and self.points[-1].mean_coverage >= floor
 
-    def plateaued(self, floor: float) -> bool:
+    def plateaued(self, floor: float, plateau: Plateau | None = None) -> bool:
         """True when the curve has gone flat while still below `floor` --
         the outcome that would falsify corpus-growth as a strategy.
 
@@ -129,16 +130,17 @@ class CoverageCurve:
         the kind of alarming-but-wrong signal this project tries not to
         emit.
         """
+        plateau = plateau or self.plateau
         if self.reaches(floor):
             return False
         # Exhaustive points are excluded: their near-zero gain is an
         # artifact of running out of corpus, not a measurement of
         # flatness.
         usable = [p for p in self.points if not p.exhaustive and p.marginal_gain is not None]
-        if len(usable) < PLATEAU_WINDOW:
+        if len(usable) < plateau.window:
             return False
-        gains = [p.marginal_gain for p in usable[-PLATEAU_WINDOW:]]
-        return all(g < PLATEAU_GAIN_PER_SESSION for g in gains)
+        gains = [p.marginal_gain for p in usable[-plateau.window :]]
+        return all(g < plateau.gain_per_session for g in gains)
 
     @property
     def verdict(self) -> str:
@@ -205,6 +207,7 @@ def coverage_curve(
     server: str,
     samples_per_size: int = 12,
     seed: int = 0,
+    plateau: Plateau | None = None,
 ) -> CoverageCurve:
     """Projected coverage at every corpus size from 2 up to the number of
     CONTRIBUTING sessions -- those actually carrying calls for `server`.
@@ -248,6 +251,7 @@ def coverage_curve(
         total_calls=total_calls,
         seed=seed,
         samples_per_size=samples_per_size,
+        plateau=plateau or Plateau(),
     )
 
 
@@ -299,7 +303,9 @@ def render_curve(curve: CoverageCurve, floor: float) -> str:
     elif curve.plateaued(floor):
         lines.append(
             f"  PLATEAUED at {last.mean_coverage:.1%}, below the {floor:.0%} floor — the last "
-            f"{PLATEAU_WINDOW} points each gained under {PLATEAU_GAIN_PER_SESSION:.0%} per session."
+            f"{curve.plateau.window} points each gained under "
+            f"{curve.plateau.gain_per_session:.0%} per session "
+            f"(calibration.yaml `plateau:`)."
         )
         lines.append(
             "  Recording more sessions of this task is not projected to close the gap. "

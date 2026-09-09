@@ -18,6 +18,7 @@ from pathlib import Path
 import functools
 
 import anyio
+import jsonschema
 import pytest
 from mcp import ClientSession
 from mcp.shared.exceptions import MCPError
@@ -699,8 +700,6 @@ async def test_a_synthesized_miss_conforms_to_a_declared_output_schema():
     """F-14's stated "Done when": the synthesized response passes the
     tool's own declared schema validation.
     """
-    jsonschema = pytest.importorskip("jsonschema")
-
     declared = {
         "type": "object",
         "properties": {"entries": {"type": "array", "items": {"type": "string"}}, "count": {"type": "integer"}},

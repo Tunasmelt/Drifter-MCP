@@ -61,6 +61,15 @@ drifter = "mcp_drifter.cli.app:main"
 [dependency-groups]
 dev = [
     "pytest>=8.0",
+    # F-14's stated "Done when" is that a synthesized response passes the
+    # tool's OWN declared schema validation, and the tests asserting that
+    # are the only proof of it. jsonschema was present transitively (via
+    # `mcp`) and undeclared, so those tests used `importorskip` and would
+    # have SILENTLY SKIPPED if that transitive dependency ever shifted --
+    # a done-criterion test that can vanish without a sound is not a
+    # guarantee. Declared explicitly so it cannot, and the tests import it
+    # directly rather than conditionally.
+    "jsonschema>=4.0",
 ]
 
 [build-system]

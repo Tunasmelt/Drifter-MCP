@@ -154,7 +154,11 @@ how to spawn or reach the agent under test otherwise (full schema:
 
 ```yaml
 # drifter.yaml, in addition to `servers:` above
-agent: {mode: subprocess, command: "python agent.py --task '{task.prompt}'"}
+agent:
+  mode: subprocess
+  # A LIST of argv elements, not a shell string -- Drifter never invokes a
+  # shell, so quoting and word-splitting are yours to do here.
+  command: ["python", "agent.py", "--task", "{task.prompt}"]
 ```
 
 `mode: subprocess` fits an agent that itself speaks MCP directly over the process
@@ -165,7 +169,15 @@ over a loopback HTTP URL and injects it into the environment your own launch
 mechanism reads, rather than spawning anything itself:
 
 ```yaml
-agent: {mode: http, env_var: DRIFTER_PROXY_URL}
+agent:
+  mode: http
+  env_var: DRIFTER_PROXY_URL
+  # Still required in http mode. Drifter does not spawn your MCP client, but
+  # it does spawn THIS -- a wrapper of yours that reads $DRIFTER_PROXY_URL
+  # and points your agent at it. For Claude Code that means writing a small
+  # --mcp-config with {"type": "http", "url": "<that url>"} and exec'ing
+  # `claude -p`.
+  command: ["python", "agent_wrapper.py", "{task.prompt}"]
 ```
 
 Then:

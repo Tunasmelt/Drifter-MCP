@@ -191,6 +191,18 @@ def render_coverage(estimate: CoverageEstimate, fidelity_floor: float | None = N
     into a prediction the user can act on: a projected coverage below the
     floor means most runs are heading for exclusion, which is the single
     most useful thing to know BEFORE spending them.
+
+    It is a ONE-SIDED prediction, and the rendered block now says so. A LOW
+    number reliably predicts exclusions. A HIGH number does not promise the
+    opposite -- docs/SPEC.md §15 limitation 17 recorded a corpus this scored at
+    100% whose real replay runs came back at 0.20-0.67 and were all
+    excluded. The cause is structural, not a bug here: this replays
+    RECORDED calls, whose arguments already encode content the agent will
+    not receive at replay time (shape-only recording), so it measures
+    corpus self-consistency rather than reproducibility under content-free
+    replay. Saying that in the output matters more than the number does --
+    limitation 16's whole lesson is that a confident figure with an
+    invisible foundation is worse than none.
     """
     if not estimable_ok(estimate):
         return f"REPLAY COVERAGE  not estimable — {estimate.reason}"
@@ -208,6 +220,18 @@ def render_coverage(estimate: CoverageEstimate, fidelity_floor: float | None = N
             f"                 WARNING: below the {fidelity_floor:.2f} fidelity floor — most runs "
             f"are likely to be EXCLUDED and the verdict to come back UNKNOWN. Record more "
             f"sessions before spending agent runs."
+        )
+    elif fidelity_floor is not None:
+        # Deliberately printed on the GOOD path, where it is easy to omit and
+        # most likely to mislead. A high projection is not a promise: see
+        # docs/SPEC.md §15 limitation 17 for a 100%-projected corpus whose real
+        # runs came back 0.20-0.67 and were all excluded.
+        lines.append(
+            "                 NOTE: a high projection is not a guarantee — this replays RECORDED "
+            "calls, whose arguments already encode response content your agent will NOT receive "
+            "at replay time (recording is shape-only). An agent that builds arguments from prior "
+            "results (paths from a listing, ids from a search) can still miss. See docs/SPEC.md "
+            "§15 limitation 17."
         )
 
     worst = [t for t in estimate.per_tool if t.missed][:max_tools]

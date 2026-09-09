@@ -23,6 +23,7 @@ denominator and never as a hit.
 
 from __future__ import annotations
 
+import jsonschema
 import pytest
 
 from mcp_drifter.replay.synthesis import synthesize_structured_content
@@ -110,8 +111,6 @@ def test_synthesized_output_validates_against_its_own_schema():
     """F-14's literal "Done when" criterion: the synthesized response
     passes the tool's own declared schema validation.
     """
-    jsonschema = pytest.importorskip("jsonschema")
-
     schema = {
         "type": "object",
         "properties": {

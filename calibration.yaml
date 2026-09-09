@@ -17,6 +17,19 @@ fidelity_flag_threshold: 0.90
 # reasoning. A guess, like everything else here.
 min_valid_runs: 3
 
+# When `drifter coverage --curve` calls a corpus-growth curve flat
+# (SPEC.md §15 limitation 16's experiment). Neither constant has been
+# derived from a real single-task corpus yet -- that experiment has not
+# been run. Expect `gain_per_session` to need revisiting: coverage
+# approaches an asymptote, so gain-per-session shrinks as the corpus grows
+# even while genuinely still climbing, and a fixed threshold that reads
+# correctly at 5 sessions may fire spuriously at 50. If the curve declares
+# a plateau while its own numbers are still visibly rising, suspect this
+# constant first. Guesses, like everything else here.
+plateau:
+  gain_per_session: 0.02
+  window: 3
+
 effect_size:
   inconclusive: 1.0
   regression: 2.0
