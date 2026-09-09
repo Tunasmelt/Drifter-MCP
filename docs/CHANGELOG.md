@@ -6,6 +6,85 @@ not just a diff.
 
 ---
 
+## R0 rejected as a faithful response substitute — narrowly, and with the experiment recorded
+
+The R0 spike (docs/SPEC.md §15 limitation 19) ran, and the honest result is a rejection
+with a much tighter scope than the phrasing first reached for.
+
+**The wiring failure that came first, and matters more than the result.** An external
+reviewer found that the first "A/B" proved nothing: `--replay-discovered-values` was
+registered with argparse and never forwarded to `run_run`, and `corpus_facts` reached only
+the mutated arm. Since the baseline produced no valid runs, the mutated arm was skipped
+entirely — so the treatment code never executed. Both runs were controls. Investigating
+turned up a third instance: `--force` was never forwarded either.
+
+One cause for all three: source edits applied with unasserted string replacements that
+silently matched nothing, or matched a different command's dispatch block. Every
+individual piece existed — the argparse registration, the parameter, the implementation —
+so nothing failed. Only the CONNECTIONS were missing, and no test looked at connections.
+`tests/cli/test_flag_plumbing.py` now asserts that every registered `run` flag reaches
+`run_run`, verified red against the broken source first. A silently-ignored flag is worse
+than a missing one: a missing flag errors, an ignored flag produces confident wrong
+evidence.
+
+**The corrected experiment.** Checkout 341cbd7, mcp-drifter 0.1.0 wheel installed into a
+clean venv outside the repo, claude-code/2.1.266, secure-filesystem-server 0.2.0,
+10-session/40-call corpus, fresh experiment directories. Before spending runs the flag was
+verified IN THE INSTALLED ARTIFACT to change tool-response content (off: empty; on: the
+hint list). Control `r0b-off`: baseline 0/4 valid (0.33/0.25/0.50/0.67), mutated skipped.
+Treatment `r0b-on`: baseline 4/4 at 0.88, mutated 3/3 at 1.00, BEHAVIOR NO_REGRESSION.
+
+**The finding, which the coverage numbers actively hid.** All four treatment runs reached
+the `project\data\readings.csv` path that was unreachable under limitation 17. None
+answered the task. The prompt asked how many data rows readings.csv has; the answer is 2.
+Two runs reported "0 data rows" (the file read as empty), two declined. Reading still
+returns nothing, because hints supply ARGUMENTS, not payloads.
+
+The replayed workflow also SHORTENED: live, the agent listed `project`, then listed
+`project\data`, then read. Under hints it went straight from the first listing to the deep
+path, because that listing's hints already contained the full CSV path. R0 disclosed
+downstream arguments earlier than the original interaction — assistance, not restoration,
+and disqualifying on its own regardless of the answer.
+
+**The acceptance criterion was too weak, and was called in advance.** It had been written
+as "reaches read_text_file at the data path and >= 3 valid runs". Both were met. Had the
+third question not been separated out, R0 would have been declared a success on runs where
+the agent failed the task and half fabricated an answer.
+
+**Three corrections to the first conclusion**, all from the reviewer and all correct:
+
+The hypothesis failed for THIS content-dependent task. That does not establish that
+retaining production payloads is the only alternative — explicitly authored fixtures and
+controlled fixture servers remain untested options. Saying otherwise forecloses the design
+space on one negative result.
+
+Navigation was ASSISTED, not faithfully restored.
+
+NO_REGRESSION was not a miscomputation. If both arms fail in similar shapes, "no detected
+behavioural degradation" is the correct output of the rule as specified. The first write-up
+implied the verdict was wrong; the defect is PRESENTATION — that verdict rendered beside
+0.88/1.00 with nothing making the task failure and baseline inadequacy unmistakable.
+
+**Changes made.** R0 stays experimental and default-off, evidence and tests preserved, and
+its results are excluded from any claim of faithful behavioural replay. The user-visible
+metric is renamed REQUEST-MATCH COVERAGE, with a standing line saying it measures calls
+resolving against recordings and neither response fidelity nor task success — the old
+label is what invited the misreading. BASELINE TASK ADEQUACY is now a separate gate printed
+with the Task axis, so a reader meets it before BEHAVIOR; only a FAIL triggers it, since
+UNKNOWN means no oracle established anything and would otherwise fire on nearly every run.
+
+**Deferred, deliberately.** An outcome oracle (TASK FAIL when an oracle establishes
+failure, UNKNOWN otherwise, never PASS by default) needs a content-assertion type F-24
+omitted under shape-only recording. The release re-scope — recording plus explicitly
+experimental structural mutation and replay, with dependable task-regression claims
+restored only after a content-preserving fixture approach passes end to end — rewrites
+README's central claims. Both are sequenced in docs/PHASES.md rather than half-landed here.
+
+**What this result does not license.** It does not make R1–R5 ordinary engineering, and it
+does not prove useful replay impossible.
+
+---
+
 ## External review: six reproducible defects, four fixed
 
 An independent reviewer (Codex) traced record → replay → mutation → evaluation →

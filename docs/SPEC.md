@@ -1101,3 +1101,69 @@ when*.
     narrowing supported workflows) should precede any feature expansion, and either
     choice needs an UNMUTATED replay check demonstrating a real agent can still
     complete the original task.
+
+19. **R0's content-substitution hypothesis is rejected for content-dependent tasks:
+    argument-derived hints restored ADDRESSING but not READING, and request-match
+    coverage did not predict task success.** Recorded with the experiment identity so
+    the claim is checkable rather than remembered.
+
+    **Identity.** Checkout `341cbd7`, `mcp-drifter 0.1.0` built as a wheel and installed
+    into a clean venv outside the repository. Agent `claude-code/2.1.266`, server
+    `secure-filesystem-server 0.2.0`. Corpus: 10 real observed sessions, 40 calls.
+    Experiments `r0b-off` (control) and `r0b-on` (treatment), fresh directories, same
+    wheel, same corpus, same prompt, `--repeats 4`, operator `description_update`.
+    Before spending the runs, the flag was verified in the INSTALLED artifact to change
+    tool-response content (off: `''`; on: the corpus-derived hint list).
+
+    **Per-arm counts.** Control: baseline 4 sessions, 0/4 valid (fidelities
+    0.33/0.25/0.50/0.67, all below the 0.70 floor), mutated 0 sessions — the arm was
+    skipped because the baseline could not support a verdict. Treatment: baseline 4
+    sessions, 4/4 valid at 0.88; mutated 3 sessions, 3/3 valid at 1.00; reported
+    `BEHAVIOR NO_REGRESSION`.
+
+    **Final answers — the finding.** The prompt asked how many data rows
+    `readings.csv` contains. The true answer is 2. All four treatment runs reached
+    `...\project\data\readings.csv`, the exact path the agent could not construct under
+    limitation 17. None answered correctly: two reported "**0 data rows**" (the file
+    read as empty), and two declined, e.g. "I could not get the contents, so I can't
+    report a row count." Reading the file still returns empty content, because the
+    hints supply ARGUMENTS, not payloads.
+
+    **Observed shortcut.** The replayed workflow was shorter than the recorded one. Live,
+    the agent listed `project`, then listed `project\data`, then read the file. Under
+    hints it went straight from listing `project` to reading the deep path, because the
+    hint list for the first call already contained the full CSV path. R0 therefore
+    disclosed downstream arguments EARLIER than the original interaction did. That is
+    assistance, not restoration, and it disqualifies R0 as a transparent stand-in for
+    recorded responses regardless of the task-answer result.
+
+    **The conclusion, stated narrowly.** R0 enabled all four observed runs to reach the
+    target file, but none answered the task correctly, and it disclosed downstream
+    arguments earlier than the original interaction. These results reject R0 as a
+    faithful response substitute for this content-dependent task. Request-match coverage
+    does not establish response fidelity or task success.
+
+    **What this does NOT establish.** It does not show that retaining production payloads
+    is the only alternative — explicitly authored fixtures, or a controlled fixture
+    server, remain untested options. It does not show that useful replay is impossible.
+    And it does not make R1-R5 ordinary engineering.
+
+    **`NO_REGRESSION` here was not a miscomputation.** If both arms fail in similar
+    shapes, "no detected behavioural degradation" is the correct output of the rule as
+    specified. The defect is PRESENTATION: that verdict was rendered beside a 0.88/1.00
+    fidelity figure with nothing making the task failure or the baseline's inadequacy
+    unmistakable. A reader would reasonably conclude the mutation preserved task
+    capability, when the baseline never had any to preserve.
+
+    **Consequent changes.** (a) R0 stays experimental, default-off, and its results are
+    excluded from any claim of faithful behavioural replay; the evidence and tests are
+    preserved rather than deleted. (b) The metric named "fidelity" is renamed
+    REQUEST-MATCH COVERAGE wherever it is user-visible, because it measures whether calls
+    resolved against recordings and nothing more. (c) BASELINE TASK ADEQUACY becomes a
+    separate gate: a baseline that cannot perform the task cannot support a claim that a
+    mutation preserved task capability. (d) An outcome oracle is required for a TASK
+    verdict — here, that the answer is 2; TASK FAIL when an oracle establishes failure,
+    TASK UNKNOWN otherwise, never PASS by default. (e) The next release is scoped to
+    recording plus EXPLICITLY EXPERIMENTAL structural mutation and replay; dependable
+    task-regression claims return only after a content-preserving fixture approach passes
+    end-to-end tests.

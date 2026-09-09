@@ -101,6 +101,7 @@ from mcp_drifter.record.proxy import Direction, MessageObserver
 from mcp_drifter.record.reader import read_session
 import jsonschema
 
+from mcp_drifter.replay.corpus_facts import CorpusFacts, successor_values
 from mcp_drifter.replay.synthesis import synthesize_structured_content
 from mcp_drifter.record.schema import MATCH_TIER_MARKER_KEY, SYNTHETIC_RESULT_MARKER_KEY, ToolDescriptor, ToolsList
 from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore
@@ -229,7 +230,7 @@ def _synthesize_missed_tool_result(output_schema: dict | None) -> types.CallTool
     return types.CallToolResult(content=[placeholder], structuredContent=structured, is_error=False)
 
 
-def _synthesize_call_tool_result(hit: RecordedResponse) -> types.CallToolResult:
+def _synthesize_call_tool_result(hit: RecordedResponse, discovered: tuple[str, ...] = ()) -> types.CallToolResult:
     """Structurally reconstructs a response matching `hit.result_shape`
     — never its original content, which was never recorded in the first
     place (F-02/F-04, shape-only). Full synthesis (F-14: matching every
@@ -257,7 +258,12 @@ def _synthesize_call_tool_result(hit: RecordedResponse) -> types.CallToolResult:
         array_lengths = hit.result_shape.get("array_lengths") or {}
         if "content" in keys:
             content_length = array_lengths.get("content", 1)
-    placeholder = types.TextContent(type="text", text="")
+    # R0: newline-joined observed VALUES, or empty as before. Values, never
+    # prose -- an identifier carries no claim and no instruction, which is
+    # the distinction limitation 11 turned on when a real agent refused
+    # synthesized explanatory text as a prompt-injection attempt.
+    text = "\n".join(discovered)
+    placeholder = types.TextContent(type="text", text=text)
     return types.CallToolResult(content=[placeholder] * content_length, is_error=bool(hit.is_error))
 
 
@@ -269,6 +275,7 @@ def build_replay_server(
     synthetic_tool_names: frozenset[str] = frozenset(),
     inverse_map: dict[str, dict[str, str]] | None = None,
     synthesize_on_miss: bool = False,
+    corpus_facts: CorpusFacts | None = None,
 ) -> Server:
     """Builds the `mcp.server.lowlevel.Server` app that answers a session
     entirely from `replay_store`/`tools_served` — extracted out of
@@ -444,7 +451,14 @@ def build_replay_server(
             _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_FAULT_CODE, message=message)))
             raise MCPError(code=REPLAY_FAULT_CODE, message=message)
 
-        result = _synthesize_call_tool_result(hit)
+        # R0 (docs/SPEC.md §15 limitation 17): a HIT whose content is empty is
+        # what actually broke replay -- the agent could not learn what the
+        # response would have shown it, so it could not build its next
+        # call's arguments. When corpus facts are supplied, hand back the
+        # values this corpus WITNESSED being used after this exact call.
+        # Never invented, never prose: see replay/corpus_facts.py.
+        discovered = successor_values(corpus_facts, server_name, params.name, arguments) if corpus_facts else ()
+        result = _synthesize_call_tool_result(hit, discovered)
         # F-13/F-15: tag the RECORDING-only dict with which tier resolved
         # this HIT, same private-marker-key pattern as
         # SYNTHETIC_RESULT_MARKER_KEY above -- the actual wire response
@@ -467,6 +481,7 @@ async def run_replay_proxy(
     synthetic_tool_names: frozenset[str] = frozenset(),
     inverse_map: dict[str, dict[str, str]] | None = None,
     synthesize_on_miss: bool = False,
+    corpus_facts: CorpusFacts | None = None,
 ) -> None:
     """Serves one MCP session over `read_stream`/`write_stream` entirely
     from `replay_store` and `tools_served`. Stream-parameterized (matching
@@ -535,5 +550,5 @@ async def run_replay_proxy(
     same app across many connections instead of one `server.run()` per
     stream pair.
     """
-    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, synthesize_on_miss)
+    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, synthesize_on_miss, corpus_facts)
     await server.run(read_stream, write_stream, server.create_initialization_options())

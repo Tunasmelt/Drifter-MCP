@@ -146,6 +146,27 @@ def _task_lines(result: RunResult) -> list[str]:
         for failure in mutated.failures:
             for chunk in textwrap.wrap(f"{failure.kind}: {failure.detail}", width=64):
                 lines.append(f"            {chunk}")
+
+    # BASELINE TASK ADEQUACY (docs/SPEC.md §15 limitation 19) -- a separate gate
+    # from the behavioural verdict, and printed with the Task axis so a
+    # reader meets it before drawing a conclusion from BEHAVIOR.
+    #
+    # In limitation 19's experiment the report said NO_REGRESSION beside a
+    # 0.88/1.00 coverage figure while the baseline agent never once answered
+    # the task. That verdict was not a miscomputation -- two arms failing in
+    # similar shapes genuinely show no detected degradation -- but nothing
+    # made it unmistakable that there was no task capability for the
+    # mutation to preserve. Only a FAIL triggers this: UNKNOWN means no
+    # oracle established anything, and since UNKNOWN is the default,
+    # treating it as inadequacy would fire on nearly every run.
+    if baseline.verdict == "FAIL":
+        lines.append("")
+        lines.append("BASELINE INADEQUATE — the baseline arm did not perform the task")
+        lines.append("          "
+                     f"({baseline.runs_passed}/{baseline.runs_evaluated} runs passed). A baseline with no task")
+        lines.append("          capability cannot support a claim that the mutation preserved")
+        lines.append("          it, so the BEHAVIOR verdict above describes drift between two")
+        lines.append("          failing arms and must not be read as task capability.")
     return lines
 
 
@@ -215,8 +236,15 @@ def render_run_result(result: RunResult) -> str:
     # arm's breakdown).
     baseline_fid = "N/A" if result.baseline.baseline_fidelity is None else f"{result.baseline.baseline_fidelity:.2f}"
     mutated_fid = "N/A" if result.mutated.baseline_fidelity is None else f"{result.mutated.baseline_fidelity:.2f}"
-    lines.append(f"CONFIDENCE  baseline fidelity {baseline_fid} ({_provenance_str(result.baseline.provenance_breakdown)})")
-    lines.append(f"            mutated  fidelity {mutated_fid} ({_provenance_str(result.mutated.provenance_breakdown)})")
+    # Renamed from "fidelity" per docs/SPEC.md §15 limitation 19. The number
+    # measures whether an agent's calls RESOLVED against recordings -- nothing
+    # about whether the response content was faithful, and nothing about
+    # whether the task succeeded. In that experiment four runs scored 0.88/1.00
+    # here while none answered the task correctly, and the old label invited
+    # exactly that misreading.
+    lines.append(f"CONFIDENCE  baseline request-match coverage {baseline_fid} ({_provenance_str(result.baseline.provenance_breakdown)})")
+    lines.append(f"            mutated  request-match coverage {mutated_fid} ({_provenance_str(result.mutated.provenance_breakdown)})")
+    lines.append("            (calls resolving against recordings — NOT response fidelity, NOT task success)")
     if result.scheduling_note:
         for chunk in textwrap.wrap(f"scheduling: {result.scheduling_note}", width=66):
             lines.append(f"            {chunk}")

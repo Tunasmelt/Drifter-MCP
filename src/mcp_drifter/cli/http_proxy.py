@@ -49,6 +49,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from sse_starlette.sse import AppStatus
 
 from mcp_drifter.record.schema import ToolDescriptor
+from mcp_drifter.replay.corpus_facts import CorpusFacts
 from mcp_drifter.replay.replay_proxy import MessageObserver, build_replay_server
 from mcp_drifter.replay.replay_store import ReplayStore
 
@@ -107,6 +108,7 @@ async def serve_replay_over_http(
     on_message: MessageObserver | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
     inverse_map: dict[str, dict[str, str]] | None = None,
+    corpus_facts: CorpusFacts | None = None,
     host: str = "127.0.0.1",
 ) -> AsyncIterator[str]:
     """Serves a replay session over real Streamable HTTP for the
@@ -154,7 +156,7 @@ async def serve_replay_over_http(
     AppStatus.disable_automatic_graceful_drain()
     AppStatus.should_exit = False
 
-    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map)
+    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, False, corpus_facts)
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=[f"{host}:*"],

@@ -122,8 +122,8 @@ def test_render_run_result_shows_confidence_provenance_breakdown_per_arm():
         mutation_log=[], safety=NO_VIOLATION,
     )
     output = render_run_result(result)
-    assert "CONFIDENCE  baseline fidelity 1.00 (exact 100%)" in output
-    assert "mutated  fidelity 0.90 (exact 50% · synthetic 50%)" in output
+    assert "CONFIDENCE  baseline request-match coverage 1.00 (exact 100%)" in output
+    assert "mutated  request-match coverage 0.90 (exact 50% · synthetic 50%)" in output
 
 
 def test_render_run_result_reports_confidence_as_na_when_no_valid_runs_exist():
@@ -138,7 +138,7 @@ def test_render_run_result_reports_confidence_as_na_when_no_valid_runs_exist():
         mutation_log=[], safety=NO_VIOLATION,
     )
     output = render_run_result(result)
-    assert "CONFIDENCE  baseline fidelity N/A (N/A (no valid runs))" in output
+    assert "CONFIDENCE  baseline request-match coverage N/A (N/A (no valid runs))" in output
 
 
 # --- run_run: config resolution / actionable errors -------------------------

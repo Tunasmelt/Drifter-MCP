@@ -118,6 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--runs-dir", type=Path, default=None, help="Where to write new session JSONL, bypassing drifter.yaml")
     run_parser.add_argument("--seed", type=int, default=42, help="Mutation seed (reproducible)")
+    run_parser.add_argument("--replay-discovered-values", action="store_true", help="R0/limitation 17: replay hands back the argument values this corpus witnessed being used after each call, so a replayed agent can rebuild the arguments it built live (experimental)")
     run_parser.add_argument("--force", action="store_true", help="Discard a previous run's sessions for this --task-id instead of refusing (they would otherwise be mixed into this experiment)")
     run_parser.add_argument("--repeats", type=int, default=None, help="Overrides calibration.yaml's baseline.repeats")
     run_parser.add_argument("--timeout", type=float, default=60.0, help="Per-agent-run timeout in seconds")
@@ -252,6 +253,8 @@ def main() -> None:
                 budget=args.budget,
                 max_wall_time_s=args.max_wall_time_s,
                 adaptive=args.adaptive,
+                force=args.force,
+                replay_discovered_values=args.replay_discovered_values,
             )
         except ConfigError as e:
             print(f"drifter run: {e}", file=sys.stderr)

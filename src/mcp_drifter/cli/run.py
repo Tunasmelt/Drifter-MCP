@@ -71,6 +71,7 @@ from mcp_drifter.evaluate.assertions import TaskAssertions, evaluate_task
 from mcp_drifter.evaluate.baseline import run_baseline
 from mcp_drifter.evaluate.scheduling import run_mutated_adaptively
 from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.replay.corpus_facts import build_corpus_facts
 from mcp_drifter.mutate.audit import write_mutation_audit
 from mcp_drifter.mutate.description_update import mutate_tool_manifest
 from mcp_drifter.mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
@@ -164,6 +165,7 @@ def run_mutation_comparison(
     max_wall_time_s: float | None = None,
     assertions: TaskAssertions | None = None,
     adaptive: bool = True,
+    replay_discovered_values: bool = False,
 ) -> RunResult:
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
@@ -207,6 +209,12 @@ def run_mutation_comparison(
     command = _template_command(agent_command, prompt)
     tracker = BudgetTracker(max_tool_calls=budget, max_wall_time_s=max_wall_time_s)
 
+    # R0 (docs/SPEC.md §15 limitation 17): opt-in. Hands a replayed agent back
+    # the values THIS corpus witnessed being used after each call, so it can
+    # rebuild the arguments it built live. Off by default -- it changes what
+    # the agent sees, so it must be an explicit choice.
+    facts = build_corpus_facts(corpus.session_paths, server_name) if replay_discovered_values else None
+
     baseline_run_once = budget_limited(
         make_run_once(
             command=command,
@@ -218,6 +226,7 @@ def run_mutation_comparison(
             timeout_s=timeout_s,
             agent_mode=agent_mode,
             env_var=agent_env_var,
+            corpus_facts=facts,
         ),
         tracker,
     )
@@ -271,6 +280,7 @@ def run_mutation_comparison(
             agent_mode=agent_mode,
             env_var=agent_env_var,
             inverse_map=inverse_map,
+            corpus_facts=facts,
         ),
         tracker,
     )
@@ -343,6 +353,7 @@ def run_run(
     max_wall_time_s: float | None = None,
     adaptive: bool = True,
     force: bool = False,
+    replay_discovered_values: bool = False,
 ) -> RunResult | None:
     """F-31's own "Done when" bar, reframed honestly for what this command
     actually does today (no live MCP server mode exists — see
@@ -464,6 +475,7 @@ def run_run(
         budget=budget,
         max_wall_time_s=max_wall_time_s,
         adaptive=adaptive,
+        replay_discovered_values=replay_discovered_values,
     )
     output_stream.write(render_run_result(result))
     return result

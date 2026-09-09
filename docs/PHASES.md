@@ -904,6 +904,154 @@ encountered yet; no current consumer needs it.
   assertions into `RunResult`; `score` stays `0`/`4`-only since it has no `RunResult`
   to compute a verdict-exit-code from.
 
+## v1.1 — Release readiness (the road to a real PyPI publish)
+
+Sequenced after the 2026-09-09 dogfood (docs/SPEC.md §15 limitation 17) and the external
+review (limitation 18). Ordering is by RISK, not by module: one open question can
+invalidate most of the remaining work, so it goes first and carries a kill criterion.
+
+### R0 — The utility spike (do this before anything else)
+
+**The question:** can a privacy-conscious replay preserve enough task utility for a real
+agent to complete a multi-step, content-dependent workflow?
+
+Limitation 17 established that shape-only replay destroys the response content an agent
+navigates by: a corpus at 100% projected coverage produced 0/4 valid runs, because the
+replayed directory listing was empty and the agent could no longer construct the path it
+had constructed live. Everything below assumes that gap can be closed. If it cannot, the
+honest release is a recorder plus a structural mutation tool, with task-regression
+verdicts labelled experimental — a smaller product, still worth shipping, and a
+materially different README.
+
+**Approach, cheapest first.** Reconstruct navigational content from what the corpus
+ALREADY holds rather than recording anything new: the corpus's own later calls carry
+`.../project/data/readings.csv`, which proves `data/` existed even though no response
+body was kept. A content-aware synthesis tier can rebuild a plausible directory listing
+from the argument values observed elsewhere in the same corpus. This needs no schema
+change and no new retention, so it tests the hypothesis at the lowest possible cost. If
+it works, the retention question shrinks from "must we store payloads?" to "how much
+must we store?"
+
+- [ ] Build the corpus-derived synthesis tier behind a flag, defaulting off.
+- [ ] Re-run the exact limitation-17 scenario. Acceptance: the agent reaches
+  `read_text_file {.../data/readings.csv}` and the baseline arm produces >= 3 valid runs.
+- [ ] **Kill criterion:** if a real agent still cannot complete a two-step
+  discover-then-read task, stop and re-scope the release per the paragraph above rather
+  than attempting progressively more invasive retention.
+
+### R1 — Run lifecycle and recording schema
+
+One nullable field closes three separately-documented defects (limitation 18's finding 3,
+limitation 12, limitation 14), but the external review is right that it is not sufficient
+alone: a probe can exit 0 without attempting anything, and completion does not repair a
+missing manifest. Three distinct signals are needed, all nullable, all added under the
+schema-evolution procedure (red test against a pre-change corpus first).
+
+- [ ] `run_outcome` (completed / crashed / timeout / interrupted) + nullable `exit_code`.
+      `cli/subprocess_adapter.py` currently wraps `process.wait()` in `move_on_after` and
+      never inspects `returncode`.
+- [ ] A task-attempt signal, so a connectivity probe is distinguishable from a genuine
+      zero-tool run (limitation 12).
+- [ ] Manifest capture that survives call-order (limitation 14) — either a late-arriving
+      home for the hash, or deferring `SessionStart`.
+- [ ] Record tool attempts BEFORE dispatch, with separate completion/error events, so a
+      hang is visible rather than absent.
+- [ ] Acceptance matrix, every case asserted: exit 9 after tools/list; timeout;
+      interrupt; genuine no-tool task; connectivity probe; late manifest; and a
+      historical pre-change corpus. None may become a valid baseline run.
+
+### R2 — Experiment identity and reproducibility
+
+`ensure_clean_session_dir` is a guard, not the fix. Replace it with real identity.
+
+- [ ] Experiment id per invocation, binding sessions, mutation audit, corpus, assertions,
+      policy, calibration and fingerprints.
+- [ ] Reruns create a new experiment directory; nothing is overwritten or merged.
+- [ ] `--dry-run` becomes side-effect free.
+- [ ] Reports reconstruct from persisted experiment settings — the current path can lose
+      policy/assertions when `--runs-dir` is passed explicitly.
+- [ ] Fingerprint enforcement in `aggregate_baseline_runs` (limitation 18, open finding
+      5): permit the intended mutated-manifest difference, reject unrelated model, agent
+      or corpus differences. The helper exists and is simply never called.
+
+### R3 — Replay correctness
+
+- [ ] Separate the three concepts currently entangled: request-match TIER, response
+      PROVENANCE, execution OUTCOME. An exact lookup returning synthesized content must
+      never read as real evidence.
+- [ ] Validate served tool NAMES as well as schemas before lookup — the limitation-18 fix
+      covers arguments only.
+- [ ] Handle `$ref` in served schemas explicitly rather than by accident.
+- [ ] Detect and reject no-op mutations — an operator that changed nothing must not
+      produce a comparison at all.
+- [ ] Replace `index_session`'s last-writer-wins with a defined stateful response policy.
+- [ ] Re-scope value-only semantic matching as exploratory: two schema-valid calls can
+      carry identical values in different semantic roles, and after the limitation-18 fix
+      the tier is unreachable against strict schemas anyway.
+
+### R4 — The verdict rule
+
+The current rule turns any deviation into a regression once baseline spread is zero. For
+an unchanged agent choosing path A 90% of the time, `0.9^10 x (1 - 0.9^10)` is about 22.7%
+of ten-run comparisons producing a false regression from that event alone. That figure is
+a constructed counterexample, not a measured product rate, and must not be quoted as one.
+
+- [ ] Prespecified fixed-size comparison, a practical regression margin, and an
+      uncertainty interval. Report behavioural drift separately from task harm.
+- [ ] Measure false-alarm, detection-power and inconclusive rates against unchanged
+      agents, deterministic and stochastic, including the 90/10 case.
+- [ ] Only then reintroduce adaptive stopping, on a footing valid under optional
+      stopping. F-27's proof is that a fixed-N verdict is preserved; that is a statement
+      about agreement with the fixed-N rule, not about that rule's validity. Time-uniform
+      confidence sequences (Howard et al., arXiv:1810.08240) are the relevant technique —
+      uniformly valid over an unbounded horizon, so peeking does not inflate error rates.
+
+### R5 — Operational boundaries and onboarding
+
+- [ ] Enforce budgets DURING execution, including hanging and invalid calls.
+- [ ] Correct the idempotence-implies-reversibility assumption in the safety model.
+- [ ] Report unknown safety classifications explicitly rather than silently.
+- [ ] Fix working-directory/relative-path handling, HTTP configuration, and add strict
+      config validation.
+- [ ] Test matrix: both protocol eras, both transports, supported Pythons, Windows + Linux.
+- [ ] **Re-test limitation 15.** Its stated reason is now stale: `2026-07-28` is a real,
+      SDK-supported version whose `ListToolsResult` genuinely carries `ttl_ms` and
+      `cache_scope` (verified against mcp 2.0.0). A default in-memory session still
+      negotiates `2025-11-25`, so the practical outcome is unchanged — but "never on any
+      currently-negotiable version" is no longer true, and C8 may be revivable under
+      `mode="auto"`.
+- [ ] F-28–F-30 (`mine/`) only if the release must satisfy the full original scope.
+      Mining proposes editable candidates; it cannot recover user intent from a sequence.
+
+### The release gate
+
+A fresh user, installing the built wheel OUTSIDE the repository, completes:
+
+    init -> doctor -> observe -> prepare fixture -> baseline replay -> mutation -> report
+
+The fixture must require a returned path or id, so it cannot pass under content-empty
+replay. Three agents, three required outcomes: the unchanged agent completes it; a
+deliberately unadapted agent fails FOR THE EXPECTED REASON; an adapting agent recovers.
+Replay must work with the upstream server unavailable, and rebuilding the report must
+reproduce the original results exactly.
+
+### Publishing
+
+Verified 2026-09-09: PyPI holds only the `0.0.1` placeholder; this checkout declares
+`0.1.0`, so the version is free and pip will resolve to the real release rather than the
+placeholder (which is why the earlier `0.1.0a1` proposal was rejected — pip ignores
+pre-releases by default).
+
+- [ ] Confirm the previously-exposed API token is revoked.
+- [ ] Configure Trusted Publishing (PyPI OIDC) with a protected GitHub release
+      environment: job-level `permissions: id-token: write`, `environment: pypi`, and
+      `pypa/gh-action-pypi-publish@release/v1`. No long-lived token is retained.
+- [ ] Build wheel and sdist from the reviewed commit; validate both.
+- [ ] Install the built distributions and exercise the runtime dependencies.
+- [ ] Stage on TestPyPI and run the full fresh-user flow against it.
+- [ ] Publish the SAME tested artifacts, with attestations.
+- [ ] Install from production PyPI and repeat the smoke test.
+
 ## v1.5
 
 Plan-only screening mode, ~~HTTP agent adapter (unless pulled forward by a Gate 4 kill

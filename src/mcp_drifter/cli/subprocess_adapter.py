@@ -106,6 +106,7 @@ from mcp.shared.message import SessionMessage
 from mcp_drifter.cli.http_proxy import serve_replay_over_http
 from mcp_drifter.record.schema import ToolDescriptor
 from mcp_drifter.record.writer import SessionRecorder
+from mcp_drifter.replay.corpus_facts import CorpusFacts
 from mcp_drifter.replay.replay_proxy import run_replay_proxy
 from mcp_drifter.replay.replay_store import ReplayStore
 
@@ -126,6 +127,7 @@ def make_run_once(
     agent_mode: str = "subprocess",
     env_var: str = "DRIFTER_PROXY_URL",
     inverse_map: dict[str, dict[str, str]] | None = None,
+    corpus_facts: CorpusFacts | None = None,
 ):
     """Binds `run_agent_subprocess`'s (or, for `agent_mode="http"`,
     `run_agent_subprocess_http`'s — F-38) fixed parameters once and
@@ -206,6 +208,7 @@ def make_run_once(
                 synthetic_tool_names,
                 env_var,
                 inverse_map,
+                corpus_facts,
             )
         return anyio.run(
             run_agent_subprocess,
@@ -220,6 +223,7 @@ def make_run_once(
             timeout_s,
             synthetic_tool_names,
             inverse_map,
+            corpus_facts,
         )
 
     return run_once
@@ -277,6 +281,7 @@ async def run_agent_subprocess(
     timeout_s: float | None = None,
     synthetic_tool_names: frozenset[str] = frozenset(),
     inverse_map: dict[str, dict[str, str]] | None = None,
+    corpus_facts: CorpusFacts | None = None,
 ) -> Path:
     """Spawns `command` (an already-resolved argv — templating and
     config-loading are the caller's job, see module docstring point 1),
@@ -315,6 +320,8 @@ async def run_agent_subprocess(
                 recorder.observe,
                 synthetic_tool_names,
                 inverse_map,
+                False,
+                corpus_facts,
             )
 
             with anyio.move_on_after(timeout_s):
@@ -375,6 +382,7 @@ async def run_agent_subprocess_http(
     synthetic_tool_names: frozenset[str] = frozenset(),
     env_var: str = "DRIFTER_PROXY_URL",
     inverse_map: dict[str, dict[str, str]] | None = None,
+    corpus_facts: CorpusFacts | None = None,
 ) -> Path:
     """The `mode: http` sibling of `run_agent_subprocess` (F-38, docs/SPEC.md
     §5.1): instead of wiring the spawned agent's own stdin/stdout to an
@@ -400,7 +408,8 @@ async def run_agent_subprocess_http(
     stdout_chunks: list[str] = []
 
     async with serve_replay_over_http(
-        replay_store, server_name, tools_served, recorder.observe, synthetic_tool_names, inverse_map
+        replay_store, server_name, tools_served, recorder.observe, synthetic_tool_names, inverse_map,
+        corpus_facts,
     ) as url:
         # Found empirically, not assumed: passing env=None straight
         # through to anyio.open_process (as run_agent_subprocess's own
