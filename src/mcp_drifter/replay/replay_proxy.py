@@ -99,6 +99,8 @@ from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
 from mcp_drifter.record.proxy import Direction, MessageObserver
 from mcp_drifter.record.reader import read_session
+import jsonschema
+
 from mcp_drifter.replay.synthesis import synthesize_structured_content
 from mcp_drifter.record.schema import MATCH_TIER_MARKER_KEY, SYNTHETIC_RESULT_MARKER_KEY, ToolDescriptor, ToolsList
 from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore
@@ -122,6 +124,12 @@ from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore
 # just true today.
 REPLAY_MISS_CODE = -31001
 REPLAY_FAULT_CODE = -31002
+# A call that violates the SERVED (post-mutation) tool schema. Distinct
+# from a MISS on purpose: a MISS means "the corpus cannot answer this", an
+# INVALID means "no server would accept this at all". Conflating them
+# would let a schema violation look like thin recording coverage, which is
+# the opposite of what it is -- it is the mutation working.
+REPLAY_INVALID_ARGS_CODE = -31003
 
 
 def tools_served_from_session(path: Path) -> list[ToolDescriptor]:
@@ -274,6 +282,39 @@ def build_replay_server(
     """
     tools = [_to_wire_tool(t) for t in tools_served]
     output_schemas = {t.name: t.output_schema for t in tools_served}
+    input_schemas = {t.name: t.input_schema for t in tools_served}
+
+    def _schema_violation(tool_name: str, arguments: dict) -> str | None:
+        """Returns why `arguments` violate the SERVED schema, or None.
+
+        This is the mutated contract, and checking it BEFORE lookup is the
+        whole point (docs/SPEC.md §15, external review): with a
+        `parameter_rename` active, an agent that ignored the rename used to
+        resolve straight off the original recording via the exact tier, and
+        a wholly invented parameter name resolved via the semantic tier,
+        which matches on the multiset of argument VALUES ignoring names.
+        Both made `parameter_rename` incapable of detecting the one thing
+        it exists to detect. A real server with the renamed required
+        property and `additionalProperties: false` rejects both, so replay
+        does too.
+
+        Only enforced where a contract was actually DECLARED -- a schema
+        with no `properties` has nothing to check, and inventing strictness
+        there would reject calls a real server accepts.
+        """
+        schema = input_schemas.get(tool_name)
+        if not schema or not schema.get("properties"):
+            return None
+        try:
+            jsonschema.validate(instance=arguments, schema=schema)
+        except jsonschema.ValidationError as exc:
+            return exc.message
+        except jsonschema.SchemaError:
+            # A malformed schema in the manifest is the SERVER's problem,
+            # not the agent's -- never fail an agent's call over it.
+            return None
+        return None
+
     request_ids = count(1)
 
     def _output_schema_for(tool_name: str) -> dict | None:
@@ -366,6 +407,12 @@ def build_replay_server(
         # passed down -- replay_store.lookup has no mutation-specific
         # knowledge of its own (see its own docstring), it just applies
         # whatever {new_name: old_name} mapping it's handed.
+        violation = _schema_violation(params.name, arguments)
+        if violation is not None:
+            message = f"invalid arguments for {server_name}.{params.name}: {violation}"
+            _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_INVALID_ARGS_CODE, message=message)))
+            raise MCPError(code=REPLAY_INVALID_ARGS_CODE, message=message)
+
         param_map = inverse_map.get(params.name) if inverse_map else None
         hit = replay_store.lookup(server_name, params.name, arguments, param_map)
         if hit is None:

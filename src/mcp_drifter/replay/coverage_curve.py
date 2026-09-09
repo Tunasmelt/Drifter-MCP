@@ -296,9 +296,23 @@ def render_curve(curve: CoverageCurve, floor: float) -> str:
     lines.append(f"  Fidelity floor: {floor:.2f}")
 
     if curve.reaches(floor):
+        # Deliberately does NOT say "corpus-based replay is viable for this
+        # task", which is what this line used to claim. docs/SPEC.md §15
+        # limitation 17 disproves that implication directly: a corpus
+        # measured at 100% coverage produced 0/4 valid runs, because replay
+        # serves content-empty responses and the agent could no longer
+        # construct the arguments it had constructed live. Coverage is a
+        # necessary condition, not a sufficient one, and the good path is
+        # exactly where overclaiming does the damage.
         lines.append(
             f"  REACHES THE FLOOR at {last.corpus_size} sessions "
-            f"({last.mean_coverage:.1%}). Corpus-based replay is viable for this task."
+            f"({last.mean_coverage:.1%}) — lookup coverage is no longer the limiting factor."
+        )
+        lines.append(
+            "  This does NOT establish that replay reproduces the task: it measures whether "
+            "RECORDED calls resolve, and those calls' arguments already encode response content "
+            "your agent will not receive under content-empty replay (docs/SPEC.md §15 "
+            "limitation 17). Confirm with an UNMUTATED `drifter run` before trusting a verdict."
         )
     elif curve.plateaued(floor):
         lines.append(

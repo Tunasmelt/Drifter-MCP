@@ -6,6 +6,94 @@ not just a diff.
 
 ---
 
+## External review: six reproducible defects, four fixed
+
+An independent reviewer (Codex) traced record → replay → mutation → evaluation →
+reporting and reported seven findings. Every one that was independently re-verified
+held up. Nothing was overstated, and one was worse than reported. Recorded as
+docs/SPEC.md §15 limitation 18; the summary and the reasoning behind each fix are there.
+
+Verification came first in each case, because a finding accepted on description alone
+would have produced a fix aimed at the wrong mechanism. Two examples of that paying
+off:
+
+**The payload-retention claim was checked against real data, not the code.** The
+dogfood corpus from earlier today has known file contents, so `grep` settled it: the
+CSV body appears verbatim in all 10 `.frames` files, and in zero JSONL files. The
+nuance that matters for the fix is that raw IS passed through `redact_rpc_payload` —
+which is a secret-SHAPED-value redactor, not a payload stripper. So CLAUDE.md's
+invariant ("never writes payload data by default, only shapes") is true of the JSONL
+and false of the recording output as a whole. Then testing a planted key in four
+locations found the sharp bug: `result.content`, `error.data` and `params.arguments`
+all redacted correctly; `error.message` leaked. Scoping error, now fixed.
+
+**The replay finding reproduced exactly, and the mechanism was two bugs rather than
+one.** With a `parameter_rename` active: the OLD name resolved via the exact tier
+(the un-adapted agent looked healthy) and a BOGUS name resolved via the semantic tier,
+which hashes the multiset of argument VALUES ignoring names. Knowing both mechanisms
+is what made "validate the served contract before lookup" obviously right, rather than
+"weaken the semantic tier", which would have been the wrong fix.
+
+That fix has a consequence worth stating rather than burying: through the proxy the
+semantic tier is now unreachable against any strict schema. Correct — such a call
+would be rejected live — but it narrows F-13 considerably, and four tests moved to a
+permissive manifest because they asserted tier threading using arguments no real
+server would accept.
+
+### The finding that was worse than reported, and partly self-inflicted
+
+Experiment contamination. All four sub-claims held, and the sharpest is one this
+project introduced in the previous commit: `mutate/audit.py` opens `mutations.jsonl`
+with mode `"w"`, so a second run under the same `--task-id` DESTROYS the first run's
+paper trail while the first run's sessions survive and keep being aggregated. Audit
+and sessions then describe different experiments — worse than having no audit, and
+introduced by F-18, whose entire purpose was traceability.
+
+`drifter run` now refuses a session directory that already holds sessions, `--force`
+discards, and the check runs before the dry-run branch so the conflict surfaces
+without paying for the baseline arm. A guard, not the fix.
+
+### The unifying insight the review surfaced
+
+Three separately-documented defects are one root cause: finding 3 (crashed and
+timed-out agents counted as valid), limitation 12 (a connectivity artifact wrongly
+INCLUDED) and limitation 14 (a legitimate session wrongly EXCLUDED). All three exist
+because **the recorded schema has no notion of whether a run completed.** One nullable
+field — outcome plus exit code, added under the schema-evolution procedure — closes
+all three. That is now the highest-leverage identified fix, ahead of anything in the
+feature backlog.
+
+### Where the review's framing improved on this project's own
+
+Two observations sharper than what was already written down.
+
+The retention contract: Drifter currently pays the PRIVACY cost of retaining raw
+response content while replay receives NONE of the fidelity benefit, because replay
+reads the shape-only records. That is the worst of both positions, and it connects
+directly to limitation 17 — the content that would let a replayed agent navigate is
+already on disk and replay does not use it. Resolving retention should precede feature
+expansion, and either resolution needs an unmutated replay check showing a real agent
+can still complete the task.
+
+The verdict rule: with zero observed baseline spread, any deviation becomes a
+regression. For an unchanged agent independently choosing path A 90% of the time,
+0.9^10 x (1 - 0.9^10) ~= 22.7% of ten-run-per-arm comparisons produce a false
+regression from that event alone. The arithmetic is correct. `min_valid_runs: 3` does
+not address it, and adaptive scheduling preserves the rule rather than validating it.
+Measuring the false-alarm rate with unchanged-agent comparisons — an experiment this
+project has never run — is the prerequisite for trusting the verdict, not more
+operators.
+
+### Endorsed, and adopted
+
+The reviewer's priority order (fix retention/invalid-schema/failed-run accounting;
+isolate experiments and enforce provenance; prove unmutated replay preserves task
+completion; measure false alarms; reconcile documentation) matches what this session's
+own dogfooding independently pointed at, and the recommendation to pause mining and
+additional operators stands — nothing found today argues for more surface area.
+
+---
+
 ## Dogfooding the wheel as a new user: limitation 16's real root cause, and it is not what limitation 16 says
 
 Installed the built wheel into a clean venv with no repo on the path — byte-for-byte

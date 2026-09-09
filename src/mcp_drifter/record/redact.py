@@ -153,17 +153,29 @@ def redact_secrets(value: Any) -> Any:
 def redact_rpc_payload(raw: dict) -> dict:
     """Redacts a raw JSON-RPC message dict's payload fields only.
 
-    Scoped to `params` / `result` / `error.data` — the fields that can
-    carry caller-supplied or tool-returned values. Protocol envelope fields
+    Scoped to `params` / `result` / `error` — the fields that can carry
+    caller-supplied or tool-returned values. Protocol envelope fields
     (`jsonrpc`, `id`, `method`) are structural, never secret-bearing, and
     are left untouched so the raw mirror stays useful for re-parsing.
+
+    `error` is redacted WHOLE, not just its `data`. It was previously
+    scoped to `error.data` alone, and that was a real leak found by
+    external review and reproduced before fixing: a planted key was
+    correctly redacted in `result.content`, `error.data` and
+    `params.arguments`, and survived verbatim in `error.message`. A
+    server frequently builds that message by interpolating the very
+    credential that failed ("authentication failed for sk-ant-..."),
+    which makes it exactly as secret-bearing as the fields already
+    covered — and it reaches the raw mirror on disk. `error.code`
+    survives because `redact_secrets` only rewrites secret-SHAPED
+    strings, leaving ints and ordinary prose alone (asserted in
+    tests/record/test_redact_unit.py).
     """
     redacted = dict(raw)
     if "params" in redacted:
         redacted["params"] = redact_secrets(redacted["params"])
     if "result" in redacted:
         redacted["result"] = redact_secrets(redacted["result"])
-    error = redacted.get("error")
-    if isinstance(error, dict) and "data" in error:
-        redacted["error"] = {**error, "data": redact_secrets(error["data"])}
+    if "error" in redacted:
+        redacted["error"] = redact_secrets(redacted["error"])
     return redacted

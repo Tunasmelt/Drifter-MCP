@@ -7,6 +7,8 @@ an over-eager catch-all would make Drifter's recordings useless (every tool
 name and identifier redacted) in the name of a guarantee nothing needed.
 """
 
+import json
+
 from mcp_drifter.record.redact import is_redaction_marker, redact_rpc_payload, redact_secrets, redact_string
 
 PLANTED_OPENAI_KEY = "sk-" + "abcd1234EFGH5678ijkl9012MNOP3456qrst7890UVWX"
@@ -162,3 +164,62 @@ def test_redact_rpc_payload_handles_a_message_with_none_of_the_optional_fields()
     (e.g. a notification) must pass through without KeyError."""
     raw = {"jsonrpc": "2.0", "method": "notifications/initialized"}
     assert redact_rpc_payload(raw) == raw
+
+
+# --- error.message: a real leak, found by external review (Codex) --------
+#
+# `redact_rpc_payload` was scoped to params / result / error.data, and its
+# own docstring said so. The scoping is wrong: `error.message` is
+# caller-visible text a server frequently builds by interpolating the very
+# credential that failed ("authentication failed for sk-ant-..."), so it is
+# exactly as secret-bearing as the fields already covered, and it reaches
+# the raw mirror on disk.
+#
+# Verified as a real leak before this fix, not assumed: the same planted
+# key was correctly redacted in result.content, error.data and
+# params.arguments, and survived verbatim in error.message alone.
+
+
+_PLANTED = "sk-ant-api03-" + "A" * 48
+
+
+def test_a_secret_in_error_message_is_redacted():
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "error": {"code": -32000, "message": f"authentication failed for {_PLANTED}"},
+    }
+
+    out = json.dumps(redact_rpc_payload(payload))
+
+    assert _PLANTED not in out
+
+
+def test_redacting_an_error_preserves_its_structural_fields():
+    """`code` is protocol structure, not payload -- redaction must not
+    mangle it, or the raw mirror stops being re-parseable, which is the
+    whole reason the envelope is left alone elsewhere.
+    """
+    payload = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "error": {"code": -32000, "message": f"bad token {_PLANTED}", "data": {"k": _PLANTED}},
+    }
+
+    out = redact_rpc_payload(payload)
+
+    assert out["error"]["code"] == -32000
+    assert out["jsonrpc"] == "2.0"
+    assert out["id"] == 7
+    assert _PLANTED not in json.dumps(out)
+
+
+def test_an_error_with_no_secret_keeps_its_message_readable():
+    """Redaction must not blanket-scrub every error message -- a
+    diagnostic that survives is the point of keeping the raw mirror.
+    """
+    payload = {"jsonrpc": "2.0", "id": 1, "error": {"code": -32601, "message": "Method not found"}}
+
+    out = redact_rpc_payload(payload)
+
+    assert out["error"]["message"] == "Method not found"

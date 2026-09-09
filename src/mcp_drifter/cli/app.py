@@ -118,6 +118,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     run_parser.add_argument("--runs-dir", type=Path, default=None, help="Where to write new session JSONL, bypassing drifter.yaml")
     run_parser.add_argument("--seed", type=int, default=42, help="Mutation seed (reproducible)")
+    run_parser.add_argument("--force", action="store_true", help="Discard a previous run's sessions for this --task-id instead of refusing (they would otherwise be mixed into this experiment)")
     run_parser.add_argument("--repeats", type=int, default=None, help="Overrides calibration.yaml's baseline.repeats")
     run_parser.add_argument("--timeout", type=float, default=60.0, help="Per-agent-run timeout in seconds")
     run_parser.add_argument(

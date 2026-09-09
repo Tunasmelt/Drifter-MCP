@@ -1005,3 +1005,99 @@ when*.
     calls' arguments (the paths in the corpus reveal that `data/` exists, even though
     no response body was kept); or narrowing Drifter's stated scope to agents whose
     arguments do not depend on response content.
+
+18. **External review (2026-09-09) found six reproducible defects; four are fixed, two
+    are recorded here as open.** An independent reviewer (Codex) traced the
+    record → replay → mutation → evaluation → reporting paths and reported seven
+    findings. Every claim that was independently re-verified held up — none were
+    overstated — so the two left open below are open on scope grounds, not doubt.
+
+    **Fixed: replay accepted calls that violate the served (mutated) contract.** The
+    most damaging of the set, because it silently disarmed the operator it affected.
+    With a `parameter_rename` active against a corpus recorded under the original
+    name, reproduced exactly:
+
+        NEW name   (agent ADAPTED)        -> HIT via inverse    <- intended
+        OLD name   (agent did NOT adapt)  -> HIT via exact      <- defect
+        BOGUS name (never valid)          -> HIT via semantic   <- defect
+
+    Two independent mechanisms. The exact tier answered the un-adapted call straight
+    off the original recording; F-13's semantic tier hashes the multiset of argument
+    VALUES ignoring names, so any invented name carrying the recorded value resolved.
+    `parameter_rename` therefore could not detect non-adaptation — the only thing it
+    exists to detect. `replay/replay_proxy.py` now validates arguments against the
+    served schema BEFORE lookup and raises `REPLAY_INVALID_ARGS_CODE`, a code
+    deliberately distinct from a MISS: "no server would accept this" and "the corpus
+    cannot answer this" are different facts, and conflating them would make the
+    mutation WORKING look like thin coverage. Enforced only where a schema declares
+    `properties`; a malformed manifest schema never fails the agent's call.
+
+    A real consequence, stated rather than buried: through the proxy the semantic tier
+    is now reachable only where the served schema permits the parameter name used.
+    Against a strict manifest it is unreachable by construction. That is correct — such
+    a call would be rejected live — but it narrows F-13's real-world applicability
+    considerably, and four existing tests had to move to a permissive manifest because
+    they were asserting tier threading using arguments no server would accept.
+
+    **Fixed: a secret in `error.message` reached disk.** `redact_rpc_payload` was
+    scoped to `params`/`result`/`error.data`, deliberately per its own docstring.
+    Verified as a real leak before fixing: the same planted key was correctly redacted
+    in `result.content`, `error.data` and `params.arguments`, and survived verbatim in
+    `error.message`, which servers routinely build by interpolating the credential
+    that failed. `error` is now redacted whole.
+
+    **Fixed: synthesized placeholders could become historical evidence.**
+    `ReplayStore.index_session` indexed every `ToolCall` as `match_tier="exact"`
+    regardless of `result_provenance`. Since F-14, a session produced BY replay
+    contains `synthetic_miss` records, and such a session can legitimately be handed
+    back as a `--fixture` — so fabricated placeholders would resolve as exact hits and
+    inflate the very fidelity number the floor gates on. That is the failure DEC-027
+    rejected fuzzy matching to avoid, reached by a different route. Non-`real`
+    provenance is now skipped at index time.
+
+    **Fixed (guard only): repeated experiments contaminated each other.**
+    `session_dir` is keyed by task id alone, and four consumers read it as one
+    experiment — `cli/report.py` globs both arms, `evaluate_safety_across_arms` scans
+    the whole tree, `aggregate_baseline_runs` treats the union as one arm, and
+    `mutate/audit.py` opened `mutations.jsonl` with mode `"w"`. So a second run
+    DESTROYED the first run's paper trail while the first run's sessions survived and
+    kept being aggregated: audit and sessions then described different experiments,
+    which is worse than having no audit. `drifter run` now refuses a session directory
+    that already holds sessions (`--force` discards), checked before the dry-run branch
+    so the conflict surfaces without paying for the baseline arm. This is a guard, not
+    the fix — the fix is an experiment id binding sessions, mutations, config,
+    assertions and calibration together, which remains undesigned.
+
+    **OPEN — a run's completion status is not recorded anywhere, and three separate
+    defects follow from that one gap.** `cli/subprocess_adapter.py` wraps
+    `await process.wait()` in `anyio.move_on_after(timeout_s)` and never inspects
+    `process.returncode`; the only success check is that a session JSONL exists. So a
+    crashed agent (exit 9) and a timed-out one both return a session path that
+    downstream treats as valid, and `_run_fidelity` returns 1.0 vacuously for a run
+    with zero calls — a crashed agent that listed tools and called nothing scores a
+    perfect, empty, VALID baseline run. This is the same root gap as limitation 12 (a
+    connectivity artifact wrongly INCLUDED) and limitation 14 (a legitimate session
+    wrongly EXCLUDED): the recorded schema has no notion of whether a run completed.
+    One nullable field — outcome (completed/crashed/timeout) plus exit code, added
+    under this project's schema-evolution procedure — closes all three, and is the
+    highest-leverage fix currently identified.
+
+    **OPEN — environment fingerprints are recorded but never enforced.**
+    `BaselineResult` exposes `fingerprint_warning`, and `evaluate/baseline.py`'s
+    aggregation never calls any compatibility check: it verifies a
+    `tool_manifest_hash` EXISTS, not that the sessions being compared share one.
+    Sessions with different model identities and different manifest hashes aggregate
+    into a single arm without comment, so a "regression" can be an artifact of
+    comparing two different environments. Compatibility should be enforced within each
+    arm and across arms, permitting only the intended mutation difference.
+
+    **Also open, and larger than any single defect: the retention contract.** The
+    reviewer's sharpest observation is that Drifter currently pays the PRIVACY cost of
+    retaining raw response content while its replay engine receives NONE of the
+    fidelity benefit, because replay reads the shape-only records. That is the worst of
+    both positions, and it connects directly to limitation 17 — the content that would
+    let a replayed agent navigate is already on disk, and replay simply does not use
+    it. Resolving retention (explicitly approved, redacted response fixtures; or
+    narrowing supported workflows) should precede any feature expansion, and either
+    choice needs an UNMUTATED replay check demonstrating a real agent can still
+    complete the original task.

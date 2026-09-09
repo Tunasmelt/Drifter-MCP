@@ -130,6 +130,17 @@ class ReplayStore:
         """
         for record in read_session(path):
             if isinstance(record, ToolCall):
+                # Only genuinely OBSERVED calls become evidence. A session
+                # produced BY replay carries synthesized placeholders --
+                # `synthetic` (F-17 tool_addition) and, since F-14,
+                # `synthetic_miss` -- and such a session can legitimately be
+                # handed back as a --fixture. Indexing those would resolve
+                # fabricated content as exact historical hits and inflate
+                # the very fidelity number the floor gates on, which is the
+                # failure DEC-027 rejected fuzzy matching to avoid. Found
+                # by external review; see tests/replay/test_replay_store.py.
+                if record.result_provenance != "real":
+                    continue
                 response = RecordedResponse(
                     result_shape=record.result_shape,
                     is_error=record.is_error,

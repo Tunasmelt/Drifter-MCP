@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import sys
 from collections.abc import Sequence
+import shutil
 from pathlib import Path
 from typing import TextIO
 
@@ -106,6 +107,41 @@ def _as_corpus_inputs(fixture: Path | Sequence[Path]) -> list[Path]:
         return [Path(fixture)]
     return [Path(p) for p in fixture]
 
+
+
+def ensure_clean_session_dir(session_dir: Path, force: bool) -> None:
+    """Refuses to run into a session directory that already holds an
+    experiment, unless `force` is set (which CLEARS it).
+
+    `session_dir` is keyed by task id alone, and four separate consumers
+    then read it as one experiment: `cli/report.py` globs both arms,
+    `evaluate_safety_across_arms` scans the whole tree, `aggregate_baseline_runs`
+    treats the union as one arm, and `mutate/audit.py` opens
+    `mutations.jsonl` with mode "w" -- so a second run overwrites the first
+    run's paper trail while the first run's SESSIONS survive and keep being
+    aggregated. The audit and the sessions then describe different
+    experiments, which is worse than having no audit at all.
+
+    Found by external review; every consequence above was confirmed in the
+    code rather than assumed. The eventual fix is an experiment id binding
+    sessions, mutations, config, assertions and calibration together. This
+    guard makes the SILENT version impossible in the meantime, in the same
+    "reversible over destructive" spirit as `drifter init`'s overwrite
+    protection: nothing is mixed by accident, and nothing is deleted
+    without being asked for.
+    """
+    prior = [p for arm in ("baseline", "mutated") for p in (session_dir / arm).glob("*.jsonl")]
+    if not prior:
+        return
+    if not force:
+        raise ConfigError(
+            f"{session_dir} already holds {len(prior)} session(s) from a previous run of "
+            f"task '{session_dir.name}'. Re-running would mix the two experiments: the report "
+            f"would aggregate both, safety findings from the earlier run would be inherited, and "
+            f"the mutation audit would be overwritten while those older sessions survived. "
+            f"Use a different --task-id to keep both, or --force to discard the previous one."
+        )
+    shutil.rmtree(session_dir)
 
 
 def run_mutation_comparison(
@@ -306,6 +342,7 @@ def run_run(
     budget: int | None = None,
     max_wall_time_s: float | None = None,
     adaptive: bool = True,
+    force: bool = False,
 ) -> RunResult | None:
     """F-31's own "Done when" bar, reframed honestly for what this command
     actually does today (no live MCP server mode exists — see
@@ -349,6 +386,11 @@ def run_run(
         runs_dir = resolve_runs_dir(config)
     session_dir = runs_dir / "run" / task_id
     raw_dir = runs_dir.parent / "raw" / "run" / task_id
+
+    # Checked BEFORE the dry-run branch returns and before any agent is
+    # spawned: a user who would be refused should learn that from
+    # --dry-run too, not after paying for the baseline arm.
+    ensure_clean_session_dir(session_dir, force=force)
 
     calibration = load_calibration()
     effective_repeats = repeats if repeats is not None else calibration.baseline.repeats

@@ -37,6 +37,39 @@ def _golden_calls() -> list[ToolCall]:
     return [r for r in read_session(GOLDEN_FIXTURE) if isinstance(r, ToolCall)]
 
 
+def _permissive(tools: list[ToolDescriptor]) -> list[ToolDescriptor]:
+    """The same manifest, with its declared input contracts dropped.
+
+    Replay now validates a call against the SERVED schema before doing any
+    lookup (docs/SPEC.md §15, external review): with a `parameter_rename`
+    active, an agent that IGNORED the rename used to resolve straight off
+    the original recording, and an invented parameter name resolved via the
+    semantic tier -- so `parameter_rename` could not detect the one thing it
+    exists to detect.
+
+    Several tests below deliberately call with arguments no real server
+    would accept (a renamed key, an empty object) because what they are
+    actually asserting is TIER THREADING -- that a hit comes back tagged
+    `semantic`/`inverse`, or that a recorded content array is reproduced at
+    the right length. Serving a permissive manifest keeps those assertions
+    about the thing they name, instead of turning them into duplicate
+    coverage of schema enforcement (which has its own file,
+    tests/replay/test_schema_enforcement.py).
+
+    Worth stating plainly, because it is a real consequence rather than a
+    test convenience: through the proxy, the semantic tier is now reachable
+    only where the served schema permits the parameter name used. Against a
+    strict manifest it is unreachable by construction -- which is correct,
+    since such a call would be rejected live, but it does narrow F-13's
+    real-world applicability considerably.
+    """
+    return [
+        ToolDescriptor(name=t.name, description=t.description, input_schema={"type": "object"},
+                       annotations=t.annotations, output_schema=t.output_schema)
+        for t in tools
+    ]
+
+
 @pytest.fixture
 async def golden_session():
     """A real ClientSession connected to a replay proxy serving the
@@ -417,7 +450,9 @@ async def test_a_semantic_hit_is_recorded_with_match_tier_semantic(tmp_path):
 
     store = ReplayStore()
     store.index_session(GOLDEN_FIXTURE)
-    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    # Permissive on purpose -- this asserts tier threading, not the served
+    # contract. See _permissive.
+    tools_served = _permissive(tools_served_from_session(GOLDEN_FIXTURE))
 
     call = next(c for c in _golden_calls() if len(c.arguments) == 1)
     original_key = next(iter(call.arguments))
@@ -455,7 +490,9 @@ async def test_an_inverse_map_hit_is_recorded_with_match_tier_inverse(tmp_path):
 
     store = ReplayStore()
     store.index_session(GOLDEN_FIXTURE)
-    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    # Permissive on purpose -- these assert tier threading and content
+    # reconstruction, not the served contract. See _permissive.
+    tools_served = _permissive(tools_served_from_session(GOLDEN_FIXTURE))
 
     call = next(c for c in _golden_calls() if len(c.arguments) == 1)
     original_key = next(iter(call.arguments))
@@ -509,7 +546,9 @@ async def test_a_recorded_zero_length_content_array_synthesizes_as_genuinely_emp
     EMPTY content list, not silently fall back to the length-1 default.
     Never exercised by the golden fixture (every real call there has
     real content) -- hand-built here."""
-    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    # Permissive on purpose -- these assert tier threading and content
+    # reconstruction, not the served contract. See _permissive.
+    tools_served = _permissive(tools_served_from_session(GOLDEN_FIXTURE))
     store = ReplayStore()
     key = replay_key(GOLDEN_SERVER, tools_served[0].name, {})
     store._index[key] = RecordedResponse(
@@ -531,7 +570,9 @@ async def test_a_recorded_multi_block_content_array_synthesizes_with_the_same_co
     empty placeholders, not the length-1 default -- confirming
     content_length genuinely reads the recorded value across its full
     real range, not just "present vs. absent"."""
-    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+    # Permissive on purpose -- these assert tier threading and content
+    # reconstruction, not the served contract. See _permissive.
+    tools_served = _permissive(tools_served_from_session(GOLDEN_FIXTURE))
     store = ReplayStore()
     key = replay_key(GOLDEN_SERVER, tools_served[0].name, {})
     store._index[key] = RecordedResponse(

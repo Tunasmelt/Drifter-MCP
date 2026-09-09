@@ -501,3 +501,61 @@ def test_inverse_exact_miss_still_falls_through_to_semantic():
     hit = store.lookup("srv", "tool", {"customerId": 42}, inverse_param_map={"customerId": "customer_id"})
     assert hit is not None
     assert hit.match_tier == "semantic"
+
+
+# --- synthetic records must never become historical evidence -----------
+#
+# Found by external review (Codex). `index_session` indexed EVERY ToolCall
+# with match_tier="exact", ignoring `result_provenance`. A session produced
+# BY replay -- which since F-14 contains `synthetic_miss` records, and since
+# F-17 contains `synthetic` ones -- could therefore be handed back as a
+# --fixture, and Drifter would resolve fabricated placeholders as exact
+# historical hits, inflating fidelity with evidence nobody ever observed.
+#
+# This is the same failure DEC-027 rejected fuzzy matching to avoid:
+# recording a guess as a HIT inverts the meaning of the fidelity number the
+# floor gates on.
+
+
+def _session_with_provenance(dir_path: Path, provenance: str) -> Path:
+    from mcp_drifter.record.schema import Environment, SessionStart, ToolCall, ToolDescriptor, ToolsList
+
+    served = [ToolDescriptor(name="t", description="d", input_schema={"type": "object"})]
+    lines = [
+        SessionStart(session_id="s", seq=0, started_at="2026-01-01T00:00:00Z",
+                     environment=Environment(tool_manifest_hash="h"), raw_frame_offset=0).model_dump_json(),
+        ToolsList(session_id="s", seq=1, timestamp="2026-01-01T00:00:00Z", server="srv",
+                  tools_raw=served, tools_served=served, raw_frame_offset=1).model_dump_json(),
+        ToolCall(session_id="s", seq=2, timestamp="2026-01-01T00:00:01Z", server="srv",
+                 tool_name="t", arguments={"a": 1}, result_shape={"type": "object", "keys": []},
+                 is_error=False, duration_ms=1.0, fault=False, result_provenance=provenance,
+                 raw_frame_offset=100).model_dump_json(),
+    ]
+    p = dir_path / f"{provenance}.jsonl"
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return p
+
+
+def test_a_synthetic_miss_record_is_not_indexed_as_historical_evidence(tmp_path):
+    store = ReplayStore()
+    store.index_session(_session_with_provenance(tmp_path, "synthetic_miss"))
+
+    assert store.lookup("srv", "t", {"a": 1}) is None
+
+
+def test_a_tool_addition_synthetic_record_is_not_indexed_either(tmp_path):
+    store = ReplayStore()
+    store.index_session(_session_with_provenance(tmp_path, "synthetic"))
+
+    assert store.lookup("srv", "t", {"a": 1}) is None
+
+
+def test_a_real_record_is_still_indexed(tmp_path):
+    """The guard must not throw away genuine observations -- that would
+    silently empty every corpus."""
+    store = ReplayStore()
+    store.index_session(_session_with_provenance(tmp_path, "real"))
+
+    hit = store.lookup("srv", "t", {"a": 1})
+    assert hit is not None
+    assert hit.match_tier == "exact"
