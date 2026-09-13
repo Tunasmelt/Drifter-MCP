@@ -71,11 +71,23 @@ class TaskAssertions:
     never_calls: tuple[str, ...] = ()
     result_has_keys: dict[str, tuple[str, ...]] = field(default_factory=dict)
     no_errors: bool = False
+    # An OUTCOME oracle: a regex the agent's final answer must match
+    # (docs/SPEC.md §15 limitation 19). Every field above inspects the
+    # trajectory, and limitation 19's trajectory was CORRECT -- four runs
+    # reached the right file and none answered the task. Read from the
+    # agent's own stdout, not a tool payload, so it does not reopen the
+    # shape-only contract `result_contains` was rejected under.
+    answer_matches: str | None = None
 
     @property
     def empty(self) -> bool:
         return not (
-            self.calls or self.calls_before or self.never_calls or self.result_has_keys or self.no_errors
+            self.calls
+            or self.calls_before
+            or self.never_calls
+            or self.result_has_keys
+            or self.no_errors
+            or self.answer_matches
         )
 
 
@@ -227,23 +239,74 @@ def evaluate_task(session_paths: Sequence[Path], assertions: TaskAssertions) -> 
             reason="assertions are configured, but no valid run survived to evaluate them against",
         )
 
+    import re
+
     passed = 0
+    unanswered = 0
     failures: list[AssertionFailure] = []
     seen: set[tuple[str, str]] = set()
     for path in session_paths:
         result = evaluate_run(list(read_session(path)), assertions)
-        if result.passed:
-            passed += 1
-        for failure in result.failures:
+        run_failures = list(result.failures)
+        answer_missing = False
+
+        if assertions.answer_matches is not None:
+            answer_path = Path(path).with_suffix(".stdout.txt")
+            if not answer_path.exists():
+                # No captured answer (e.g. a stdio-mode agent, whose stdout IS
+                # the MCP channel). Absence of evidence is not evidence of a
+                # wrong answer, so this never FAILs on its own -- but it also
+                # means a PASS for this run cannot be established.
+                answer_missing = True
+            else:
+                answer = answer_path.read_text(encoding="utf-8")
+                # Match against the answer with markdown emphasis stripped.
+                # Real agents write "**2** data rows" (limitation 19's own
+                # answers were markdown), and a pattern like `\b2\b data rows`
+                # would otherwise report a FALSE task failure on a correct
+                # answer -- the false-alarm shape this oracle exists to
+                # remove. Only emphasis/code markers are stripped; the words
+                # themselves are never rewritten.
+                plain = re.sub(r"[*_`]+", "", answer)
+                if not re.search(assertions.answer_matches, plain):
+                    # Declining to answer is a failure too: limitation 19's
+                    # "I can't report a row count" must not read as a pass.
+                    excerpt = " ".join(answer.split())[-160:] or "(empty answer)"
+                    run_failures.append(
+                        AssertionFailure(
+                            "answer_matches",
+                            f"final answer did not match {assertions.answer_matches!r}: ...{excerpt}",
+                        )
+                    )
+
+        if not run_failures:
+            if answer_missing:
+                unanswered += 1
+            else:
+                passed += 1
+        for failure in run_failures:
             key = (failure.kind, failure.detail)
             if key not in seen:
                 seen.add(key)
                 failures.append(failure)
 
     evaluated = len(session_paths)
+    if failures:
+        verdict: TaskVerdict = "FAIL"
+        reason = None
+    elif unanswered:
+        # Every assertion that COULD be checked held, but some run's answer
+        # was never captured, so "every run answered correctly" is
+        # unestablished. UNKNOWN, never a PASS built on missing evidence.
+        verdict = "UNKNOWN"
+        reason = f"answer oracle configured, but {unanswered}/{evaluated} run(s) captured no final answer"
+    else:
+        verdict = "PASS"
+        reason = None
     return TaskResult(
-        verdict="PASS" if passed == evaluated else "FAIL",
+        verdict=verdict,
         runs_evaluated=evaluated,
         runs_passed=passed,
         failures=tuple(failures),
+        reason=reason,
     )

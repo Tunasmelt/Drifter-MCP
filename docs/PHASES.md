@@ -932,12 +932,35 @@ change and no new retention, so it tests the hypothesis at the lowest possible c
 it works, the retention question shrinks from "must we store payloads?" to "how much
 must we store?"
 
-- [ ] Build the corpus-derived synthesis tier behind a flag, defaulting off.
-- [ ] Re-run the exact limitation-17 scenario. Acceptance: the agent reaches
-  `read_text_file {.../data/readings.csv}` and the baseline arm produces >= 3 valid runs.
-- [ ] **Kill criterion:** if a real agent still cannot complete a two-step
-  discover-then-read task, stop and re-scope the release per the paragraph above rather
-  than attempting progressively more invasive retention.
+- [x] Build the corpus-derived synthesis tier behind a flag, defaulting off
+  (`replay/corpus_facts.py`, `--replay-discovered-values`).
+- [x] Re-run the exact limitation-17 scenario. **Result: docs/SPEC.md §15 limitation 19.**
+  The acceptance criterion as written above was met (4/4 runs reached the path, 4/4
+  valid) — and was too weak: none of the four answered the task.
+- [x] **Kill criterion fired, narrowly.** R0 is rejected as a faithful response
+  substitute for content-dependent tasks: hints restored addressing, not reading, and
+  disclosed downstream arguments earlier than the original interaction. This does NOT
+  reject every route to useful replay — authored fixtures and controlled fixture servers
+  are untested.
+
+### R0.5 — Consequences of limitation 19 (before R1)
+
+Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true.
+
+- [x] **Outcome oracle.** `answer_matches` on authored tasks, evaluated against the
+  agent's own final answer. TASK FAIL when an oracle establishes failure; UNKNOWN when no
+  answer was captured; never PASS by default. Trajectory assertions alone cannot catch
+  limitation 19 — the trajectory there was correct. Verified against the real `r0b-on`
+  sessions: baseline TASK FAIL 0/4, mutated TASK FAIL 0/3, where the report had said
+  NO_REGRESSION. Limitation: only the http adapter captures a final answer, so a
+  stdio-mode agent's oracle is UNKNOWN by construction.
+- [x] **Release re-scope.** README and the package description now claim recording plus
+  EXPLICITLY EXPERIMENTAL structural mutation and replay, with limitation 19's result
+  stated in the README rather than behind a link.
+- [ ] **Content-preserving fixture spike.** The untested alternative limitation 19 names:
+  explicitly authored fixtures, or a controlled fixture server, evaluated by the same
+  three separated questions (navigation, exclusions, answer oracle). Dependable
+  task-regression claims return only after this passes end to end.
 
 ### R1 — Run lifecycle and recording schema
 

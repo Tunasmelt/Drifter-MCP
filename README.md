@@ -1,9 +1,15 @@
 # Drifter
 
-A proxy-based regression-testing harness that sits on the MCP connection between your
-agent and its tools. It records real tool-use trajectories, replays them safely
-offline, mutates the tool interface in controlled ways, and reports behavioral, task,
-and safety regressions with explicit uncertainty — never a silent guess.
+A proxy that sits on the MCP connection between your agent and its tools and records
+real tool-use trajectories — shapes only, secrets redacted. On top of that recorder it
+offers **experimental** structural mutation and offline replay of the tool interface.
+
+> **Scope of this release.** Recording is the dependable part. Mutation and replay
+> run, but replay serves recorded response *shapes*, not contents, so an agent whose
+> task depends on reading what a tool returned cannot complete that task under replay
+> ([`docs/SPEC.md` §15 limitations 17 and 19](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)).
+> Treat behavioral verdicts as experimental, and do not use them for release decisions
+> until a content-preserving fixture approach has been validated end to end.
 
 Console command: `drifter`. Install with `uv tool install mcp-drifter` — see
 [Install](#install).
@@ -21,10 +27,15 @@ generically, not this specific triangle.
 Drifter does that: it wraps whatever MCP server you already use, records what your
 agent actually does with it, then reruns the same tasks against a deliberately
 mutated version of that server's interface — a reworded tool description, an added
-tool — replayed from your recordings, at zero marginal cost per replayed call. If
-your agent's behavior changes, Drifter tells you, with a real effect size, not a
-vibe — and when your recordings don't cover enough of what your agent actually does
-to support a verdict, it tells you that instead of guessing.
+tool — replayed from your recordings, at zero marginal cost per replayed call.
+
+That is the goal, and the evidence so far is mixed. In a real run against Claude Code,
+replay let the agent reach the right file on every attempt while its request-match
+coverage scored 0.88 — and not one attempt answered the task, because the file's
+contents are not replayed. Drifter now reports that honestly (a baseline that cannot
+perform the task is flagged as inadequate, and an authored `answer_matches` oracle
+turns a wrong answer into TASK FAIL), but it means a clean behavioral verdict is not
+yet evidence that your agent still works.
 
 ## How it works
 
@@ -75,8 +86,10 @@ Gates 0–3 are closed:
 - **Setup** (`drifter init`) — scans `.mcp.json`/`.cursor/mcp.json`/Claude Desktop's
   config for existing stdio MCP servers and writes a starter `drifter.yaml`, so you
   don't have to hand-write your server list.
-- **All three verdict axes** — Behavior (effect size vs. baseline), Task (opt-in
-  assertions you author), Safety (evaluated on every run, never gated by the others).
+- **Three verdict axes, one of them experimental** — Behavior (effect size vs.
+  baseline; **experimental**, see the scope note above), Task (opt-in assertions you
+  author, including an `answer_matches` outcome oracle on the agent's final answer),
+  Safety (evaluated on every run, never gated by the others).
 - **Cost controls** — blast-radius preview, budget/wall-time ceilings, projected
   replay coverage before you spend, and adaptive scheduling that stops once the
   verdict is provably settled.

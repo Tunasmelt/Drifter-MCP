@@ -247,3 +247,92 @@ def test_a_single_run_is_enough_for_a_verdict_unlike_the_behavior_axis(tmp_path)
 
     assert result.verdict == "FAIL"
     assert result.runs_evaluated == 1
+
+
+# --- answer_matches: an OUTCOME oracle (docs/SPEC.md §15 limitation 19) ---
+#
+# Every other assertion here inspects the tool-call trajectory. Limitation 19
+# showed that is not enough: four runs reached the right file, scored 0.88
+# request-match coverage, and none answered the task (true answer 2; two said
+# "0 data rows", two declined). No trajectory assertion could have caught
+# that -- the trajectory was CORRECT. Only the agent's final answer reveals it.
+#
+# The answer is the agent's own stdout (`<session>.stdout.txt`, written by the
+# http adapter), not a tool payload, so reading it does not reopen the
+# shape-only recording contract `result_contains` was rejected under.
+#
+# Semantics, chosen so the oracle can never manufacture a PASS:
+#   - pattern matches           -> that run passes this assertion
+#   - pattern does not match    -> FAIL (declining to answer IS a failure)
+#   - no answer was captured    -> UNKNOWN for the arm, never PASS, and never
+#                                  FAIL on its own: absence of evidence is not
+#                                  evidence of a wrong answer. A failure
+#                                  established by another assertion still FAILs.
+
+
+def _session_with_answer(dir_path: Path, session_id: str, answer: str | None) -> Path:
+    path = _write_session(dir_path, session_id, ["read_text_file"])
+    if answer is not None:
+        path.with_suffix(".stdout.txt").write_text(answer, encoding="utf-8")
+    return path
+
+
+def test_answer_oracle_alone_is_not_empty():
+    assert TaskAssertions(answer_matches=r"\b2\b").empty is False
+
+
+def test_a_correct_answer_passes(tmp_path):
+    paths = [_session_with_answer(tmp_path, f"s{i}", "readings.csv has **2** data rows.") for i in range(3)]
+
+    result = evaluate_task(paths, TaskAssertions(answer_matches=r"\b2\b data rows"))
+
+    assert result.verdict == "PASS"
+    assert result.runs_passed == 3
+
+
+def test_the_limitation_19_answers_fail(tmp_path):
+    """The exact answers from the recorded experiment."""
+    answers = [
+        "the file appears to be empty, so the data row count is **0**.",
+        "I could not get the contents, so I can't report a row count.",
+    ]
+    paths = [_session_with_answer(tmp_path, f"s{i}", a) for i, a in enumerate(answers)]
+
+    result = evaluate_task(paths, TaskAssertions(answer_matches=r"\b2\b data rows"))
+
+    assert result.verdict == "FAIL"
+    assert result.runs_passed == 0
+    assert any(f.kind == "answer_matches" for f in result.failures)
+
+
+def test_a_missing_answer_is_unknown_not_pass_and_not_fail(tmp_path):
+    paths = [_session_with_answer(tmp_path, "s0", None)]
+
+    result = evaluate_task(paths, TaskAssertions(answer_matches=r"\b2\b"))
+
+    assert result.verdict == "UNKNOWN"
+    assert result.reason and "answer" in result.reason.lower()
+
+
+def test_one_missing_answer_among_passes_still_blocks_a_pass(tmp_path):
+    """A PASS claims EVERY evaluated run answered correctly. One run whose
+    answer was never captured makes that claim unestablished."""
+    paths = [
+        _session_with_answer(tmp_path, "s0", "2 data rows"),
+        _session_with_answer(tmp_path, "s1", None),
+    ]
+
+    result = evaluate_task(paths, TaskAssertions(answer_matches=r"\b2\b"))
+
+    assert result.verdict == "UNKNOWN"
+
+
+def test_an_established_failure_is_not_hidden_by_a_missing_answer(tmp_path):
+    paths = [
+        _session_with_answer(tmp_path, "s0", "0 data rows"),
+        _session_with_answer(tmp_path, "s1", None),
+    ]
+
+    result = evaluate_task(paths, TaskAssertions(answer_matches=r"\b2\b"))
+
+    assert result.verdict == "FAIL"

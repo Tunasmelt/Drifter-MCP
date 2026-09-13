@@ -162,6 +162,10 @@ class TaskAssertConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
+    # Regex the agent's final answer must match -- the outcome oracle
+    # docs/SPEC.md §15 limitation 19 showed trajectory assertions cannot
+    # replace. e.g. `answer_matches: '\b2\b data rows'`.
+    answer_matches: str | None = None
     calls: list[str] = []
     # Each entry is a two-element [earlier, later] pair.
     calls_before: list[list[str]] = []
@@ -241,6 +245,7 @@ class TaskConfig(BaseModel):
             never_calls=tuple(self.assert_.never_calls),
             result_has_keys={tool: tuple(keys) for tool, keys in self.assert_.result_has_keys.items()},
             no_errors=self.assert_.no_errors,
+            answer_matches=self.assert_.answer_matches,
         )
 
 

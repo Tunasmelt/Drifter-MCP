@@ -1,7 +1,7 @@
 [project]
 name = "mcp-drifter"
 version = "0.1.0"
-description = "Proxy-based regression-testing harness for MCP tool interfaces."
+description = "Records MCP tool-use trajectories; experimental structural mutation and offline replay of tool interfaces."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.11"

@@ -6,6 +6,54 @@ not just a diff.
 
 ---
 
+## Outcome oracle and release re-scope — and a false claim in the previous entry
+
+**The previous entry said the oracle and the re-scope were "sequenced in docs/PHASES.md."
+They were not.** Checked before building on it: PHASES contained neither item. A
+committed record claimed work had been planned that had not. Corrected by adding R0.5
+to PHASES, then doing two of its three items, so the claim is now true rather than
+quietly edited away.
+
+**`answer_matches`, an outcome oracle.** Every existing Task assertion inspects the
+trajectory, and limitation 19's trajectory was CORRECT — four runs reached the right
+file and none answered the task. Only the final answer reveals that. The oracle is a
+regex over the agent's own stdout (`<session>.stdout.txt`), not a tool payload, so it
+does not reopen the shape-only recording contract `result_contains` was rejected under.
+
+Semantics were chosen so it can never manufacture a PASS: a non-matching answer is FAIL
+(declining to answer is a failure — "I can't report a row count" must not pass); a
+missing answer makes the arm UNKNOWN, never PASS and never FAIL on its own, because
+absence of evidence is not evidence of a wrong answer; and an established failure is
+never hidden by another run's missing answer.
+
+**A bug the test caught before shipping.** The first implementation matched the raw
+answer, and a correct agent answer of `**2** data rows` failed against `\b2\b data rows`
+because of markdown bold. Limitation 19's real answers were markdown, so the oracle
+would have reported a false TASK FAIL on correct answers — precisely the false-alarm
+shape it exists to remove. Emphasis and code markers are now stripped before matching;
+the words themselves are never rewritten.
+
+**Verified on the real experiment, not only on fixtures.** Run over the recorded
+`r0b-on` sessions with `answer_matches: '\b2\b'`: baseline TASK FAIL 0/4, mutated TASK
+FAIL 0/3, each failure quoting the agent's actual non-answer. That report previously
+read BEHAVIOR NO_REGRESSION at 0.88/1.00 coverage.
+
+**Known limit.** Only the http agent adapter captures a final answer. A stdio-mode
+agent's stdout is the MCP channel itself, so its answer oracle is UNKNOWN by
+construction — stated here so it is not mistaken for a passing oracle.
+
+**Release re-scope.** README's first paragraph and the package description claimed
+behavioural, task and safety regression detection. Both now describe a recorder with
+EXPERIMENTAL structural mutation and replay, and the README states limitation 19's
+result directly — reached the right file every time, coverage 0.88, zero correct
+answers — rather than behind a link, since that is the fact a prospective user most
+needs before trusting a verdict.
+
+Still open, per PHASES R0.5: the content-preserving fixture spike. Dependable
+task-regression claims return only after it passes end to end.
+
+---
+
 ## R0 rejected as a faithful response substitute — narrowly, and with the experiment recorded
 
 The R0 spike (docs/SPEC.md §15 limitation 19) ran, and the honest result is a rejection
