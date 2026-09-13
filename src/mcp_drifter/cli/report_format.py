@@ -245,6 +245,34 @@ def render_run_result(result: RunResult) -> str:
     lines.append(f"CONFIDENCE  baseline request-match coverage {baseline_fid} ({_provenance_str(result.baseline.provenance_breakdown)})")
     lines.append(f"            mutated  request-match coverage {mutated_fid} ({_provenance_str(result.mutated.provenance_breakdown)})")
     lines.append("            (calls resolving against recordings — NOT response fidelity, NOT task success)")
+    # Separate from the provenance parenthetical above, which files authored
+    # bodies before looking at the tier and so hid adaptation entirely
+    # (docs/SPEC.md §15 limitations 21/22).
+    lines.append(
+        f"REQUEST MATCH  baseline {_provenance_str(result.baseline.match_tier_breakdown)}"
+        f"  ·  mutated  {_provenance_str(result.mutated.match_tier_breakdown)}"
+    )
+    mutated_tiers = result.mutated.match_tier_breakdown or {}
+    mutated_hits = sum(mutated_tiers.values())
+    if mutated_tiers.get("inverse"):
+        lines.append(
+            f"            {mutated_tiers['inverse']} of {mutated_hits} mutated call(s) used the mutation's "
+            f"renamed arguments (inverse tier)"
+        )
+        others = mutated_hits - mutated_tiers["inverse"]
+        if others:
+            # E2's report read "4 of 8": the other four were `find_order`, which
+            # the mutation never renamed. Without this line that reads as half
+            # the calls failing to adapt.
+            lines.append(
+                f"            the other {others} matched without translation: arguments the mutation did "
+                f"not rename"
+            )
+    elif any(entry.inverse for entry in result.mutation_log):
+        lines.append(
+            "            warning: mutated calls did not exercise any renamed argument; "
+            "this verdict does not test the rename"
+        )
     if result.scheduling_note:
         for chunk in textwrap.wrap(f"scheduling: {result.scheduling_note}", width=66):
             lines.append(f"            {chunk}")

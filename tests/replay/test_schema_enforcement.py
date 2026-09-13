@@ -48,6 +48,11 @@ RENAMED_SCHEMA = {
     "additionalProperties": False,
 }
 
+PERMISSIVE_RENAMED_SCHEMA = {
+    "type": "object",
+    "properties": {"customerId": {"type": "string"}},
+}
+
 
 @pytest.fixture
 def corpus(tmp_path):
@@ -113,6 +118,27 @@ async def test_an_unadapted_call_using_the_old_name_is_rejected(corpus):
     outcome = await _call(corpus, {"customer_id": "C123"})
 
     assert "error" in outcome, "an unadapted call resolved -- the mutation has no teeth"
+    assert outcome["error"].error.code == REPLAY_INVALID_ARGS_CODE
+
+
+@pytest.mark.anyio
+async def test_old_name_is_rejected_even_when_served_schema_allows_unknown_properties(corpus):
+    """A rename removes the old name from the contract even if JSON Schema's
+    default additionalProperties behavior would otherwise accept it."""
+    tools_served = [ToolDescriptor(name="get_customer", description="d", input_schema=PERMISSIVE_RENAMED_SCHEMA)]
+    inverse = {"get_customer": {"customerId": "customer_id"}}
+    outcome: dict = {}
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_replay_proxy, *server_streams, corpus, SERVER, tools_served, None, frozenset(), inverse)
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                try:
+                    outcome["result"] = await session.call_tool("get_customer", {"customer_id": "C123"})
+                except MCPError as exc:
+                    outcome["error"] = exc
+            tg.cancel_scope.cancel()
+
     assert outcome["error"].error.code == REPLAY_INVALID_ARGS_CODE
 
 

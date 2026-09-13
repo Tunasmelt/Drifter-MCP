@@ -6,6 +6,56 @@ not just a diff.
 
 ---
 
+## Real-server findings A–C fixed; authenticated-server boundary defined
+
+S2 exposed that a schema-invalid first guess followed by a correct retry was excluded as
+if replay had failed. `ToolCall.fault_code` now records the JSON-RPC code (nullable for old
+records), and served-contract rejection `-31003` is excluded from replay-availability
+coverage. The attempt remains in the trajectory and task evaluation still determines
+whether the agent recovered.
+
+The git probe exposed two more gaps. Replay now rejects a parameter name retired by an
+active rename even if the served schema allows unknown properties, preventing an old
+optional name from resolving against the original recording. Reports now warn when no
+successful mutated call used any renamed argument, so a task that missed the mutation is
+identified rather than presented as evidence about it.
+
+Authenticated MCP is scoped separately. Near-term explicit credentials must be supplied
+by environment reference and never persisted. Standards-based remote support requires an
+OAuth client with discovery, PKCE, resource indicators, refresh and secure storage. Host
+credentials from Claude.ai or an IDE are not copied or passed through; native integrations
+must use deliberate host delegation and visible consent. Auth tests use local fixtures or
+disposable read-only accounts, never production-capable email/payment/deploy tools.
+
+---
+
+## Other real servers; the report shows adaptation
+
+Recorded as docs/SPEC.md §15 limitation 23.
+
+**Report.** `BaselineResult.match_tier_breakdown` counts confirmed hits by request-match
+tier, independently of content provenance. `render_run_result` prints a REQUEST MATCH
+line per arm; when mutated calls resolved at `inverse` it says how many used renamed
+arguments, and it explains any exact-tier share. Red first (4 tests failed on the missing
+field). One test initially built a run whose coverage (0.50) was below the floor, so that
+run would have been excluded before tiers were counted; the test was corrected to 0.75.
+Re-rendered from disk, S1, S2 and E2 now show the adaptation their records contained.
+
+**Servers.** S1, `mcp-server-time`, and S2, the Anthropic Economic Index over `url` mode,
+were each pre-registered and each reproduced adaptation to a required-parameter rename.
+S2's oracle value came from the real response and was fixed before the run. Deterministic
+probes: `server-memory` was refused as a no-op on a real server; `mcp-server-git`
+exposed two blind spots (an optional-parameter rename on a permissive schema, and a
+rename on an argument the task never sends). S2 exposed a third: request-match coverage
+excluded a run in which the agent recovered from its own schema-rejected guess. Each is
+an open PHASES item.
+
+**Prediction I got wrong.** Before the git probe I wrote that `parameter_rename` would
+rename `git_log.max_count`. It renames the alphabetically first eligible property,
+`end_timestamp`. The probe was re-run sending that parameter to test the actual question.
+
+---
+
 ## E2 evidence bundled; release-gate conditions run from a fresh wheel; rebuilt reports restore the mutation
 
 **E2 bundle.** `tests/fixtures/experiments/limitation_21_e2` holds the corpus, both

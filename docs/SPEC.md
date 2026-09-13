@@ -1247,7 +1247,8 @@ when*.
     **E1 (compatibility detection), deterministic, in CI.** `tests/cli/test_release_gate_e1.py`:
     scripted client bound to `get_order(order_id)` against `tests/fixtures/orders_server.py`
     under `parameter_rename` (renames exactly `get_order.order_id` -> `orderId`). Control
-    3/3 valid, TASK PASS. Mutated 3/3 excluded at coverage 0.50, TASK UNKNOWN, each
+    3/3 valid, TASK PASS. Mutated 3/3 valid at replay-availability coverage 1.00,
+    TASK FAIL, each
     `get_order` rejected with `-31003` read from the raw mirror. As pre-registered.
 
     **E2 (adaptation), live, pre-registered before running** (workspace
@@ -1317,3 +1318,75 @@ when*.
     repository; the `run` itself used the wheel from before the report fix, and only the
     rebuild used the fixed wheel (the run path was not changed by the fix). Limitation
     21's reporting gap still applies: nothing in this report shows the agent adapted.
+
+23. **First runs against other real MCP servers: adaptation reproduces on two, and
+    three new limits appear. Narrow: one task per server, 4 runs per arm.**
+
+    **What Drifter can front.** Local stdio servers and unauthenticated Streamable HTTP
+    endpoints. `url` mode sends no authentication, so the claude.ai-authenticated
+    connectors cannot be proxied. Several of them are also write-capable (email,
+    payments, deploys) and were deliberately not used.
+
+    **S1, `mcp-server-time` (local; non-strict schema).** Pre-registered. `parameter_rename`
+    renamed `convert_time.source_timezone` (required) to `sourceTimezone`. Two live observe
+    sessions and a fixture authored from a real response; the answer is `01:00`. Baseline
+    4/4 valid with TASK PASS; mutated 4/4 valid with TASK PASS. Every mutated call sent
+    `sourceTimezone` at the `inverse` tier. As predicted.
+
+    **S2, Anthropic Economic Index (remote, public, read-only, `url` mode; strict schema,
+    `additionalProperties: false`).** Pre-registered, with the oracle `1.91` fixed from the
+    real response before the run. `country_code` (required) was renamed to `countryCode`.
+    Baseline 4/4 valid with TASK PASS; mutated 3/4 valid with TASK PASS 3/3; every valid
+    mutated call used `countryCode` at the `inverse` tier. Acceptance (at least 3 valid,
+    every valid run PASS) was met.
+
+    **Finding A: self-correction is penalized.** The excluded S2 run first sent `country`,
+    was rejected with `-31003`, retried with `countryCode`, and answered 1.91 correctly.
+    It was excluded at coverage 0.50, because request-match coverage counts an agent's own
+    schema-rejected attempt as a replay miss. A real recovery was scored as a harness
+    failure. Coverage conflates "replay could not answer" with "the agent sent an invalid
+    call".
+
+    **Finding B: renaming an optional parameter on a permissive schema goes undetected.**
+    Deterministic probe, `mcp-server-git`. `parameter_rename` picks the alphabetically first
+    eligible property, which for `git_log` is `end_timestamp` (optional). An old-contract
+    client that sends `end_timestamp` passes served-schema validation (no
+    `additionalProperties: false`), matches the recording exactly, and gets NO_REGRESSION
+    3/3. A real server under that contract would most likely ignore the unknown argument
+    and silently drop the filter. Replay cannot see that, and served the old-contract
+    response.
+
+    **Finding C: a mutation on a called tool can still miss the task.** In the same probe,
+    before `end_timestamp` was sent, the task called `git_log` with `repo_path` and
+    `max_count` only. The rename landed on the called tool but on an argument never sent,
+    and NO_REGRESSION was correct yet uninformative. The report does not say that no sent
+    argument was touched.
+
+    **Real-server refusal.** `server-memory` has no snake_case property.
+    `parameter_rename` was refused before any run, with no run directory created, as the
+    no-op check intends.
+
+    **Report fixed during this batch.** A REQUEST MATCH line now shows each arm's match
+    tiers separately from content provenance, and states how many mutated calls used
+    renamed arguments. Re-rendered from disk: S1 and S2 show mutated `inverse` 100%; E2
+    shows `exact 50% · inverse 50%`, with the exact share explained (`find_order` was
+    never renamed).
+
+    **Findings A–C fixed after the real-server run.** Protocol error code is now retained
+    as nullable `ToolCall.fault_code` (historical records remain unknown). A served-schema
+    rejection (`-31003`) is agent contract behavior rather than replay unavailability, so
+    it no longer lowers request-match coverage; a later successful retry can remain a valid
+    run and its task result decides success. Under `parameter_rename`, use of a retired old
+    name is rejected before lookup even when the served JSON Schema permits additional
+    properties. Finally, a parameter-rename report with no inverse-tier hit warns that no
+    successful call exercised the rename.
+
+    **Authenticated servers and native hosts.** HTTP MCP authorization is a client
+    responsibility. Drifter must either act as an explicit OAuth client (discovery,
+    authorization code + PKCE, audience-bound tokens, refresh and secure storage) or accept
+    credentials deliberately supplied for a test environment. It must not copy or discover
+    bearer tokens from Claude.ai, an IDE, or another MCP host: those credentials belong to
+    that client and token passthrough breaks the authorization boundary. For stdio servers,
+    credentials belong in the spawned process environment. For IDE/native use, the safe
+    integration is host-assisted delegation with visible consent and least-privilege,
+    short-lived credentials. Auth state may be recorded only as non-secret metadata.

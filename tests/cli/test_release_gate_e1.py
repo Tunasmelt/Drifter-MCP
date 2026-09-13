@@ -128,12 +128,13 @@ def test_e1_old_contract_client_is_detected_by_exclusion_with_the_expected_reaso
     assert result.baseline.baseline_fidelity == 1.0
     assert result.baseline_task.verdict == "PASS"
 
-    # Mutated: detected by exclusion, as the arithmetic predicted.
+    # Mutated: replay stayed available; the client violated the served
+    # contract and the task oracle detects that failure.
     assert result.mutated.total_runs == 3
-    assert result.mutated.valid_runs == 0
-    assert len(result.mutated.excluded_runs) == 3
-    assert all("0.50" in run.reason for run in result.mutated.excluded_runs)
-    assert result.mutated_task.verdict == "UNKNOWN"
+    assert result.mutated.valid_runs == 3
+    assert result.mutated.baseline_fidelity == 1.0
+    assert result.mutated.excluded_runs == []
+    assert result.mutated_task.verdict == "FAIL"
 
     # ...and for the expected reason, from the raw mirror.
     sessions = sorted((runs / "mutated").glob("*.jsonl"))
@@ -141,6 +142,7 @@ def test_e1_old_contract_client_is_detected_by_exclusion_with_the_expected_reaso
     for session in sessions:
         calls = [c for c in read_session(session) if isinstance(c, ToolCall)]
         assert [(c.tool_name, c.fault) for c in calls] == [("find_order", False), ("get_order", True)]
+        assert calls[1].fault_code == REPLAY_INVALID_ARGS_CODE
         assert calls[1].arguments == {"order_id": ORDER_ID}
         frame = _raw_frame(raw / "mutated" / f"{session.stem}.frames", calls[1].raw_frame_offset)
         assert frame["error"]["code"] == REPLAY_INVALID_ARGS_CODE

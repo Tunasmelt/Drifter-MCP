@@ -416,13 +416,19 @@ def build_replay_server(
         # passed down -- replay_store.lookup has no mutation-specific
         # knowledge of its own (see its own docstring), it just applies
         # whatever {new_name: old_name} mapping it's handed.
-        violation = _schema_violation(params.name, arguments)
+        param_map = inverse_map.get(params.name) if inverse_map else None
+        old_names = set(param_map.values()) if param_map else set()
+        retired = sorted(old_names.intersection(arguments))
+        violation = (
+            f"retired parameter name(s) are not part of the served contract: {', '.join(retired)}"
+            if retired
+            else _schema_violation(params.name, arguments)
+        )
         if violation is not None:
             message = f"invalid arguments for {server_name}.{params.name}: {violation}"
             _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_INVALID_ARGS_CODE, message=message)))
             raise MCPError(code=REPLAY_INVALID_ARGS_CODE, message=message)
 
-        param_map = inverse_map.get(params.name) if inverse_map else None
         hit = replay_store.lookup(server_name, params.name, arguments, param_map)
         if hit is None:
             if params.name in synthetic_tool_names:

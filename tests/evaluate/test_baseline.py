@@ -13,6 +13,7 @@ import pytest
 
 from mcp_drifter.evaluate.baseline import _NULL_HASH_REASON, ExcludedRun, aggregate_baseline_runs, run_baseline
 from mcp_drifter.record.calibration import Calibration
+from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.schema import Environment, SessionStart, ToolCall
 
 
@@ -491,6 +492,30 @@ def test_low_fidelity_run_is_excluded_with_its_own_reason(tmp_path):
     assert "fidelity 0.50 below floor 0.70" == excluded.reason
 
     assert result.baseline_fidelity == 1.0  # only the clean run's fidelity is averaged in
+
+
+def test_schema_rejection_does_not_reduce_replay_availability_coverage(tmp_path):
+    """An invalid first guess followed by an exact recovery is agent
+    behavior; replay successfully handled both requests."""
+    path = _write_session_with_faults(tmp_path, "recovered", [("lookup", True), ("lookup", False)])
+    records = [r for r in read_session(path) if isinstance(r, ToolCall)]
+    records[0].fault_code = -31003
+    path.write_text("\n".join(r.model_dump_json() for r in [
+        SessionStart(session_id="recovered", seq=0, started_at="2026-08-25T00:00:00Z",
+                     environment=Environment(tool_manifest_hash="h"), raw_frame_offset=0),
+        *records,
+    ]) + "\n", encoding="utf-8")
+
+    result = aggregate_baseline_runs("task", [path])
+
+    assert result.valid_runs == 1
+    assert result.baseline_fidelity == 1.0
+
+
+def test_historical_fault_without_code_remains_a_replay_miss(tmp_path):
+    path = _write_session_with_faults(tmp_path, "old", [("lookup", True), ("lookup", False)])
+    result = aggregate_baseline_runs("task", [path])
+    assert result.valid_runs == 0
 
 
 def test_baseline_fidelity_of_zero_is_not_confused_with_no_data(tmp_path):

@@ -281,6 +281,11 @@ class ToolCall(BaseModel):
     # tests/cli/test_stats.py's pre-fault-field test, written and shown to
     # fail against that naive version before this one replaced it.
     fault: bool | None = None
+    # JSON-RPC error code for a protocol-level fault. Nullable for every
+    # historical record written before this field existed. Replay uses this
+    # to distinguish an agent's served-schema violation (-31003) from a real
+    # replay miss or transport failure.
+    fault_code: int | None = None
     result_provenance: ResultProvenance = "real"
     references: list[DataFlowReference] = []
     # Inverse mapping consumed by replay's F-12 key resolution when this

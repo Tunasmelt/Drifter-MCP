@@ -223,6 +223,16 @@ class BaselineResult:
     # `valid_runs == 0`, same convention as the other fields above.
     provenance_breakdown: dict[str, int] | None = None
 
+    # Request-match TIER across every confirmed hit in the valid runs, counted
+    # independently of where the response content came from. The provenance
+    # breakdown above files an authored body under `authored_fixture` before
+    # looking at the tier, so a mutated arm whose agent sent the renamed
+    # parameter (`inverse`) read identically to one that changed nothing
+    # (docs/SPEC.md §15 limitations 21/22). Keys "exact"/"inverse"/"semantic".
+    # Misses, faults and synthesized responses carry no tier and are not
+    # counted. `None` exactly when `valid_runs == 0`.
+    match_tier_breakdown: dict[str, int] | None = None
+
     # The sessions that actually counted — every run that passed all
     # exclusion checks, in run order. Added for F-24's task assertions,
     # which must be evaluated ONLY over valid runs: a run excluded because
@@ -318,7 +328,15 @@ def _run_fidelity(records: list, semantic_weight: float = 1.0) -> float:
     what's being measured, matching the existing "empty path is a valid
     variant" precedent.
     """
-    calls = [r for r in records if isinstance(r, ToolCall) and r.result_provenance != "synthetic"]
+    # -31003 is a served-contract rejection: replay answered correctly and
+    # the agent may recover on a later attempt. It is contract-compliance
+    # evidence, not a replay-availability miss, so it is outside this metric.
+    calls = [
+        r for r in records
+        if isinstance(r, ToolCall)
+        and r.result_provenance != "synthetic"
+        and r.fault_code != -31003
+    ]
     if not calls:
         return 1.0
     weighted_hits = 0.0
@@ -381,6 +399,25 @@ def _provenance_counts(records: list) -> dict[str, int]:
     return counts
 
 
+_MATCH_TIERS = ("exact", "inverse", "semantic")
+
+
+def _match_tier_counts(records: list) -> dict[str, int]:
+    """Counts confirmed hits by request-match tier, whatever their content
+    provenance. A hit is `fault is False` and not synthesized; `match_tier is
+    None` on a hit is `exact`, for the same pre-field reason `_run_fidelity`
+    gives."""
+    counts = dict.fromkeys(_MATCH_TIERS, 0)
+    for call in records:
+        if not isinstance(call, ToolCall) or call.fault is not False:
+            continue
+        if call.result_provenance in ("synthetic", "synthetic_miss"):
+            continue
+        tier = call.match_tier if call.match_tier in _MATCH_TIERS else "exact"
+        counts[tier] += 1
+    return counts
+
+
 def _merge_provenance_counts(counts_list: list[dict[str, int]]) -> dict[str, int]:
     merged = dict.fromkeys(_PROVENANCE_BUCKETS, 0)
     for counts in counts_list:
@@ -417,6 +454,7 @@ def aggregate_baseline_runs(
     valid_paths: list[tuple[str, ...]] = []
     valid_fidelities: list[float] = []
     valid_provenance_counts: list[dict[str, int]] = []
+    valid_tier_counts: list[dict[str, int]] = []
     valid_session_paths: list[Path] = []
     excluded_runs: list[ExcludedRun] = list(pre_excluded)
 
@@ -450,6 +488,7 @@ def aggregate_baseline_runs(
         valid_paths.append(_tool_path(records))
         valid_fidelities.append(fidelity)
         valid_provenance_counts.append(_provenance_counts(records))
+        valid_tier_counts.append(_match_tier_counts(records))
         valid_session_paths.append(session_path)
 
     if not valid_paths:
@@ -498,6 +537,7 @@ def aggregate_baseline_runs(
         baseline_fidelity=baseline_fidelity,
         excluded_runs=excluded_runs,
         provenance_breakdown=_merge_provenance_counts(valid_provenance_counts),
+        match_tier_breakdown={t: sum(c[t] for c in valid_tier_counts) for t in _MATCH_TIERS},
         valid_session_paths=tuple(valid_session_paths),
     )
 

@@ -289,7 +289,7 @@ class SessionRecorder:
             if pending is not None and pending["method"] == "tools/call":
                 self._ensure_session_start_written()
                 duration_ms = (time.monotonic() - pending["requested_at"]) * 1000
-                self._write_tool_call_fault(pending["params"], offset, duration_ms)
+                self._write_tool_call_fault(pending["params"], offset, duration_ms, rpc.error.code)
 
     def _write_tool_call(
         self,
@@ -344,7 +344,9 @@ class SessionRecorder:
             )
         )
 
-    def _write_tool_call_fault(self, params: dict, raw_frame_offset: int, duration_ms: float) -> None:
+    def _write_tool_call_fault(
+        self, params: dict, raw_frame_offset: int, duration_ms: float, fault_code: int | None = None
+    ) -> None:
         """Writes a ToolCall record for a `tools/call` that failed at the
         protocol level (JSONRPCError) instead of producing a
         CallToolResult. Distinct from `_write_tool_call`'s `is_error`
@@ -378,6 +380,7 @@ class SessionRecorder:
                 result_shape=None,
                 duration_ms=duration_ms,
                 fault=True,
+                fault_code=fault_code,
                 references=outcome.references,
                 raw_frame_offset=raw_frame_offset,
             )

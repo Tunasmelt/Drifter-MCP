@@ -989,23 +989,12 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
     old names. A prompt can be ignored or overridden by the model, so a failure under
     mutation could not be attributed to the mutation. The expected reason is that the
     old parameter name is rejected by served-schema validation (`-31003`) on the renamed
-    tool. That rejection is recorded as a faulted call, which counts as a miss in
-    request-match coverage. Under CURRENT semantics, TASK is evaluated only over
-    sessions that survive exclusion, so the arm's verdict depends on arithmetic, not
-    intent. With `k` rejected calls out of `n`, coverage is `(n-k)/n` against the 0.70
-    floor.
-    - Below the floor, the mutated runs are excluded and TASK is UNKNOWN; the exclusion
-      is itself the detection evidence.
-    - At or above the floor, the runs stay valid and the answer oracle decides; `calls`
-      alone cannot, because it counts a faulted call as made (see blocker 4).
-
-    The client's trajectory, and therefore `n` and `k`, is fixed before any run, and so
-    is the expected verdict it implies. "TASK FAIL follows" is not assumed. Acceptance:
-    unmutated control 3/3 valid with TASK PASS; mutated 3/3 runs whose renamed-tool
-    call is rejected with `-31003`; and mutated coverage, validity and TASK verdict
-    exactly as that arithmetic predicts. The client is deterministic, so any other
-    outcome is a defect, not noise. Evaluating expected protocol failures as task
-    failures would be a separate design decision, not part of this experiment.
+    tool. That rejection is recorded as a faulted call with `fault_code=-31003`, but is
+    outside request-match coverage: replay enforced the contract successfully. TASK is
+    evaluated over the surviving run and establishes whether the agent recovered.
+    Acceptance: unmutated control 3/3 valid with TASK PASS; mutated 3/3 valid at replay-
+    availability coverage 1.00 with TASK FAIL, each renamed-tool call rejected with
+    `-31003`. The client is deterministic, so any other outcome is a defect, not noise.
   - *E2, adaptation.* The subject is the real dogfood agent (claude-code through the
     http adapter), allowed to read the served `tools/list`. Expected: it calls with the
     new parameter name, inverse resolution binds that call to the authored fixture, and
@@ -1036,7 +1025,7 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
      corpus recorded live through `drifter observe` from `tests/fixtures/orders_server.py`,
      an authored fixture and the scripted `orders_old_contract_client.py`. Every
      pre-registered outcome is asserted: control 3/3 valid with TASK PASS; mutated 3/3
-     excluded at coverage 0.50 with TASK UNKNOWN; each run's `get_order` faulted with
+     valid at replay-availability coverage 1.00 with TASK FAIL; each run's `get_order` faulted with
      `-31003`, read from the raw mirror frame at its `raw_frame_offset`; and the audit
      log shows the rename landed only on `get_order`. Checked red: with a client that
      reads the served schema, the test fails at `mutated.valid_runs == 0`. Because the
@@ -1051,10 +1040,43 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
   for limitation 20. Done: `tests/fixtures/experiments/limitation_21_e2` (27 files,
   hashed manifest) and `tests/evaluate/test_limitation_21_e2_evidence.py` (10 tests,
   checked red on baseline, mutated and rename claims).
-- [ ] **Report shows adaptation.** E2's report cannot be told apart from "the mutation
+- [x] **Report shows adaptation.** E2's report cannot be told apart from "the mutation
   had no effect": CONFIDENCE's `authored_fixture` bucket takes precedence over match
   tier and hides the `inverse` resolutions. Surface match tier per arm, independently of
-  content provenance.
+  content provenance. Done: `BaselineResult.match_tier_breakdown` and a REQUEST MATCH
+  line (docs/SPEC.md §15 limitation 23).
+- [x] **Coverage must not penalize self-correction** (limitation 23, finding A). Separate
+  agent-sent schema rejections from replay misses in request-match coverage, or report
+  recovered runs explicitly rather than excluding them. Done: nullable `fault_code`
+  records `-31003`; served-schema rejections are excluded from replay-availability
+  coverage while remaining in the trajectory and task verdict.
+- [x] **Optional-parameter renames on permissive schemas** (finding B). Either prefer a
+  required property in `parameter_rename`, or have replay treat an old parameter name as a
+  contract violation when the tool has a recorded inverse, and state which. Done: replay
+  rejects retired names explicitly even when JSON Schema permits additional properties.
+- [x] **Say when a mutation touched no argument the task sent** (finding C). Done: a
+  parameter-rename report with no inverse-tier hit warns that the verdict did not exercise
+  the rename.
+- [ ] **Bundle S1/S2 evidence** (`C:\Users\user\drifter-servers`) as for E2.
+
+### Authenticated and host-managed MCP servers
+
+- [ ] Add explicit credential injection for user-owned test environments: stdio
+  environment variables and HTTP headers whose values are read from named environment
+  variables at runtime. Never persist resolved values in config, sessions, raw mirrors,
+  reports, fixtures, or mutation audits.
+- [ ] Add MCP OAuth 2.1 client support for protected Streamable HTTP servers: protected
+  resource and authorization-server discovery, authorization code + PKCE, resource
+  indicators, refresh, scope escalation, and OS credential-store persistence. Treat this
+  as a client feature with an interactive login command, not token passthrough from an IDE
+  or Claude host.
+- [ ] Add a host-assisted adapter for IDE/native development use. The host remains the
+  OAuth client and consent surface; Drifter receives a deliberately delegated connection
+  or short-lived credential. Do not read Claude, VS Code, or another client's private token
+  store. Record auth state only as non-secret metadata (method/scopes/audience/expiry class).
+- [ ] Authenticated-server tests use a local OAuth fixture and read-only scopes. Write-
+  capable tools require an isolated disposable account plus the existing safety policy;
+  no email, payment, deploy, or production mutation in release-gate tests.
 - [x] **Remaining release-gate conditions** not exercised by E1/E2: fresh wheel installed
   outside the repo, replay with the upstream server unavailable, and a byte-identical
   report rebuild. Done (docs/SPEC.md §15 limitation 22). Fresh wheel in a clean venv ran
@@ -1074,8 +1096,9 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
   **E1 trajectory, fixed now.** Two calls against `tests/fixtures/orders_server.py`:
   `find_order(customer)` then `get_order(order_id)`. Under `parameter_rename` only
   `order_id` is renamed, so the scripted old-contract client has `k=1` rejected call out of
-  `n=2`. Coverage is 0.50, below the 0.70 floor. Pre-registered mutated outcome: 3/3 runs
-  excluded, TASK UNKNOWN, and each excluded run's `get_order` call rejected with `-31003`,
+  `n=2`. The rejected attempt is contract-compliance evidence, outside replay-availability
+  coverage. Current mutated outcome: 3/3 runs valid at coverage 1.00, TASK FAIL, and each
+  mutated run's `get_order` call rejected with `-31003`,
   read from the raw mirror (`error.code` survives redaction). Control: 3/3 valid, TASK
   PASS.
 - [ ] **Fixture authoring and maintenance story.** Limitation 20's bodies came from files

@@ -314,6 +314,7 @@ def test_fault_response_writes_a_tool_call_record_distinct_from_is_error(tmp_pat
 
     assert call.tool_name == "add"
     assert call.fault is True
+    assert call.fault_code == -32601
     assert call.is_error is None  # not applicable, not "no error" — no CallToolResult existed
     assert call.result_shape is None
     assert call.duration_ms is not None and call.duration_ms >= 0
