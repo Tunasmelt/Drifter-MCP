@@ -102,6 +102,7 @@ from mcp_drifter.record.reader import read_session
 import jsonschema
 
 from mcp_drifter.replay.corpus_facts import CorpusFacts, successor_values
+from mcp_drifter.replay.authored_responses import AuthoredResponses
 from mcp_drifter.replay.synthesis import synthesize_structured_content
 from mcp_drifter.record.schema import MATCH_TIER_MARKER_KEY, SYNTHETIC_RESULT_MARKER_KEY, ToolDescriptor, ToolsList
 from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore
@@ -276,6 +277,7 @@ def build_replay_server(
     inverse_map: dict[str, dict[str, str]] | None = None,
     synthesize_on_miss: bool = False,
     corpus_facts: CorpusFacts | None = None,
+    authored_responses: AuthoredResponses | None = None,
 ) -> Server:
     """Builds the `mcp.server.lowlevel.Server` app that answers a session
     entirely from `replay_store`/`tools_served` — extracted out of
@@ -457,14 +459,17 @@ def build_replay_server(
         # call's arguments. When corpus facts are supplied, hand back the
         # values this corpus WITNESSED being used after this exact call.
         # Never invented, never prose: see replay/corpus_facts.py.
+        authored = authored_responses.lookup(params.name, arguments, param_map) if authored_responses else None
         discovered = successor_values(corpus_facts, server_name, params.name, arguments) if corpus_facts else ()
-        result = _synthesize_call_tool_result(hit, discovered)
+        result = authored if authored is not None else _synthesize_call_tool_result(hit, discovered)
         # F-13/F-15: tag the RECORDING-only dict with which tier resolved
         # this HIT, same private-marker-key pattern as
         # SYNTHETIC_RESULT_MARKER_KEY above -- the actual wire response
         # returned to the agent (`result`, below) never carries this key.
         record_result = result.model_dump(mode="json", by_alias=True, exclude_unset=True)
         record_result[MATCH_TIER_MARKER_KEY] = hit.match_tier
+        if authored is not None:
+            record_result[SYNTHETIC_RESULT_MARKER_KEY] = "authored_fixture"
         _emit(Direction.SERVER_TO_AGENT, JSONRPCResponse(jsonrpc="2.0", id=req_id, result=record_result))
         return result
 
@@ -482,6 +487,7 @@ async def run_replay_proxy(
     inverse_map: dict[str, dict[str, str]] | None = None,
     synthesize_on_miss: bool = False,
     corpus_facts: CorpusFacts | None = None,
+    authored_responses: AuthoredResponses | None = None,
 ) -> None:
     """Serves one MCP session over `read_stream`/`write_stream` entirely
     from `replay_store` and `tools_served`. Stream-parameterized (matching
@@ -550,5 +556,5 @@ async def run_replay_proxy(
     same app across many connections instead of one `server.run()` per
     stream pair.
     """
-    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, synthesize_on_miss, corpus_facts)
+    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, synthesize_on_miss, corpus_facts, authored_responses)
     await server.run(read_stream, write_stream, server.create_initialization_options())

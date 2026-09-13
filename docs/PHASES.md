@@ -957,10 +957,15 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
 - [x] **Release re-scope.** README and the package description now claim recording plus
   EXPLICITLY EXPERIMENTAL structural mutation and replay, with limitation 19's result
   stated in the README rather than behind a link.
-- [ ] **Content-preserving fixture spike.** The untested alternative limitation 19 names:
-  explicitly authored fixtures, or a controlled fixture server, evaluated by the same
-  three separated questions (navigation, exclusions, answer oracle). Dependable
-  task-regression claims return only after this passes end to end.
+- [x] **Content-preserving fixture spike.** Explicit YAML response fixtures are kept
+  separate from recorded sessions and bind a complete `CallToolResult` to an exact
+  request already present in the corpus (`--response-fixture`). A controlled HTTP agent
+  passed all three separated checks end to end: it learned the file path from the
+  authored listing, both arms retained 1/1 valid runs at 1.00 request-match coverage,
+  and `answer_matches` accepted the correct `2 data rows` answer. The resulting calls
+  carry `authored_fixture` provenance and cannot become historical replay evidence.
+  This proves the mechanism composes; dependable real-agent claims still require the
+  same test against the Gate 3 dogfood agent and an explicit fixture-maintenance story.
 
 ### R1 — Run lifecycle and recording schema
 

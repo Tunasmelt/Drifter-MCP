@@ -72,6 +72,7 @@ from mcp_drifter.evaluate.baseline import run_baseline
 from mcp_drifter.evaluate.scheduling import run_mutated_adaptively
 from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
 from mcp_drifter.replay.corpus_facts import build_corpus_facts
+from mcp_drifter.replay.authored_responses import AuthoredResponseError, load_authored_responses
 from mcp_drifter.mutate.audit import write_mutation_audit
 from mcp_drifter.mutate.description_update import mutate_tool_manifest
 from mcp_drifter.mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
@@ -166,6 +167,7 @@ def run_mutation_comparison(
     assertions: TaskAssertions | None = None,
     adaptive: bool = True,
     replay_discovered_values: bool = False,
+    response_fixture: Path | None = None,
 ) -> RunResult:
     """Runs the baseline arm, applies `operator` to the manifest, runs
     the mutated arm against the same task and agent, and scores
@@ -214,6 +216,10 @@ def run_mutation_comparison(
     # rebuild the arguments it built live. Off by default -- it changes what
     # the agent sees, so it must be an explicit choice.
     facts = build_corpus_facts(corpus.session_paths, server_name) if replay_discovered_values else None
+    try:
+        authored = load_authored_responses(response_fixture, server_name, corpus.session_paths) if response_fixture else None
+    except AuthoredResponseError as exc:
+        raise ConfigError(str(exc)) from exc
 
     baseline_run_once = budget_limited(
         make_run_once(
@@ -227,6 +233,7 @@ def run_mutation_comparison(
             agent_mode=agent_mode,
             env_var=agent_env_var,
             corpus_facts=facts,
+            authored_responses=authored,
         ),
         tracker,
     )
@@ -281,6 +288,7 @@ def run_mutation_comparison(
             env_var=agent_env_var,
             inverse_map=inverse_map,
             corpus_facts=facts,
+            authored_responses=authored,
         ),
         tracker,
     )
@@ -354,6 +362,7 @@ def run_run(
     adaptive: bool = True,
     force: bool = False,
     replay_discovered_values: bool = False,
+    response_fixture: Path | None = None,
 ) -> RunResult | None:
     """F-31's own "Done when" bar, reframed honestly for what this command
     actually does today (no live MCP server mode exists — see
@@ -476,6 +485,7 @@ def run_run(
         max_wall_time_s=max_wall_time_s,
         adaptive=adaptive,
         replay_discovered_values=replay_discovered_values,
+        response_fixture=response_fixture,
     )
     output_stream.write(render_run_result(result))
     return result

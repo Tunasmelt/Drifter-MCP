@@ -82,6 +82,12 @@ def test_force_defaults_off(monkeypatch):
     assert captured["force"] is False
 
 
+def test_response_fixture_reaches_run_run(monkeypatch):
+    captured = _run_cli(monkeypatch, [*_BASE, "--response-fixture", "responses.yaml"])
+
+    assert captured["response_fixture"] == Path("responses.yaml")
+
+
 def test_every_registered_run_flag_is_forwarded(monkeypatch):
     """The general guard, so the next flag added cannot repeat this.
 

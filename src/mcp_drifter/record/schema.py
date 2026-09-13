@@ -54,7 +54,7 @@ ClassificationSource = Literal[
 # every call exclude every call, compute fidelity 1.0 vacuously, and
 # clear the floor on no evidence -- the DEC-027 defect via a new route.
 # See tests/evaluate/test_synthetic_miss_fidelity.py.
-ResultProvenance = Literal["real", "synthetic", "synthetic_miss"]
+ResultProvenance = Literal["real", "synthetic", "synthetic_miss", "authored_fixture"]
 
 # A private key a synthetic-response producer (e.g. replay_proxy.py's
 # tool_addition support, F-14-scoped-to-tool_addition) can set on the

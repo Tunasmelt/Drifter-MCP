@@ -6,6 +6,31 @@ not just a diff.
 
 ---
 
+## Content-preserving authored response fixture spike
+
+R0.5's remaining spike is implemented behind `drifter run --response-fixture`. The
+fixture is a separate, explicit YAML document that binds a complete MCP
+`CallToolResult` to an exact `(server, tool, arguments)` request already present in the
+recorded corpus. It does not change `drifter observe`, the session JSONL payload policy,
+or shape-only recording. Unknown and duplicate requests fail preflight; semantic
+near-matches never receive authored content. A known parameter rename may use the same
+fixture through its exact inverse mapping.
+
+The result source is persisted as `authored_fixture`, distinct from both `real` and
+synthetic responses. `ReplayStore` already indexes only `real` calls, so a run served
+from an authored fixture cannot later become historical evidence merely because it was
+written to a session file.
+
+The controlled end-to-end test deliberately makes the second call depend on the first
+response: an HTTP agent reads a path from an authored directory listing, reads an
+authored CSV at that path, and reports `2 data rows`. Both original and
+description-mutated arms retain 1/1 valid runs at 1.00 request-match coverage and pass
+the trajectory plus `answer_matches` oracle. This closes the mechanism/composition
+spike, not the real-agent release gate: the Gate 3 dogfood agent and fixture maintenance
+workflow still need validation before dependable task-regression claims return.
+
+---
+
 ## Outcome oracle and release re-scope — and a false claim in the previous entry
 
 **The previous entry said the oracle and the re-scope were "sequenced in docs/PHASES.md."

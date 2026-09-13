@@ -200,6 +200,28 @@ drifter run --fixture .drifter/runs --server my-server \
             --task-id my-task --prompt "..." --operator description_update
 ```
 
+Content-dependent tasks can opt into an explicitly authored response fixture:
+
+```yaml
+# responses.yaml — test data you review and maintain, never captured by observe
+version: 1
+server: my-server
+responses:
+  - tool_name: read_text_file
+    arguments: {path: /fixtures/readings.csv}
+    result:
+      content:
+        - {type: text, text: "sensor,value\na,10\nb,20\n"}
+      isError: false
+```
+
+Pass it with `--response-fixture responses.yaml`. Every entry must match an exact
+request already present in the recorded corpus; inverse parameter-renames are also
+supported, while semantic matches deliberately receive no authored payload. The file
+may contain sensitive test data, so keep it synthetic or sanitized and review it before
+committing. Calls served this way are recorded with `authored_fixture` provenance and
+cannot later be indexed as observed server responses.
+
 `--fixture` takes as many recorded sessions as you have — individual files,
 directories of them, or a mix — and replays from all of them at once. **Point it at
 your whole corpus, not one session.** A real agent explores, so any single recording
@@ -211,7 +233,7 @@ anything:
 REPLAY CORPUS  20 of 83 session(s) recorded against 'filesystem', 15 call(s) indexed
 REPLAY COVERAGE  ~27% projected (exact 4, semantic 0, missed 11 of 15 calls
                  across 5 sessions, leave-one-out)
-                 WARNING: below the 0.70 fidelity floor — most runs are likely to be
+                 WARNING: below the 0.70 coverage floor — most runs are likely to be
                  EXCLUDED and the verdict to come back UNKNOWN.
                  worst-covered tools:
                    list_allowed_directories: 0% (1/1 calls unresolved)
