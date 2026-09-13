@@ -1,0 +1,2 @@
+readings.csv has a header row (`alpha,beta,gamma`) followed by **2 data rows** (`1,2,3` and `4,5,6`).
+

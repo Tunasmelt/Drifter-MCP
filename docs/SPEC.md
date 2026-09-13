@@ -1184,11 +1184,25 @@ when*.
     bodies authored from the controlled workspace files, listing text in the server's
     own `[DIR]`/`[FILE]` format, one level at a time. Experiments `fx-off` (shape-only
     control) and `fx-on` (`--response-fixture`), fresh directories, same wheel, corpus,
-    authored task, and oracle (`calls: [read_text_file]`, `answer_matches: '\b2\b'`),
-    `--repeats 4`, operator `description_update`.
+    authored task, and oracle (`calls: [read_text_file]`, `answer_matches: '\b2\b'` at run
+    time), `--repeats 4`, operator `description_update`.
 
-    **Control (`fx-off`).** Baseline 0/4 valid (0.67/0.50/0.50/0.57, all below the
-    floor); mutated arm skipped; TASK UNKNOWN (no valid run to evaluate). Navigation 0/4:
+    **Oracle tightened after the fact.** `\b2\b` accepts any incidental `2`, which is
+    broader than the claim "2 data rows". All 12 stored answers were re-scored, with no
+    new runs, against `(?i)\b(?:2|two)\s+data\s+rows?\b`; every verdict was unchanged.
+
+    **Evidence is committed.** `tests/fixtures/experiments/limitation_20` holds the
+    corpus, every run's shape-only records and captured answer, the authored fixture,
+    the harness and a hashed manifest, with the workspace root normalized to
+    `WORKSPACE`. `tests/evaluate/test_limitation_20_evidence.py` recomputes every claim
+    below from those records with Drifter's own analysis code.
+
+    **Control (`fx-off`) — what it establishes, and what it does not.** It establishes
+    that shape-only replay could not support this content-dependent task. It is NOT a
+    baseline-versus-mutated comparison: the baseline failed, so scheduling never ran
+    the mutated arm, and fx-off measured no mutation effect. The only mutation
+    comparison in this experiment is `fx-on`. Baseline 0/4 valid (0.67/0.50/0.50/0.57,
+    all below the floor); mutated arm skipped; TASK UNKNOWN (no valid run to evaluate). Navigation 0/4:
     every run listed the root, received an empty listing, never discovered `data/`,
     guessed `drifter-dogfood\readings.csv`, and missed — limitation 17 reproduced.
     Answers 0/4 correct; all four asked the user to confirm the file location or grant

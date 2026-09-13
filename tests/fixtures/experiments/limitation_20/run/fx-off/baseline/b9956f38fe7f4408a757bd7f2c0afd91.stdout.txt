@@ -1,0 +1,6 @@
+Based on the filesystem MCP tools: `list_directory` on the allowed directory (`WORKSPACE`) returned an empty listing — there are no files in it, and there is no `readings.csv` present. Attempts to read `readings.csv` directly failed since the file doesn't exist there.
+
+
+
+I can't report a row count because the file isn't present in the allowed directory. Could you confirm the file's location, or place `readings.csv` in `WORKSPACE`?
+

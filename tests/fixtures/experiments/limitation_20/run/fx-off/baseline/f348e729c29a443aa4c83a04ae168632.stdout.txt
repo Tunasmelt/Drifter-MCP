@@ -1,0 +1,6 @@
+The filesystem MCP tool calls are either returning empty results or "replay MISS" errors for every path I try (including the working directory itself), and `list_allowed_directories` reported no allowed directories. This means I can't determine the correct path to use, and the tool isn't functioning as expected in this environment.
+
+
+
+Could you tell me the exact path `readings.csv` is located at, or confirm what the filesystem MCP server's allowed root directory should be? Without that, I can't proceed via these tools.
+

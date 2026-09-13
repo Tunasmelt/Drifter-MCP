@@ -1,0 +1,108 @@
+{
+  "experiment": "limitation_20",
+  "spec_reference": "docs/SPEC.md section 15, limitation 20",
+  "identity": {
+    "drifter_wheel": "mcp-drifter 0.1.0 built from f07be3c",
+    "mcp_sdk": "mcp 2.2.0",
+    "agent": "claude-code/2.1.270 via the http adapter (harness/agent_wrapper.py)",
+    "server": "secure-filesystem-server 0.2.0 (@modelcontextprotocol/server-filesystem)",
+    "recorded": "2026-09-13"
+  },
+  "harness_status": "Archived harness sources, not turnkey reproduction scripts. WORKSPACE must be replaced with a real path, and author_fixture.py / run_ab.sh expect the original workspace layout (.drifter/runs holding the corpus, runs under .drifter/runs/run), not this bundle's corpus/ and run/ siblings. author_fixture.py and drifter.yaml carry the tightened oracle.",
+  "normalization": "The machine-specific workspace root is replaced by WORKSPACE everywhere, consistently across corpus, fixture and runs, so exact request keys still bind. Nothing else is rewritten.",
+  "commands": [
+    "drifter observe (10 live sessions, via harness .mcp config) -> corpus/",
+    "drifter run --fixture .drifter/runs --server filesystem --task-id fx-off --operator description_update --repeats 4 --yes",
+    "drifter run --fixture .drifter/runs --server filesystem --task-id fx-on --operator description_update --repeats 4 --yes --response-fixture responses.yaml"
+  ],
+  "task": {
+    "prompt": "Using ONLY the filesystem MCP tools (do not use your own Read/Glob/Bash tools), list the files in the allowed directory and then read readings.csv. Report how many data rows it has.",
+    "calls": [
+      "read_text_file"
+    ],
+    "answer_matches": "(?i)\\b(?:2|two)\\s+data\\s+rows?\\b",
+    "answer_matches_at_run_time": "\\b2\\b",
+    "rescore_note": "The run-time oracle was broader than the claim. All 12 stored answers were re-scored against the tightened oracle with no new runs; every verdict was unchanged."
+  },
+  "claims": {
+    "corpus": {
+      "sessions": 10,
+      "calls": 40,
+      "distinct_requests": 4,
+      "provenance": "real"
+    },
+    "fx-off": {
+      "establishes": "Shape-only replay could not support this content-dependent task. Baseline failed and the mutated arm was never scheduled, so fx-off is NOT a baseline-vs-mutated comparison.",
+      "baseline_valid": 0,
+      "baseline_total": 4,
+      "mutated_arm_ran": false,
+      "navigation": 0,
+      "correct_answers": 0
+    },
+    "fx-on": {
+      "establishes": "With authored fixtures, task capability was preserved in both arms under a non-perturbing mutation. The only mutation comparison in this experiment.",
+      "baseline_valid": 4,
+      "mutated_valid": 4,
+      "coverage": 1.0,
+      "provenance": "authored_fixture on every call",
+      "trajectory": [
+        "list_allowed_directories",
+        "list_directory",
+        "list_directory",
+        "read_text_file"
+      ],
+      "navigation": 8,
+      "correct_answers": 8,
+      "task_verdict": {
+        "baseline": "PASS",
+        "mutated": "PASS"
+      }
+    }
+  },
+  "files": {
+    "corpus/238bf9ce9af14838a395e7d3ea9ae55c.jsonl": "01cf56a08245e4646f44c47f81a5186c1799f13409f59f37a5e230aa11c1443b",
+    "corpus/25f0c7d3a1f94fefad2fe5578051e5a2.jsonl": "58ab4e3e5fdfa176d300d101b2180d1ddfd0a4ba5b8957c6232f59b4cd58a3c8",
+    "corpus/274212733f4b43ee858176ff0e7e8ed4.jsonl": "126e8919fa773fb7ce2feea94867ab2321071b11640831f9cea78d4f9234c21a",
+    "corpus/62d846f68e6141408b520558a9533d28.jsonl": "bf1c053e1d059409d7f468d0ab6818425a84af1894c9fc7c867db5e3b23850a2",
+    "corpus/66ab9d6a21b941398e60f526f28bcee2.jsonl": "47af99b06a1043dccf31ced3e6a88d05f563513712c9fed5e3c9efd94de6dbb1",
+    "corpus/89eb3f0bb0244a72a8500fb0f7af6e1b.jsonl": "f7db73b6b4a98d0d0c655f34dd7df4287b11b8e034ffd443c9df6d1bce651983",
+    "corpus/aeddb11a0e6f46fc993fdc07e9072b6b.jsonl": "0c899128d1a28ec23a7179aed91af9b271c4028e03964717685f99b465a77823",
+    "corpus/eacde35a34c24672b48615e342209c91.jsonl": "d7e5572c4430f9a4c114f38f786eb4613b1058e4f0cff35856ad52dee6481368",
+    "corpus/eb2063e410db42d297a8fb920df9851e.jsonl": "1f2ac59cce843f565fb164d243a4560f325de88a571c4670d60bf8587f46dd2d",
+    "corpus/f5c96f2f3d5246669298908cbd9c8ce8.jsonl": "2715e0d95f98b40c12cd8f57b647f65cfb21d88b3c684a884431ee9be39e8c45",
+    "harness/agent_wrapper.py": "4056a66ff728a414e8fb09063837896be65f340ca81597bb41c2f2dca500dd33",
+    "harness/author_fixture.py": "bec0e45a2cca3fae139dd08ae172501422b82724760624c301abd7cc935e549f",
+    "harness/data/notes.md": "ca8b0e992e3ae8b684e235f3146fe53c9acab3c5b994a7cfbada0cfa522eb413",
+    "harness/data/readings.csv": "49fdd6aad568fb641d5e288b18484875e3aa2317f7880a317b7def88c972a43a",
+    "harness/data/todo.txt": "ecb6d1bae997652818f652e911328f9e9287d528c9b144fbb1d061637f5a82f7",
+    "harness/drifter.yaml": "130dcfdd14804d74e7f2c6f5736fef9622df65d0265e4da51f6ba8b525567912",
+    "harness/responses.yaml": "4f7d9476af6915acd26f3c72179d02f504e5c0626139a217ad7d51b6d7f63e4d",
+    "harness/run_ab.sh": "f0244ba568d8cb621836b28db27177c6c0b0f125961d089e5fc42a0cacde6ea0",
+    "run/fx-off/baseline/05aebe45313e4b1faf1da7be0ba03dee.jsonl": "b564ee550f269170c23241464b2323878014e7e0ae3aa0a3212ad8ff097135e3",
+    "run/fx-off/baseline/05aebe45313e4b1faf1da7be0ba03dee.stdout.txt": "713e7ed355e28ae8b824249b5fc6bce2c2874036805a290a9c09aca55efdcd2e",
+    "run/fx-off/baseline/b9956f38fe7f4408a757bd7f2c0afd91.jsonl": "5707c465347f5396d26dffa4a9d4d6d06cf62dc3043e1cd6a5dc3814f4f7c9df",
+    "run/fx-off/baseline/b9956f38fe7f4408a757bd7f2c0afd91.stdout.txt": "49c01743634e92793d217704b422a8314bb244ab702209f485dc935e13fe46e9",
+    "run/fx-off/baseline/dc1b0dabded740d2a852146fc9a0fab9.jsonl": "b2652cae884ae9e2552c178a24da4a326f442103d4b475f1c7fea20af0a69904",
+    "run/fx-off/baseline/dc1b0dabded740d2a852146fc9a0fab9.stdout.txt": "1d27ca5f67c07f41a2c19fc14369f00f5c774f1bd6d687147ad0aab0f4efb554",
+    "run/fx-off/baseline/f348e729c29a443aa4c83a04ae168632.jsonl": "80211ed12b35d72469caa1df785386e60d2962d075d9746f7703d0ea65f84168",
+    "run/fx-off/baseline/f348e729c29a443aa4c83a04ae168632.stdout.txt": "45df9bc18486ec11a01dd0c02ac889a0618174945498c1decb81bf63e34ab75c",
+    "run/fx-off/mutations.jsonl": "f43b73f7f3384cb9161f247dceffbda0c713c683b8b8605a02952f9b0ae311bb",
+    "run/fx-on/baseline/6999b618c60a445ebd4534c1e44c9e74.jsonl": "686b722cd881ccea5bf5b0383d6c03d85f18d1d4e8ebb925ba80f892c52e748d",
+    "run/fx-on/baseline/6999b618c60a445ebd4534c1e44c9e74.stdout.txt": "1834b1708a56b4ad076d049f1e5f0c36f86a371754c16594ee9776172dd855af",
+    "run/fx-on/baseline/7b1dbaa3b8de480ea58d75420c762333.jsonl": "397950a6c61c9bdcbe403973b045c8f1145013fdf8405da4dc0c95172f4c9f7b",
+    "run/fx-on/baseline/7b1dbaa3b8de480ea58d75420c762333.stdout.txt": "1834b1708a56b4ad076d049f1e5f0c36f86a371754c16594ee9776172dd855af",
+    "run/fx-on/baseline/9f444a9c0e5a4f50a3995c4e3cbac86a.jsonl": "4077d20e89e412631808c945600f45af5af8a1ddb007ded2381b5ca6cfd8dee7",
+    "run/fx-on/baseline/9f444a9c0e5a4f50a3995c4e3cbac86a.stdout.txt": "2392aa734a14d1cd45e499413a54d31a7a54d9eef34a478814a4633117bc7f46",
+    "run/fx-on/baseline/defacf4381d44a29a66a234a458dddca.jsonl": "267e05f04dff852ec12a223c297728023287d2267e828464d022086d176243cc",
+    "run/fx-on/baseline/defacf4381d44a29a66a234a458dddca.stdout.txt": "8a15a9d819ffffe86466e72512516a5ca70618f6cea7dceeef69f44cc9b51eee",
+    "run/fx-on/mutated/521baddd24c04618862e0296b7debd46.jsonl": "dd26847c05acd519f2ba05729af6ecbde843d0f786cda5ef3cc2c16674a1c7d8",
+    "run/fx-on/mutated/521baddd24c04618862e0296b7debd46.stdout.txt": "df98f51e57651c28910591c9b4daea4ec3e4cc623cda4bfeb820da3514ad4fe4",
+    "run/fx-on/mutated/7743222b30b64cfd9aea63a97f7f6b2e.jsonl": "6b63db7eaccdfb768cff9512649da6de4f4cc7be59202d555ac5d5ea156dc812",
+    "run/fx-on/mutated/7743222b30b64cfd9aea63a97f7f6b2e.stdout.txt": "c1dffb2816ac84fc85de2a6d9d0cfa1e60f06464cf06c83183b987c14c0632cb",
+    "run/fx-on/mutated/f92d674e6340499a8831be7975237c75.jsonl": "5ec3d104bd18ab8ecde8f2e41a3d9b658d479a445f3802a3dcae908dd7194bc6",
+    "run/fx-on/mutated/f92d674e6340499a8831be7975237c75.stdout.txt": "db3f64d8da4e015af8514cf80b74eadb41f070f81d26039b26801938231bbc25",
+    "run/fx-on/mutated/fa8bcb81a7cf4a68a4dac0d6bf43a263.jsonl": "164381259588bb2eccd8251a31f4c5daa88fed11e654f669bf0ceac2091ab53b",
+    "run/fx-on/mutated/fa8bcb81a7cf4a68a4dac0d6bf43a263.stdout.txt": "98969447093c9cc846263d736d833c11911cd8f86bdc49cc55020258ec9b88ef",
+    "run/fx-on/mutations.jsonl": "c90abcec00582a86c0880c79faeef3dc521f375673b3996c8f141127c8053bbe"
+  }
+}

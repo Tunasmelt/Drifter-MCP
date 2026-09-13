@@ -6,6 +6,68 @@ not just a diff.
 
 ---
 
+## Limitation 20's evidence committed; oracle tightened; control re-described
+
+An external review found the limitation-20 result credible but not durable: every
+artifact lived in `C:\Users\user\drifter-dogfood`, outside the repository, and the
+previous experiment's corpus had already been lost to OS temp cleanup. A claim
+docs/SPEC.md calls "checkable" could not be checked by anyone else.
+
+**Evidence bundle.** `tests/fixtures/experiments/limitation_20`: the 10-session
+observe corpus, all 16 run sessions with captured answers and mutation audit logs, the
+authored fixture, the harness scripts and a manifest with SHA-256 hashes, identity,
+commands and claims. Only the workspace root is rewritten, to `WORKSPACE`, consistently
+across corpus, fixture and runs, so exact request keys still bind. Session records are
+already shape-only; the stdout answers and the fixture are agent output and authored
+test data about a synthetic CSV. `tests/evaluate/test_limitation_20_evidence.py`
+recomputes arm counts, validity, request-match coverage, trajectory, provenance,
+navigation and oracle verdicts with `aggregate_baseline_runs`, `evaluate_task` and the
+fixture loader. It deliberately asserts no session ids, timestamps or file names, and it
+fails on a secret-shaped value, a machine path or a recorded `result` payload. Checked
+red by tampering three manifest claims and planting a leaking answer file: 7 of 16 tests
+failed, then all 16 passed again after restoring. A `.gitattributes` rule marks the bundle
+`-text`, because with `core.autocrlf=true` a Windows checkout would rewrite line endings
+and break every hash.
+
+**Oracle.** The run-time oracle `\b2\b` was broader than the claim "2 data rows". The
+new one is `(?i)\b(?:2|two)\s+data\s+rows?\b`, which accepts both natural correct forms
+and rejects an incidental `2`. The digit-only `\b2\s+data rows?\b` was rejected because
+it would false-FAIL "two data rows". All 12 stored answers were re-scored with no new
+runs, and every verdict was unchanged.
+
+**Control wording.** `fx-off` establishes only that shape-only replay could not support
+this content-dependent task. Its baseline failed, so the mutated arm was never
+scheduled, and it measured no mutation effect. The one mutation comparison is `fx-on`.
+docs/SPEC.md now says so explicitly.
+
+**Release gate pre-registered in docs/PHASES.md R0.5, before any runs.** Compatibility
+detection and adaptation are two separate experiments. The unadapted subject is a
+mechanically constrained scripted client, because a prompt telling an LLM to use old names
+can be overridden, and then the failure cannot be attributed to the mutation. An LLM
+unadapted subject is allowed only with a verbatim pre-registered prompt and a 4/4
+unmutated validation. Acceptance bars are fixed in advance.
+
+Pre-registering surfaced a blocker. `parameter_rename` converts only underscore names,
+and none of the 14 tools the filesystem server serves has one (`path`, `head`, `tail`,
+and camelCase names such as `dryRun`), so on that server the only breaking operator is a
+silent no-op. The gate needs a controlled server
+with a required snake_case parameter, and R3's no-op mutation rejection has to land first.
+
+**Corrected after review, before commit.** (a) E1 first said a `-31003` rejection meant
+"TASK FAIL follows". It does not follow. TASK is evaluated only over sessions that
+survive exclusion, and a rejected call is a faulted miss in coverage, so the verdict
+depends on `(n-k)/n` against the floor. Below it, the runs are excluded and TASK is
+UNKNOWN; at or above it, the answer oracle decides. The reviewer's alternative, "normally
+invalid, so UNKNOWN", is not a given either. E1 now fixes the trajectory and the verdict
+it implies before running. (b) Reading `evaluate_run` for (a) showed that `calls` counts
+faulted calls as made; recorded as blocker 4. (c) The bundled `author_fixture.py` still
+wrote the old `\b2\b` oracle, in both its config and its status message, so re-running it
+would silently undo the tightening. Fixed, with a test that checks the script's source as
+well as the finished `drifter.yaml`. The manifest now calls the harness archived sources,
+not turnkey scripts.
+
+---
+
 ## `authored_fixture` gets its own provenance bucket
 
 Limitation 20's real-agent report printed `CONFIDENCE baseline request-match coverage

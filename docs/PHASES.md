@@ -970,10 +970,70 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
   0/4 valid and 0/4 correct; fixture arm 4/4 + 4/4 valid, 8/8 navigation, 8/8 correct
   answers, TASK PASS both arms, trajectory identical to live with no shortcut.
 
+- [x] **Commit limitation 20's evidence.** `tests/fixtures/experiments/limitation_20`
+  plus `tests/evaluate/test_limitation_20_evidence.py`, which recomputes every documented
+  claim from the committed records. Oracle tightened to
+  `(?i)\b(?:2|two)\s+data\s+rows?\b` and re-scored with no new runs (verdicts unchanged).
+  `fx-off` is re-described as "shape-only replay could not support the task", not as a
+  mutation comparison.
 - [ ] **Release-gate agents against a real agent.** Limitation 20 shows capability
   PRESERVATION is measured correctly. Still untested: a deliberately unadapted agent
   failing for the expected reason, and an adapting agent recovering, under a mutation
-  that actually perturbs behaviour.
+  that actually perturbs behaviour. Pre-registered below; no live runs until each
+  blocker is closed.
+
+  **Two experiments, not one.**
+
+  - *E1, compatibility detection.* The subject is a mechanically constrained client: a
+    scripted client that issues the old-contract call sequence, not an LLM told to use
+    old names. A prompt can be ignored or overridden by the model, so a failure under
+    mutation could not be attributed to the mutation. The expected reason is that the
+    old parameter name is rejected by served-schema validation (`-31003`) on the renamed
+    tool. That rejection is recorded as a faulted call, which counts as a miss in
+    request-match coverage. Under CURRENT semantics, TASK is evaluated only over
+    sessions that survive exclusion, so the arm's verdict depends on arithmetic, not
+    intent. With `k` rejected calls out of `n`, coverage is `(n-k)/n` against the 0.70
+    floor.
+    - Below the floor, the mutated runs are excluded and TASK is UNKNOWN; the exclusion
+      is itself the detection evidence.
+    - At or above the floor, the runs stay valid and the answer oracle decides; `calls`
+      alone cannot, because it counts a faulted call as made (see blocker 4).
+
+    The client's trajectory, and therefore `n` and `k`, is fixed before any run, and so
+    is the expected verdict it implies. "TASK FAIL follows" is not assumed. Acceptance:
+    unmutated control 3/3 valid with TASK PASS; mutated 3/3 runs whose renamed-tool
+    call is rejected with `-31003`; and mutated coverage, validity and TASK verdict
+    exactly as that arithmetic predicts. The client is deterministic, so any other
+    outcome is a defect, not noise. Evaluating expected protocol failures as task
+    failures would be a separate design decision, not part of this experiment.
+  - *E2, adaptation.* The subject is the real dogfood agent (claude-code through the
+    http adapter), allowed to read the served `tools/list`. Expected: it calls with the
+    new parameter name, inverse resolution binds that call to the authored fixture, and
+    the answer oracle passes. Acceptance, fixed before running: 4 runs; at least 3 valid;
+    every valid run TASK PASS; each call on the renamed tool uses the new name. A
+    smaller result is reported as-is, not re-run until it passes. This is a
+    pre-specified bar, not R4's statistics.
+  - *Optional E1b, an LLM as the unadapted subject.* Only with a prompt pre-registered
+    verbatim, plus a live unmutated validation in which the model follows the old
+    contract in 4/4 runs. Without that validation, a failure cannot be attributed.
+
+  **Blockers, found while pre-registering.**
+
+  1. `parameter_rename` renames only a property containing an underscore. The
+     limitation-20 task's parameters (`path`, `head`, `tail`) have none. Neither does
+     any of the 14 tools `secure-filesystem-server 0.2.0` serves (checked against the
+     committed corpus; its multi-word names are already camelCase), so on this server
+     the operator is a silent no-op. The gate needs a controlled server and authored
+     task with a required snake_case parameter whose value is a returned path or id,
+     plus its authored fixture.
+  2. R3's no-op mutation rejection must land first. Otherwise a mutation that changed
+     nothing can produce a comparison that looks like "the agent adapted".
+  3. Each experiment's oracle and failure-reason check must be written and tested
+     against synthetic sessions before any live run.
+  4. The `calls` assertion counts every recorded call, including one that was rejected
+     or faulted (`evaluate_run` checks `tool_name` only). "It called `read_text_file`"
+     can therefore hold for a call that never succeeded. E1 must not rely on `calls`.
+     Whether `calls` should require an unfaulted call is an open decision.
 - [ ] **Fixture authoring and maintenance story.** Limitation 20's bodies came from files
   the experimenter controls. A real user needs a way to author fixtures for their own
   server and keep them in step with it.

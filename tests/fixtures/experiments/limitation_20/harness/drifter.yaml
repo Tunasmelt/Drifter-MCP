@@ -1,0 +1,32 @@
+version: 1
+servers:
+- name: filesystem
+  command:
+  - npx
+  - -y
+  - '@modelcontextprotocol/server-filesystem'
+  - WORKSPACE/data
+record:
+  dir: .drifter/runs
+  redact: shape
+agent:
+  mode: http
+  env_var: DRIFTER_PROXY_URL
+  command:
+  - python
+  - WORKSPACE/agent_wrapper.py
+  - '{task.prompt}'
+tasks:
+- id: fx-off
+  prompt: Using ONLY the filesystem MCP tools (do not use your own Read/Glob/Bash
+    tools), list the files in the allowed directory and then read readings.csv. Report
+    how many data rows it has.
+  assert: &id001
+    calls:
+    - read_text_file
+    answer_matches: (?i)\b(?:2|two)\s+data\s+rows?\b
+- id: fx-on
+  prompt: Using ONLY the filesystem MCP tools (do not use your own Read/Glob/Bash
+    tools), list the files in the allowed directory and then read readings.csv. Report
+    how many data rows it has.
+  assert: *id001

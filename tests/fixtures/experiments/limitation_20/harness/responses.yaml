@@ -1,0 +1,62 @@
+version: 1
+server: filesystem
+responses:
+- tool_name: list_allowed_directories
+  arguments: {}
+  result:
+    content:
+    - type: text
+      text: 'Allowed directories:
+
+        WORKSPACE'
+    isError: false
+- tool_name: list_directory
+  arguments:
+    path: WORKSPACE
+  result:
+    content:
+    - type: text
+      text: '[DIR] .drifter
+
+        [FILE] .mcp.json
+
+        [FILE] agent-mcp.json
+
+        [FILE] agent_wrapper.py
+
+        [FILE] author_fixture.py
+
+        [FILE] calibration.yaml
+
+        [DIR] data
+
+        [FILE] drifter.yaml
+
+        [FILE] run_ab.sh'
+    isError: false
+- tool_name: list_directory
+  arguments:
+    path: WORKSPACE\data
+  result:
+    content:
+    - type: text
+      text: '[FILE] notes.md
+
+        [FILE] readings.csv
+
+        [FILE] todo.txt'
+    isError: false
+- tool_name: read_text_file
+  arguments:
+    path: WORKSPACE\data\readings.csv
+  result:
+    content:
+    - type: text
+      text: 'alpha,beta,gamma
+
+        1,2,3
+
+        4,5,6
+
+        '
+    isError: false

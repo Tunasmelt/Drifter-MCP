@@ -1,0 +1,3 @@
+# Committed experiment evidence is hash-checked byte for byte
+# (tests/evaluate/test_limitation_20_evidence.py); never rewrite its line endings.
+tests/fixtures/experiments/** -text
