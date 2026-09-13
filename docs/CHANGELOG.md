@@ -6,6 +6,32 @@ not just a diff.
 
 ---
 
+## E2 run: a real agent adapts to a breaking rename
+
+Recorded as docs/SPEC.md §15 limitation 21. Pre-registered in the workspace before the
+first run: prompt verbatim, oracle, `--repeats 4 --no-adaptive`, and three acceptance
+conditions.
+
+**Result.** Baseline 4/4 valid with TASK PASS. Mutated 4/4 valid with TASK PASS. Every
+mutated `get_order` call used `orderId`, was unfaulted, and resolved at the `inverse`
+tier to the authored body. All three acceptance conditions were met. With E1 in CI, the
+release gate's three outcomes (unchanged completes, unadapted fails for the expected
+reason, adapting recovers) are now observed on one controlled server.
+
+**Setup defect found and fixed before any E2 run.** The first two observe attempts
+timed out. The workspace config launched `orders_server.py` with bare `python`, which
+resolved to a system interpreter without `mcp`. Those two sessions had
+`tool_manifest_hash: null` and no calls. They were inspected, deleted, and re-recorded
+with the venv interpreter, so none of them is in the corpus.
+
+**New open item: the report cannot show adaptation.** E2's report is indistinguishable
+from a mutation with no effect. CONFIDENCE printed `authored_fixture 100%` because the
+provenance bucket takes precedence over match tier, which hid four `inverse`
+resolutions. Added to docs/PHASES.md, together with bundling E2's evidence and the
+release-gate conditions E1/E2 did not exercise.
+
+---
+
 ## Release gate E1 runs end to end in CI, and E2's plumbing is proven first
 
 Release-gate blockers 1 and 3 (docs/PHASES.md R0.5).

@@ -1044,8 +1044,18 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
      The same file holds E2's precondition: a schema-reading scripted client recovers
      under the same mutation (3/3 valid, TASK PASS, `orderId` resolved to the authored
      body). If that ever fails, an E2 failure would be the plumbing, not the model.
-  5. **E2 remains** the only live experiment: the real dogfood agent against the orders
-     server and fixture, with the acceptance bar above.
+  5. ~~**E2 remains** the only live experiment.~~ **E2 run, pre-registered, all acceptance
+     conditions met** (docs/SPEC.md §15 limitation 21): mutated 4/4 valid, TASK PASS 4/4,
+     `orderId` on every `get_order`, resolved at the `inverse` tier.
+- [ ] **Bundle E2's evidence** into `tests/fixtures/experiments/`, with a recompute test, as
+  for limitation 20. It currently lives only in `C:\Users\user\drifter-e2`.
+- [ ] **Report shows adaptation.** E2's report cannot be told apart from "the mutation
+  had no effect": CONFIDENCE's `authored_fixture` bucket takes precedence over match
+  tier and hides the `inverse` resolutions. Surface match tier per arm, independently of
+  content provenance.
+- [ ] **Remaining release-gate conditions** not exercised by E1/E2: fresh wheel installed
+  outside the repo, replay with the upstream server unavailable, and a byte-identical
+  report rebuild.
   4. The `calls` assertion counts every recorded call, including one that was rejected
      or faulted (`evaluate_run` checks `tool_name` only). "It called `read_text_file`"
      can therefore hold for a call that never succeeded. ~~Open decision.~~ Decided and

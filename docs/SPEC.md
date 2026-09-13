@@ -1240,3 +1240,45 @@ when*.
     `_provenance_counts` places `authored_fixture` in the `exact` bucket. The REQUEST
     match was genuinely exact; the CONTENT was not recorded. That is limitation 19's
     presentation defect in a new place, and should be split into its own bucket.
+
+21. **Release gate E1 and E2: an old-contract client is detected, and a real agent
+    adapts, under one breaking rename on a controlled server. Narrow.**
+
+    **E1 (compatibility detection), deterministic, in CI.** `tests/cli/test_release_gate_e1.py`:
+    scripted client bound to `get_order(order_id)` against `tests/fixtures/orders_server.py`
+    under `parameter_rename` (renames exactly `get_order.order_id` -> `orderId`). Control
+    3/3 valid, TASK PASS. Mutated 3/3 excluded at coverage 0.50, TASK UNKNOWN, each
+    `get_order` rejected with `-31003` read from the raw mirror. As pre-registered.
+
+    **E2 (adaptation), live, pre-registered before running** (workspace
+    `C:\Users\user\drifter-e2`, `PREREGISTRATION.txt`). Drifter `925d474` from the repo
+    venv, agent `claude-code/2.1.270` through the http adapter, corpus = 2 live observe
+    sessions by the same agent (both `find_order(customer=acme)` ->
+    `get_order(order_id=ord-7f3a91)`, both answered $1,240), two-entry authored fixture,
+    `--repeats 4 --no-adaptive`, oracle `calls: [find_order, get_order]` (successful calls
+    only) and `answer_matches: (?i)\b1,?240\b`. Result: baseline 4/4 valid, TASK PASS 4/4.
+    Mutated 4/4 valid, TASK PASS 4/4; every mutated `get_order` call used `orderId`, was
+    unfaulted, and resolved at the `inverse` tier to the authored body; every answer
+    "Acme's most recent order (ord-7f3a91) totals $1,240". All three acceptance conditions
+    met (>=3 valid; every valid run PASS; `orderId` on every mutated `get_order`).
+
+    **What this establishes.** On this server, the release gate's three required
+    outcomes are observed: the unchanged agent completes the task (baseline); a
+    deliberately unadapted subject fails for the expected reason (E1); an adapting agent
+    recovers (E2), with the recovery attributable to the agent because E2's plumbing
+    precondition passes in CI with a scripted schema-reading client.
+
+    **What it does NOT establish.** (a) Generality: one two-tool synthetic server, one
+    operator, one rename, 4 runs per arm. (b) The rest of the release gate as written:
+    the fresh wheel installed outside the repository, replay with the upstream server
+    deliberately unavailable, and byte-identical report rebuild were not run here. (c) An
+    LLM as the unadapted subject (E1b) was not attempted. (d) R4's statistics are untouched.
+    (e) The evidence lives outside the repository until bundled like limitation 20's.
+
+    **Open reporting gap found in E2's report.** Nothing in the rendered report shows
+    that the agent adapted. BEHAVIOR NO_REGRESSION and TASK PASS read identically to "the
+    mutation had no effect", and CONFIDENCE printed `authored_fixture 100%` for the mutated
+    arm because the provenance bucket takes precedence over the match tier, hiding that
+    every renamed call resolved at `inverse`. The adaptation is visible only in the
+    session records. The report should surface per-arm match tier independently of
+    content provenance.
