@@ -6,6 +6,24 @@ not just a diff.
 
 ---
 
+## `authored_fixture` gets its own provenance bucket
+
+Limitation 20's real-agent report printed `CONFIDENCE baseline request-match coverage
+1.00 (exact 100%)` for runs served entirely from hand-authored response bodies.
+`_provenance_counts` filed anything not synthetic, faulted, semantic or inverse under
+`exact`. The request match was genuinely exact — the loader refuses any fixture entry that
+does not bind to an exact recorded request — but "exact" reads as "replayed from a real
+recording", and the content was not recorded. That is limitation 19's presentation defect
+in a new location.
+
+Fixed with a dedicated `authored_fixture` bucket, checked before the fault and tier
+branches. Request-match coverage deliberately does not change: an authored call still
+counts as a hit in `_run_fidelity`, because its request did resolve. Only the breakdown now
+says where the content came from. Red test first; the coverage test passed before and after,
+confirming the split is presentation-only.
+
+---
+
 ## Authored fixtures pass the real-agent test limitation 19 failed
 
 The content-preserving fixture spike (`--response-fixture`, commit f07be3c) had proven

@@ -106,3 +106,41 @@ def test_synthesized_misses_are_reported_in_their_own_provenance_bucket():
     assert counts["synthetic_miss"] == 2
     assert counts["synthetic"] == 0
     assert counts["unresolved"] == 0
+
+
+# --- authored_fixture gets its own provenance bucket (SPEC §15 limitation 20) ---
+#
+# Limitation 20's real-agent report printed `CONFIDENCE ... (exact 100%)` for
+# calls whose response BODIES were authored by hand, because
+# `_provenance_counts` fell through to `exact` for anything that was not
+# synthetic, faulted, semantic or inverse. The REQUEST match was genuinely
+# exact -- `load_authored_responses` requires every entry to bind to an exact
+# recorded request -- but the CONTENT was never recorded. "exact" read as
+# "replayed from a real recording", which is limitation 19's presentation
+# defect in a new place.
+#
+# Coverage is deliberately NOT changed: an authored call still counts as a hit,
+# because its request did resolve against a real recorded key. Only the
+# breakdown label changes, so the report says where the content came from.
+
+
+def test_authored_fixture_calls_are_reported_in_their_own_bucket_not_exact():
+    records = [
+        _call("list_directory", provenance="authored_fixture"),
+        _call("read_text_file", provenance="authored_fixture"),
+        _call("list_allowed_directories"),
+    ]
+
+    counts = _provenance_counts(records)
+
+    assert counts["authored_fixture"] == 2
+    assert counts["exact"] == 1
+
+
+def test_authored_fixture_calls_still_count_toward_request_match_coverage():
+    records = [
+        _call("list_directory", provenance="authored_fixture"),
+        _call("read_text_file", provenance="authored_fixture"),
+    ]
+
+    assert _run_fidelity(records) == 1.0

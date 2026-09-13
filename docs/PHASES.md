@@ -977,8 +977,10 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
 - [ ] **Fixture authoring and maintenance story.** Limitation 20's bodies came from files
   the experimenter controls. A real user needs a way to author fixtures for their own
   server and keep them in step with it.
-- [ ] **Split `authored_fixture` out of the `exact` provenance bucket.** CONFIDENCE
-  currently prints `exact 100%` for authored bodies (limitation 20).
+- [x] **Split `authored_fixture` out of the `exact` provenance bucket.** CONFIDENCE
+  printed `exact 100%` for authored bodies (limitation 20); it now reports an
+  `authored_fixture` bucket. Request-match coverage is unchanged — an authored call still
+  resolved against a real recorded key.
 
 ### R1 — Run lifecycle and recording schema
 

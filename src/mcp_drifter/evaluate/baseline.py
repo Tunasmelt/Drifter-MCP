@@ -338,7 +338,7 @@ def _run_fidelity(records: list, semantic_weight: float = 1.0) -> float:
     return weighted_hits / len(calls)
 
 
-_PROVENANCE_BUCKETS = ("exact", "inverse", "semantic", "synthetic", "synthetic_miss", "unresolved")
+_PROVENANCE_BUCKETS = ("exact", "inverse", "semantic", "authored_fixture", "synthetic", "synthetic_miss", "unresolved")
 
 
 def _provenance_counts(records: list) -> dict[str, int]:
@@ -362,6 +362,14 @@ def _provenance_counts(records: list) -> dict[str, int]:
         # hard-failed" are different operational facts.
         elif call.result_provenance == "synthetic_miss":
             counts["synthetic_miss"] += 1
+        # Authored bodies get their own bucket (docs/SPEC.md §15 limitation 20).
+        # The REQUEST matched a real recorded key exactly -- the loader
+        # refuses anything else -- so this still counts toward request-match
+        # coverage in `_run_fidelity`. But the CONTENT was hand-written, not
+        # recorded, and filing it under `exact` printed "exact 100%" for a run
+        # served entirely from authored responses.
+        elif call.result_provenance == "authored_fixture":
+            counts["authored_fixture"] += 1
         elif call.fault is not False:
             counts["unresolved"] += 1
         elif call.match_tier == "semantic":
