@@ -1282,3 +1282,38 @@ when*.
     every renamed call resolved at `inverse`. The adaptation is visible only in the
     session records. The report should surface per-arm match tier independently of
     content provenance.
+
+22. **The release gate's remaining conditions, run from a fresh wheel on the orders
+    server. One defect found and fixed.**
+
+    **Setup.** Wheel built from the checkout at commit `a3730b4`, installed with its
+    dependencies into a clean Python 3.14 venv at `C:\Users\user\drifter-gate`, importing
+    from that venv's site-packages (`mcp-drifter 0.1.0`, `mcp 2.2.0`). After the report
+    fix below, a second wheel from the working tree was force-reinstalled (`--no-deps`)
+    for the rebuild step only. The flow was `init` (from a `.mcp.json` naming the orders
+    server) -> `doctor` (handshake OK, 2 tools classified) -> two live `observe` sessions
+    by `claude-code/2.1.270` -> authored fixture -> upstream made unavailable -> `run`
+    with `parameter_rename`, `--repeats 3 --no-adaptive` -> `report` twice.
+
+    **Upstream unavailable.** The server file was moved away before `run`; `doctor` then
+    reported `[FAIL] server 'orders'`. `run` still completed: baseline 3/3 valid with TASK
+    PASS, mutated 3/3 valid with TASK PASS, and every mutated `get_order` used `orderId`.
+    Replay needed no live server. Condition met.
+
+    **Report rebuild.** First attempt: NOT met. `drifter report` printed the operator as
+    "(unknown — reconstructed from stored sessions, not re-verified)" and omitted the
+    MUTATION LOG, although `run` had written `mutations.jsonl` (F-18). The module predated
+    that audit. Fixed: the rebuild reads the audit, and a directory without one still
+    renders as unknown. With the reinstalled wheel, two rebuilds were each byte-identical
+    to the original run's report section (810 bytes, CRLF); the verdict sections had
+    already matched before the fix. Condition met after the fix, with an end-to-end test
+    (`test_a_rebuilt_report_renders_identically_to_the_live_run`).
+
+    **Also found.** `drifter init`'s generated header claimed tool risk classification
+    (`policy/`) was not built, while `doctor` classifies tools. Corrected.
+
+    **Not established.** Replay with the server unavailable was tested on this two-tool
+    server only; the run arm evidence lives in `C:\Users\user\drifter-gate`, not in the
+    repository; the `run` itself used the wheel from before the report fix, and only the
+    rebuild used the fixed wheel (the run path was not changed by the fix). Limitation
+    21's reporting gap still applies: nothing in this report shows the agent adapted.

@@ -25,15 +25,13 @@ guarantee). This file imports only `cli.config`/`cli.report_format`/
 not assumed transitively clean. `test_report.py` asserts this by inspecting
 the module's actual imports, matching `test_score.py`'s own precedent.
 
-Real, stated scope gap, not silently glossed: `RunResult.mutation_log` (which
-tool was mutated, old→after description) is genuinely NOT reconstructable from
-disk — nothing in the recorded session schema persists which mutation
-operator or seed produced a given `session_dir`, and neither does
-`run_mutation_comparison` write that metadata anywhere itself. Rebuilt reports
-always carry an empty `mutation_log` (so `render_run_result`'s own "MUTATION
-LOG:" section is simply omitted, no special-casing needed) and a `operator`
-field that says so explicitly, rather than guessing or requiring the caller to
-re-assert something this module can't actually verify.
+The operator and `RunResult.mutation_log` come from `mutations.jsonl`, the
+F-18 audit `run_mutation_comparison` writes before the mutated arm runs. This
+module originally predated that audit and always rendered the operator as
+unknown with no log, which broke the release gate's "rebuilding the report
+must reproduce the original results exactly". A run directory with no audit
+(pre-F-18) still renders that way: nothing else on disk says which mutation
+produced its sessions.
 """
 
 from __future__ import annotations
@@ -49,10 +47,33 @@ from mcp_drifter.cli.stats import resolve_runs_dir
 from mcp_drifter.evaluate.assertions import TaskAssertions, evaluate_task
 from mcp_drifter.evaluate.baseline import aggregate_baseline_runs
 from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.mutate.audit import read_mutation_audit
+from mcp_drifter.mutate.description_update import MutationLogEntry
 from mcp_drifter.policy.safety import evaluate_safety_across_arms
 from mcp_drifter.record.calibration import Calibration, load_calibration
 
 _OPERATOR_UNKNOWN = "(unknown — reconstructed from stored sessions, not re-verified)"
+
+
+def _mutation_from_audit(audit_path: Path) -> tuple[str, list[MutationLogEntry]]:
+    """The operator and mutation log, from the F-18 audit `drifter run` writes
+    before the mutated arm. Without it (a run directory predating F-18, or one
+    whose audit was removed) nothing on disk says which mutation produced the
+    sessions, so the operator stays explicitly unknown and the log empty. A
+    log whose entries disagree about the operator is reported as unknown too,
+    rather than picking one."""
+    if not audit_path.exists():
+        return _OPERATOR_UNKNOWN, []
+    records = read_mutation_audit(audit_path)
+    entries = [
+        MutationLogEntry(
+            tool_name=r.tool_name, operator=r.operator, before=r.before, after=r.after,
+            inverse=r.inverse, seed=r.seed, injection_flagged=r.injection_flagged,
+        )
+        for r in records
+    ]
+    operators = {r.operator for r in records}
+    return (operators.pop() if len(operators) == 1 else _OPERATOR_UNKNOWN), entries
 
 
 def build_report_result(
@@ -98,13 +119,14 @@ def build_report_result(
     # re-rendered report carries a real Task verdict, not a degraded one,
     # provided the caller supplies the same assertions the run used.
     effective_assertions = assertions or TaskAssertions()
+    operator, mutation_log = _mutation_from_audit(session_dir / "mutations.jsonl")
     result = RunResult(
         task_id=task_id,
-        operator=_OPERATOR_UNKNOWN,
+        operator=operator,
         baseline=baseline_result,
         mutated=mutated_result,
         effect=effect,
-        mutation_log=[],
+        mutation_log=mutation_log,
         safety=safety,
         baseline_task=evaluate_task(baseline_result.valid_session_paths, effective_assertions),
         mutated_task=evaluate_task(mutated_result.valid_session_paths, effective_assertions),

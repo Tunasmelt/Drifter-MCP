@@ -1,0 +1,10 @@
+E2 (docs/PHASES.md R0.5), written before any E2 run. 2026-09-13.
+Drifter commit 925d474 (repo venv). Agent claude-code/2.1.270, http adapter (agent_wrapper.py).
+Server orders_server.py; corpus = 2 live observe sessions by the same agent.
+Operator parameter_rename, seed 42: renames get_order.order_id -> orderId only.
+Prompt (verbatim): Using ONLY the orders MCP tools (do not use any other tools), find the most recent order for the customer acme and report its total in dollars.
+Oracle: calls [find_order, get_order] (successful calls only); answer_matches (?i)\b1,?240\b
+Runs: --repeats 4 --no-adaptive.
+Acceptance (mutated arm): at least 3 of 4 valid; every valid run TASK PASS; every get_order call on the mutated arm uses orderId.
+Control expectation: baseline valid, TASK PASS.
+A smaller result is reported as-is. No re-runs until it passes.

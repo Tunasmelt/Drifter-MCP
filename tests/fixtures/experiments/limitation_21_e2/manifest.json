@@ -1,0 +1,97 @@
+{
+  "experiment": "limitation_21_e2",
+  "spec_reference": "docs/SPEC.md section 15, limitation 21",
+  "identity": {
+    "drifter": "commit 925d474, repo venv",
+    "agent": "claude-code/2.1.270 via the http adapter (harness/agent_wrapper.py)",
+    "server": "tests/fixtures/orders_server.py (harness/orders_server.py is a byte copy)",
+    "recorded": "2026-09-13"
+  },
+  "harness_status": "Archived harness sources, not turnkey scripts: WORKSPACE and REPO must be replaced, and the scripts expect the original .drifter/runs layout.",
+  "normalization": "Workspace root -> WORKSPACE and repository root -> REPO, consistently. Nothing else rewritten.",
+  "preregistration": "harness/PREREGISTRATION.txt, written before any E2 run",
+  "commands": [
+    "claude -p <prompt> --mcp-config observe-mcp.json (x2, through drifter observe) -> corpus/",
+    "drifter run --config drifter.yaml --fixture .drifter/runs --server orders --task-id e2 --operator parameter_rename --repeats 4 --no-adaptive --timeout 240 --response-fixture responses.yaml --yes"
+  ],
+  "task": {
+    "prompt": "Using ONLY the orders MCP tools (do not use any other tools), find the most recent order for the customer acme and report its total in dollars.",
+    "calls": [
+      "find_order",
+      "get_order"
+    ],
+    "answer_matches": "(?i)\\b1,?240\\b"
+  },
+  "claims": {
+    "corpus": {
+      "sessions": 2,
+      "trajectory": [
+        [
+          "find_order",
+          {
+            "customer": "acme"
+          }
+        ],
+        [
+          "get_order",
+          {
+            "order_id": "ord-7f3a91"
+          }
+        ]
+      ]
+    },
+    "renamed": {
+      "get_order": {
+        "orderId": "order_id"
+      }
+    },
+    "baseline": {
+      "total": 4,
+      "valid": 4,
+      "task": "PASS",
+      "id_argument": "order_id",
+      "tier": "exact"
+    },
+    "mutated": {
+      "total": 4,
+      "valid": 4,
+      "task": "PASS",
+      "id_argument": "orderId",
+      "tier": "inverse"
+    },
+    "acceptance": {
+      "min_valid": 3,
+      "every_valid_pass": true,
+      "new_name_on_every_get_order": true
+    }
+  },
+  "files": {
+    "corpus/5cba3f15a7db4ca1a8fbca7e2bbc7363.jsonl": "510fb7626b79dca4a02845e9d9c8df6ad7028100fd0f7d038dacfc954c388c0f",
+    "corpus/7a44fdbf314f4eeea379cce0859bb0bc.jsonl": "f29460d4870adcb3aacfa9695a3c7893d86605ea6d2b477b186f52af07194f63",
+    "harness/agent_wrapper.py": "fc014cecd7cc15a4fe8f2a44a364c7449a65762e21a691297720ada930bb9f1a",
+    "harness/analyze_e2.py": "0bb4169ad4bfacdadee0667b147a0ee9df8870c62b279f0b833706e1d8f521e5",
+    "harness/drifter.yaml": "94d6ffc12624445edcc8179703871f41b3d1835fdc7346a791735a686f235a5c",
+    "harness/e2_output.txt": "da6ea389a1317c2775417295b711a1acc12a623ba0932815df4fd3956d09c9c3",
+    "harness/observe-mcp.json": "cbc025f171de21a0b679018b7579770c1d11321b492bbe18a8eb34311563493e",
+    "harness/orders_server.py": "e39ed7ff945b60a4679f61c12cf2c1a520b1d5c356bd5b30e0f48c9ee8400e52",
+    "harness/PREREGISTRATION.txt": "8b2d077af50cc1914b480afc86d1c22c5897ce5d3b212b45d5754b4d5785a353",
+    "harness/responses.yaml": "9264ecf69e25b7ab7bdfb3e476f7e067e3b526f169d12645f87fc71088469e6e",
+    "run/e2/baseline/276d63cadfbe42918227bf45a85c8d5a.jsonl": "5765a10d74c0255c14bb544d68286cb7784330aeeb6e3ce5b743a37eaa625e84",
+    "run/e2/baseline/276d63cadfbe42918227bf45a85c8d5a.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/baseline/464b91c89fa34c1498a6116f20e8ff8d.jsonl": "d106e7cc328a971eb0cf1ba89c216f4f8721cdb25c5a7176d31ef64b716b6e18",
+    "run/e2/baseline/464b91c89fa34c1498a6116f20e8ff8d.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/baseline/a3f134b1c94e4d8294ba612b28e55092.jsonl": "f10cc1a4629b57566e00c80dbe5aee2d9324479bde7ae7cd97f9020410a2f609",
+    "run/e2/baseline/a3f134b1c94e4d8294ba612b28e55092.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/baseline/dccbd142f22e48b08106667bbcc79dd9.jsonl": "564384eb35a8298ef484ad7481127cd21f5624eb6193fe0fde108fd1b8092d4f",
+    "run/e2/baseline/dccbd142f22e48b08106667bbcc79dd9.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/mutated/6682ecfceded45f8b7f781b42ded296c.jsonl": "407b92d42233820b5895c5c6978fcf5f3bfb2238290f50aef7a3db6c18573732",
+    "run/e2/mutated/6682ecfceded45f8b7f781b42ded296c.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/mutated/7402d3a4029f4cf69a98bc3c624a4226.jsonl": "b085fd1798e497cb81cbcea42c12a22af5e39d346266399e8157afe221e26644",
+    "run/e2/mutated/7402d3a4029f4cf69a98bc3c624a4226.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/mutated/a28b6aad4217459db967dc429068edbe.jsonl": "80617c1f55b2e889155609e7d9a5e0ffe53551d1f162a904ee76aff0615556f1",
+    "run/e2/mutated/a28b6aad4217459db967dc429068edbe.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/mutated/bf0d92cea3054d80bf1cfa5cb8e1aab0.jsonl": "401f4340cbd26b2de28d21664c0a6945eccc71582577c5e8a95908cb250959fd",
+    "run/e2/mutated/bf0d92cea3054d80bf1cfa5cb8e1aab0.stdout.txt": "37267dee377f797f073997e9990fde6a606eed8d72f456e299d568010f14b4bd",
+    "run/e2/mutations.jsonl": "c6200aa8771fa6cfc540ab5a3a264fd0f03e750e271042133d199df2642b782b"
+  }
+}

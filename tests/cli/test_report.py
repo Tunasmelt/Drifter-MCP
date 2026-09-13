@@ -167,7 +167,63 @@ def test_render_run_result_output_matches_what_a_real_drifter_run_would_show(tmp
     assert "BASELINE  3/3 valid runs" in output
     assert "BEHAVIOR  NO_REGRESSION" in output
     assert "SAFETY    NO VIOLATION" in output
-    assert "MUTATION LOG:" not in output  # genuinely nothing to show
+    # No mutations.jsonl was written for this hand-built run (a pre-F-18
+    # layout), so there is genuinely nothing to show.
+    assert "MUTATION LOG:" not in output
+
+
+def test_a_rebuilt_report_restores_operator_and_mutation_log_from_the_audit(tmp_path):
+    """Release gate: "rebuilding the report must reproduce the original
+    results exactly". `drifter run` writes mutations.jsonl (F-18) before the
+    mutated arm, so the operator and log ARE on disk; a rebuild that printed
+    "(unknown)" and dropped the log did not reproduce the original."""
+    from mcp_drifter.mutate.audit import write_mutation_audit
+    from mcp_drifter.mutate.description_update import MutationLogEntry
+
+    session_dir = tmp_path / "run" / "audited_task"
+    for i in range(3):
+        _write_session(session_dir / "baseline", f"b{i}", ["a"])
+        _write_session(session_dir / "mutated", f"m{i}", ["a"])
+    entries = [
+        MutationLogEntry(tool_name="a", operator="parameter_rename", before=None,
+                         after="(no eligible parameter)", inverse=None, seed=42, injection_flagged=False),
+        MutationLogEntry(tool_name="b", operator="parameter_rename", before="order_id",
+                         after="orderId", inverse={"orderId": "order_id"}, seed=42, injection_flagged=False),
+    ]
+    write_mutation_audit(session_dir / "mutations.jsonl", entries, server="srv", operator="parameter_rename", task_id="audited_task")
+
+    result = build_report_result("audited_task", tmp_path)
+
+    assert result.operator == "parameter_rename"
+    assert result.mutation_log == entries
+    output = render_run_result(result)
+    assert "DRIFTER RUN — audited_task  (mutation: parameter_rename)" in output
+    assert "  b (parameter_rename), seed=42, inverse={'orderId': 'order_id'}" in output
+
+
+def test_a_rebuilt_report_renders_identically_to_the_live_run(tmp_path):
+    """The whole release-gate condition, end to end: a real `drifter run`
+    comparison, then a rebuild from disk, rendered through the same function."""
+    import sys
+
+    from mcp_drifter.cli.run import run_mutation_comparison
+    from mcp_drifter.record.reader import read_session
+    from mcp_drifter.record.schema import ToolCall
+
+    golden = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
+    agent = Path(__file__).parent.parent / "fixtures" / "scripted_agent.py"
+    calls = [r for r in read_session(golden) if isinstance(r, ToolCall)][:2]
+    command = [sys.executable, str(agent), *(f"{c.tool_name}|{json.dumps(c.arguments)}" for c in calls)]
+
+    live = run_mutation_comparison(
+        task_id="rebuild_task", prompt="", fixture=golden, server_name="filesystem",
+        agent_command=command, operator="description_update",
+        session_dir=tmp_path / "run" / "rebuild_task", raw_dir=tmp_path / "raw",
+        repeats=3, adaptive=False, timeout_s=30.0,
+    )
+    rebuilt = build_report_result("rebuild_task", tmp_path)
+
+    assert render_run_result(rebuilt) == render_run_result(live)
 
 
 # --- run_report: CLI wrapper ---------------------------------------------

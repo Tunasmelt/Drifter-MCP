@@ -6,6 +6,39 @@ not just a diff.
 
 ---
 
+## E2 evidence bundled; release-gate conditions run from a fresh wheel; rebuilt reports restore the mutation
+
+**E2 bundle.** `tests/fixtures/experiments/limitation_21_e2` holds the corpus, both
+arms' records and answers, the mutation audit, the pre-registration, the harness and a
+hashed manifest. The workspace and repository roots are normalized, and the archived
+server is asserted byte-identical to `tests/fixtures/orders_server.py`.
+`test_limitation_21_e2_evidence.py` recomputes validity, coverage, trajectory, task
+verdicts, per-call argument names and tiers, the rename, and the three acceptance
+conditions. Checked red twice. The first tamper edited only the baseline claim, because a
+`sed` pattern missed the pretty-printed manifest; the second, done through JSON, failed
+the mutated-arm and rename tests.
+
+**Fresh wheel, upstream unavailable.** Recorded as docs/SPEC.md §15 limitation 22. A wheel
+installed into a clean venv outside the repository ran init, doctor, observe, fixture,
+run and report. With the server file moved away (`doctor` then reported FAIL), `run`
+completed: baseline 3/3 and mutated 3/3 valid, TASK PASS in both arms.
+
+**Defect: a rebuilt report did not reproduce the original.** `drifter report` printed
+the operator as "(unknown — reconstructed from stored sessions, not re-verified)" and
+dropped the MUTATION LOG. Its docstring said no mutation metadata was persisted, which
+stopped being true when F-18 added `mutations.jsonl`. `build_report_result` now rebuilds
+the operator and log from the audit. A directory without an audit, or one whose entries
+disagree on the operator, still renders as unknown. Red first: 2 new tests, including an
+end-to-end live-versus-rebuilt render comparison. After reinstalling the wheel, both
+rebuilds were byte-identical to the original report section. My first byte comparison
+reported a mismatch; the cause was my own `sed` extraction stripping CRs, not the report.
+
+**Also fixed.** `drifter init`'s generated header said tool risk classification was not
+built, while `doctor` classifies tools. It now says `init` does not classify and `doctor`
+does, and names the `agent:` and `tasks:` blocks `run` needs.
+
+---
+
 ## E2 run: a real agent adapts to a breaking rename
 
 Recorded as docs/SPEC.md §15 limitation 21. Pre-registered in the workspace before the
