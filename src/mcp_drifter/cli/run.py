@@ -74,6 +74,7 @@ from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
 from mcp_drifter.replay.corpus_facts import build_corpus_facts
 from mcp_drifter.replay.authored_responses import AuthoredResponseError, load_authored_responses
 from mcp_drifter.mutate.audit import write_mutation_audit
+from mcp_drifter.mutate.audit import manifest_changed
 from mcp_drifter.mutate.description_update import mutate_tool_manifest
 from mcp_drifter.mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
 from mcp_drifter.mutate.tool_addition import add_tool
@@ -221,6 +222,29 @@ def run_mutation_comparison(
     except AuthoredResponseError as exc:
         raise ConfigError(str(exc)) from exc
 
+    # The mutation depends only on the manifest and seed, so it is computed
+    # BEFORE the baseline arm: a mutation that changed nothing is refused
+    # without spending a single run (docs/PHASES.md R0.5, blocker 2).
+    if operator == "description_update":
+        mutated_tools, mutation_log = mutate_tool_manifest(original_tools, seed=seed)
+        synthetic_tool_names: frozenset[str] = frozenset()
+    elif operator == "parameter_rename":
+        mutated_tools, mutation_log = rename_tool_parameters(original_tools, seed=seed)
+        synthetic_tool_names = frozenset()
+    else:
+        new_tool, entry = add_tool(original_tools, seed=seed)
+        mutated_tools = [*original_tools, new_tool]
+        mutation_log = [entry]
+        synthetic_tool_names = frozenset({new_tool.name})
+
+    if not manifest_changed(original_tools, mutated_tools):
+        raise ConfigError(
+            f"{operator} changed nothing in the served manifest for server {server_name!r} "
+            f"(seed {seed}), so there is no mutation to compare against. Refusing to run: a "
+            f"verdict here would describe a mutation that did not happen. Choose an operator "
+            f"that applies to this server's tools."
+        )
+
     baseline_run_once = budget_limited(
         make_run_once(
             command=command,
@@ -238,18 +262,6 @@ def run_mutation_comparison(
         tracker,
     )
     baseline_result = run_baseline(task_id, baseline_run_once, repeats=repeats, calibration=calibration)
-
-    if operator == "description_update":
-        mutated_tools, mutation_log = mutate_tool_manifest(original_tools, seed=seed)
-        synthetic_tool_names: frozenset[str] = frozenset()
-    elif operator == "parameter_rename":
-        mutated_tools, mutation_log = rename_tool_parameters(original_tools, seed=seed)
-        synthetic_tool_names = frozenset()
-    else:
-        new_tool, entry = add_tool(original_tools, seed=seed)
-        mutated_tools = [*original_tools, new_tool]
-        mutation_log = [entry]
-        synthetic_tool_names = frozenset({new_tool.name})
 
     # F-12: only parameter_rename ever produces a real inverse mapping
     # (description_update/tool_addition's own MutationLogEntry.inverse is

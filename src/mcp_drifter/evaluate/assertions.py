@@ -136,21 +136,35 @@ def evaluate_run(records: Sequence[object], assertions: TaskAssertions) -> RunAs
     shape.
     """
     calls = [r for r in records if isinstance(r, ToolCall)]
+    # Every attempt, for `never_calls`: attempting a forbidden call is the
+    # violation whether or not it went through.
     called_names = [c.tool_name for c in calls]
+    # Only calls that went through, for `calls` / `calls_before`
+    # (docs/PHASES.md R0.5, blocker 4). A schema-rejected or missed call is
+    # recorded `fault=True`, and an F-14 synthesized miss answers with
+    # fabricated content; neither means the agent did the thing the assertion
+    # claims. `fault is None` still counts: before that field existed, a
+    # faulted call wrote no ToolCall at all, so a legacy record is a completed call.
+    succeeded_names = [
+        c.tool_name for c in calls if c.fault is not True and c.result_provenance != "synthetic_miss"
+    ]
     failures: list[AssertionFailure] = []
 
     for required in assertions.calls:
-        if required not in called_names:
-            failures.append(
-                AssertionFailure("calls", f"expected a call to {required!r}, but it was never called")
+        if required not in succeeded_names:
+            detail = (
+                f"expected a call to {required!r}, but every call to it never succeeded (rejected, faulted or missed)"
+                if required in called_names
+                else f"expected a call to {required!r}, but it was never called"
             )
+            failures.append(AssertionFailure("calls", detail))
 
     for earlier, later in assertions.calls_before:
         # Both must be present for an ordering claim to hold at all; a
         # missing tool is reported as an ordering failure with a distinct
         # message rather than silently passing on a vacuous truth.
-        if earlier not in called_names or later not in called_names:
-            missing = [n for n in (earlier, later) if n not in called_names]
+        if earlier not in succeeded_names or later not in succeeded_names:
+            missing = [n for n in (earlier, later) if n not in succeeded_names]
             failures.append(
                 AssertionFailure(
                     "calls_before",
@@ -159,7 +173,7 @@ def evaluate_run(records: Sequence[object], assertions: TaskAssertions) -> RunAs
                 )
             )
             continue
-        if called_names.index(earlier) > called_names.index(later):
+        if succeeded_names.index(earlier) > succeeded_names.index(later):
             failures.append(
                 AssertionFailure(
                     "calls_before",

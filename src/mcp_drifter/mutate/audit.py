@@ -165,3 +165,14 @@ def read_mutation_audit(path: Path) -> list[MutationAuditRecord]:
     """
     lines = [line for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
     return [MutationAuditRecord(**json.loads(line)) for line in lines]
+
+
+def manifest_changed(original: list, mutated: list) -> bool:
+    """Whether the served contract differs at all: every tool's full
+    serialized descriptor, in order. An operator can legitimately change
+    nothing (parameter_rename on a manifest with no snake_case property,
+    description_update with nothing to substitute or reorder), and anything
+    served or compared against an unchanged manifest describes a mutation
+    that did not happen -- indistinguishable, in a report, from an agent
+    that adapted (docs/PHASES.md R0.5, release-gate blocker 2)."""
+    return [t.model_dump(mode="json") for t in original] != [t.model_dump(mode="json") for t in mutated]

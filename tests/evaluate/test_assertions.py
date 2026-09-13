@@ -336,3 +336,66 @@ def test_an_established_failure_is_not_hidden_by_a_missing_answer(tmp_path):
     result = evaluate_task(paths, TaskAssertions(answer_matches=r"\b2\b"))
 
     assert result.verdict == "FAIL"
+
+
+# --- blocker 4 (docs/PHASES.md R0.5): `calls` means a call that went through ---
+
+
+def _call(tool_name: str, seq: int, fault: bool | None, provenance: str = "real") -> ToolCall:
+    return ToolCall(
+        session_id="s", seq=seq, timestamp="2026-08-25T00:00:01Z", server="srv",
+        tool_name=tool_name, arguments={}, result_shape=None if fault else {"type": "object"},
+        is_error=None if fault else False, duration_ms=1.0, fault=fault,
+        result_provenance=provenance, raw_frame_offset=seq * 100,
+    )
+
+
+def _start():
+    return SessionStart(
+        session_id="s", seq=0, started_at="2026-08-25T00:00:00Z",
+        environment=Environment(tool_manifest_hash="h"), raw_frame_offset=0,
+    )
+
+
+def test_a_rejected_call_does_not_satisfy_calls():
+    """A schema-rejected or missed call is recorded fault=True. "It called
+    get_order" must not hold for a call that never went through."""
+    result = evaluate_run([_start(), _call("get_order", 1, fault=True)], TaskAssertions(calls=("get_order",)))
+
+    assert result.passed is False
+    assert [f.kind for f in result.failures] == ["calls"]
+    assert "never succeeded" in result.failures[0].detail
+
+
+def test_one_successful_call_among_rejected_ones_satisfies_calls():
+    records = [_start(), _call("get_order", 1, fault=True), _call("get_order", 2, fault=False)]
+    assert evaluate_run(records, TaskAssertions(calls=("get_order",))).passed is True
+
+
+def test_a_synthesized_miss_does_not_satisfy_calls():
+    """F-14 answers a miss with fabricated content and fault=False; it is a
+    miss in coverage, and must not count as the call having been made."""
+    records = [_start(), _call("get_order", 1, fault=False, provenance="synthetic_miss")]
+    assert evaluate_run(records, TaskAssertions(calls=("get_order",))).passed is False
+
+
+def test_a_pre_fault_field_call_still_satisfies_calls():
+    """Schema evolution: before `fault` existed, a faulted call wrote no
+    ToolCall at all, so a legacy record with fault=None was a completed call."""
+    assert evaluate_run([_start(), _call("get_order", 1, fault=None)], TaskAssertions(calls=("get_order",))).passed is True
+
+
+def test_calls_before_ignores_rejected_calls():
+    records = [
+        _start(),
+        _call("get_order", 1, fault=True),
+        _call("find_order", 2, fault=False),
+        _call("get_order", 3, fault=False),
+    ]
+    assert evaluate_run(records, TaskAssertions(calls_before=(("find_order", "get_order"),))).passed is True
+
+
+def test_never_calls_still_counts_an_attempt():
+    """Attempting a forbidden call is the violation, whether or not it went through."""
+    result = evaluate_run([_start(), _call("delete_order", 1, fault=True)], TaskAssertions(never_calls=("delete_order",)))
+    assert result.passed is False

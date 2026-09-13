@@ -6,6 +6,100 @@ not just a diff.
 
 ---
 
+## Release gate E1 runs end to end in CI, and E2's plumbing is proven first
+
+Release-gate blockers 1 and 3 (docs/PHASES.md R0.5).
+
+**Controlled server.** `tests/fixtures/orders_server.py` has `find_order(customer)`,
+which returns an order id nobody can guess, and `get_order(order_id)`, which returns the
+total. Checked against the live server: `parameter_rename` changes exactly one thing,
+`get_order.order_id` to `orderId`, and leaves `find_order` untouched.
+
+**E1 as a test, not a live run.** The subject is deterministic, so a CI test is the
+experiment. `tests/cli/test_release_gate_e1.py` records a corpus live through `drifter
+observe`, authors a two-entry fixture and runs `run_mutation_comparison` with
+`orders_old_contract_client.py`. Every pre-registered outcome is asserted, including the
+failure reason: the `-31003` code comes from the raw mirror frame at the faulted call's
+`raw_frame_offset`. `ToolCall` stores no error code, and `error.code` survives redaction.
+Checked red twice. A client sending `orderId` everywhere fails at the baseline, which is
+correct but not sharp enough. A client reading the served schema fails exactly at
+`mutated.valid_runs == 0`, so the detection assertions are what fail.
+
+**E2 precondition.** The schema-reading client is committed as
+`orders_adapting_client.py`, with a test that it recovers under the same mutation: 3/3
+valid, TASK PASS, and `orderId` resolved to the authored body at the `inverse` tier. I
+first wrote "exact" into this test; the run showed `inverse`, which is the correct tier
+for a renamed argument mapped back through the recorded inverse map. E2 puts
+a real LLM in that seat. With this passing, an E2 failure is the model's, not Drifter's.
+
+**Found while building it.** The low-level `python -m mcp_drifter.record` entry point
+names the server after its launch command, so a corpus recorded through it is keyed to
+an interpreter path. The test records through `drifter observe` instead, which uses the
+configured name. Not changed here.
+
+---
+
+## `calls` means a call that went through
+
+Release-gate blocker 4. `evaluate_run` matched `calls` and `calls_before` on `tool_name`
+alone, so "it called `get_order`" held for a call that served-schema validation rejected
+(`fault=True`), or for a miss that F-14 answered with fabricated content. That is exactly
+the E1 case: a scripted client whose renamed-tool call is rejected would still satisfy
+`calls`.
+
+**Change.** `calls` and `calls_before` count a call only when `fault is not True` and its
+provenance is not `synthetic_miss`. When the tool was attempted but never succeeded, the
+failure says so, as distinct from never being called. `never_calls` still counts every
+attempt, because attempting a forbidden call is the violation.
+
+**Schema evolution.** `fault=None` still counts. A record predating the field is a
+completed call, because through v1.0.9 a protocol fault wrote no ToolCall at all. It has a
+test of its own. Red first: 3 of 6 new tests failed before the change. The other three
+(one success among rejects, a legacy call, `never_calls`) already held and guard against
+over-correction.
+
+**E1 trajectory fixed** in docs/PHASES.md: 2 calls against the new controlled
+`orders_server.py`. `k=1` of `n=2` is rejected, so coverage is 0.50 and the pre-registered
+mutated verdict is exclusion with TASK UNKNOWN, with the `-31003` reason read from the raw
+mirror. Chosen over a longer trajectory that would stay valid and FAIL, because exclusion
+is what current semantics mean by detection, and the shortest trajectory has the fewest
+moving parts.
+
+---
+
+## A mutation that changed nothing is refused, before any run
+
+Release-gate blocker 2 (docs/PHASES.md R0.5, R3). `parameter_rename` on the filesystem
+server changes nothing, because no property has an underscore. `drifter run` still ran
+both arms and reported NO_REGRESSION. `tests/cli/test_run.py` asserted exactly that, as
+"an honest NO_REGRESSION... nothing changed, so nothing should". That verdict describes a
+mutation that did not exist, and the report cannot tell it apart from an agent that
+adapted. That makes it the release gate's false positive in advance.
+
+**Change.** `mutate.audit.manifest_changed` compares every served tool's full serialized
+descriptor, in order. `run_mutation_comparison` now computes the mutation before the
+baseline arm, since it depends only on the manifest and the seed, and raises `ConfigError`
+if nothing changed. No session, raw frame or mutation audit is written. `replay-serve
+--mutate` refuses the same way instead of serving an unchanged manifest labeled
+"mutated". The old end-to-end test is replaced by a refusal test that asserts no run
+directory exists; there are also a helper unit test and a replay-serve refusal test.
+Checked red first (the helper did not exist).
+
+**The check caught one more silent no-op on its first full run.**
+`tests/cli/test_authored_fixture_e2e.py` gave its synthetic tools the descriptions "List
+files" and "Read text", where `description_update` has nothing to substitute. Its passing
+"both arms PASS" comparison had therefore always run against an unchanged manifest. The
+descriptions now contain phrases the operator rewrites. The test's claim, that authored
+content closes navigation, coverage and the answer oracle together, is unchanged and
+passes.
+
+**Scope, stated.** This is whole-manifest identity only. A mutation that changes only
+tools the task never calls passes this check, yet cannot perturb that task. The release
+gate's E1/E2 must confirm from the audit log that the change landed on a tool the task
+calls.
+
+---
+
 ## Limitation 20's evidence committed; oracle tightened; control re-described
 
 An external review found the limitation-20 result credible but not durable: every

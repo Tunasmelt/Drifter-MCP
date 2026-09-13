@@ -29,6 +29,8 @@ from mcp_drifter.cli.run import (
 )
 from mcp_drifter.evaluate.baseline import BaselineResult
 from mcp_drifter.evaluate.effect_size import EffectSizeResult, compute_behavior_effect_size
+from mcp_drifter.mutate.audit import manifest_changed as _manifest_changed
+from mcp_drifter.mutate.parameter_rename import rename_tool_parameters
 from mcp_drifter.mutate.tool_addition import add_tool
 from mcp_drifter.policy.safety import SafetyResult
 from mcp_drifter.record.reader import read_session
@@ -443,45 +445,44 @@ def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_over
     assert forced_destructive in output
 
 
-def test_run_mutation_comparison_parameter_rename_end_to_end(tmp_path):
-    """parameter_rename (F-40) wired all the way through cli/run.py's real
-    orchestration -- confirms the new operator branch, and
-    inverse_map_from_log feeding make_run_once's own new inverse_map
-    parameter, don't crash the pipeline. The golden fixture's real tools
-    (filesystem server) happen to have no snake_case properties (verified
-    directly, not assumed), so this exercises the "nothing eligible to
-    rename" path at full orchestration scale -- an honest NO_REGRESSION
-    for the same reason description_update's own end-to-end test is:
-    nothing changed, so nothing should. F-12's actual inverse-tier
-    resolution mechanism is confirmed separately and more precisely by
-    tests/replay/test_replay_proxy.py's
-    test_an_inverse_map_hit_is_recorded_with_match_tier_inverse, which
-    controls the schema directly rather than depending on golden-fixture
-    content.
+def test_a_mutation_that_changes_nothing_is_refused_before_any_run(tmp_path):
+    """R3 / release-gate blocker 2 (docs/PHASES.md R0.5). The golden
+    fixture's filesystem tools have no snake_case property (verified
+    directly, not assumed), so parameter_rename changes nothing. This test
+    used to assert that case produced NO_REGRESSION -- a verdict about a
+    mutation that did not exist, indistinguishable from "the agent adapted".
+    Now it is refused, and refused BEFORE the baseline arm spends a run.
     """
     calls = _golden_calls()[:3]
     command = [sys.executable, str(SCRIPTED_AGENT), *(_spec(c.tool_name, c.arguments) for c in calls)]
+    assert all(entry.inverse is None for entry in rename_tool_parameters(tools_served_from_session(GOLDEN_FIXTURE), seed=42)[1])
 
-    result = run_mutation_comparison(
-        task_id="param_rename_task",
-        prompt="",
-        fixture=GOLDEN_FIXTURE,
-        server_name=GOLDEN_SERVER,
-        agent_command=command,
-        operator="parameter_rename",
-        session_dir=tmp_path / "runs",
-        raw_dir=tmp_path / "raw",
-        repeats=3,  # 3 = calibration.min_valid_runs: the minimum-evidence gate (SPEC §15 limitation 16) refuses a verdict below it
-        timeout_s=30.0,
-    )
+    with pytest.raises(ConfigError, match=r"parameter_rename changed nothing"):
+        run_mutation_comparison(
+            task_id="param_rename_task",
+            prompt="",
+            fixture=GOLDEN_FIXTURE,
+            server_name=GOLDEN_SERVER,
+            agent_command=command,
+            operator="parameter_rename",
+            session_dir=tmp_path / "runs",
+            raw_dir=tmp_path / "raw",
+            repeats=3,
+            timeout_s=30.0,
+        )
 
-    assert result.baseline.has_data is True
-    assert result.mutated.has_data is True
-    assert result.effect.verdict == "NO_REGRESSION"
-    assert len(result.mutation_log) == len(tools_served_from_session(GOLDEN_FIXTURE))
-    # No golden-fixture tool has an eligible snake_case property -- every
-    # entry's inverse must honestly report None, not a fabricated rename.
-    assert all(entry.inverse is None for entry in result.mutation_log)
+    # No run was spent and no audit trail claims a mutation happened.
+    assert not (tmp_path / "runs").exists()
+    assert not (tmp_path / "raw").exists()
+
+
+def test_manifest_changed_compares_the_served_contract_exactly():
+    tools = tools_served_from_session(GOLDEN_FIXTURE)
+    assert _manifest_changed(tools, list(tools)) is False
+    assert _manifest_changed(tools, [t.model_copy(deep=True) for t in tools]) is False
+    renamed = [tools[0].model_copy(update={"description": tools[0].description + " x"}), *tools[1:]]
+    assert _manifest_changed(tools, renamed) is True
+    assert _manifest_changed(tools, [*tools, tools[0].model_copy(update={"name": "extra"})]) is True
 
 
 # --- real end-to-end: agent.mode: http (F-38) --------------------------------

@@ -65,6 +65,7 @@ import anyio
 from mcp.server.stdio import stdio_server
 
 from mcp_drifter.cli.config import ConfigError
+from mcp_drifter.mutate.audit import manifest_changed
 from mcp_drifter.mutate.description_update import mutate_tool_manifest
 from mcp_drifter.mutate.parameter_rename import inverse_map_from_log, rename_tool_parameters
 from mcp_drifter.mutate.tool_addition import add_tool
@@ -112,7 +113,14 @@ def run_replay_serve(
     else:
         tools_served = original_tools
 
-    recorder = SessionRecorder(session_dir=session_dir, raw_dir=raw_dir, server_name=server_name)
+    if operator and not manifest_changed(original_tools, tools_served):
+        raise ConfigError(
+            f"{operator} changed nothing in the served manifest for server {server_name!r} "
+            f"(seed {seed}). Refusing to serve it labeled as mutated: a session recorded "
+            f"here would describe a mutation that did not happen."
+        )
+
+    recorder =SessionRecorder(session_dir=session_dir, raw_dir=raw_dir, server_name=server_name)
 
     mutation_note = f"mutated: {operator}, seed={seed}" if operator else "baseline, unmutated"
     status_stream.write(render_corpus_summary(corpus, server_name) + "\n")

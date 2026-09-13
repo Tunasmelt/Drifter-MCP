@@ -1026,14 +1026,41 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
      the operator is a silent no-op. The gate needs a controlled server and authored
      task with a required snake_case parameter whose value is a returned path or id,
      plus its authored fixture.
-  2. R3's no-op mutation rejection must land first. Otherwise a mutation that changed
-     nothing can produce a comparison that looks like "the agent adapted".
-  3. Each experiment's oracle and failure-reason check must be written and tested
-     against synthetic sessions before any live run.
+  2. ~~R3's no-op mutation rejection must land first.~~ Done (R3). A whole-manifest
+     no-op is refused before any run. E1/E2 must still check, from the mutation audit
+     log, that the renamed property belongs to a tool the task calls; the check does
+     not cover a change to an unused tool.
+  3. ~~Each experiment's oracle and failure-reason check must be written and tested
+     against synthetic sessions before any live run.~~ Done for E1, and stronger than
+     synthetic sessions: `tests/cli/test_release_gate_e1.py` runs E1 end to end, with a
+     corpus recorded live through `drifter observe` from `tests/fixtures/orders_server.py`,
+     an authored fixture and the scripted `orders_old_contract_client.py`. Every
+     pre-registered outcome is asserted: control 3/3 valid with TASK PASS; mutated 3/3
+     excluded at coverage 0.50 with TASK UNKNOWN; each run's `get_order` faulted with
+     `-31003`, read from the raw mirror frame at its `raw_frame_offset`; and the audit
+     log shows the rename landed only on `get_order`. Checked red: with a client that
+     reads the served schema, the test fails at `mutated.valid_runs == 0`. Because the
+     client is deterministic, E1 needs no separate live run; this test is the E1 result.
+     The same file holds E2's precondition: a schema-reading scripted client recovers
+     under the same mutation (3/3 valid, TASK PASS, `orderId` resolved to the authored
+     body). If that ever fails, an E2 failure would be the plumbing, not the model.
+  5. **E2 remains** the only live experiment: the real dogfood agent against the orders
+     server and fixture, with the acceptance bar above.
   4. The `calls` assertion counts every recorded call, including one that was rejected
      or faulted (`evaluate_run` checks `tool_name` only). "It called `read_text_file`"
-     can therefore hold for a call that never succeeded. E1 must not rely on `calls`.
-     Whether `calls` should require an unfaulted call is an open decision.
+     can therefore hold for a call that never succeeded. ~~Open decision.~~ Decided and
+     done: `calls` and `calls_before` count only calls that went through (`fault` not
+     True, and not an F-14 `synthetic_miss`). `never_calls` still counts every attempt.
+     A legacy `fault=None` record still counts as a call, since before that field existed
+     faulted calls wrote no record at all.
+
+  **E1 trajectory, fixed now.** Two calls against `tests/fixtures/orders_server.py`:
+  `find_order(customer)` then `get_order(order_id)`. Under `parameter_rename` only
+  `order_id` is renamed, so the scripted old-contract client has `k=1` rejected call out of
+  `n=2`. Coverage is 0.50, below the 0.70 floor. Pre-registered mutated outcome: 3/3 runs
+  excluded, TASK UNKNOWN, and each excluded run's `get_order` call rejected with `-31003`,
+  read from the raw mirror (`error.code` survives redaction). Control: 3/3 valid, TASK
+  PASS.
 - [ ] **Fixture authoring and maintenance story.** Limitation 20's bodies came from files
   the experimenter controls. A real user needs a way to author fixtures for their own
   server and keep them in step with it.
@@ -1085,8 +1112,12 @@ schema-evolution procedure (red test against a pre-change corpus first).
 - [ ] Validate served tool NAMES as well as schemas before lookup — the limitation-18 fix
       covers arguments only.
 - [ ] Handle `$ref` in served schemas explicitly rather than by accident.
-- [ ] Detect and reject no-op mutations — an operator that changed nothing must not
-      produce a comparison at all.
+- [x] Detect and reject no-op mutations — an operator that changed nothing must not
+      produce a comparison at all. `mutate.audit.manifest_changed` compares the full
+      serialized served manifest. `drifter run` computes the mutation BEFORE the
+      baseline arm and raises `ConfigError` without spending a run; `replay-serve
+      --mutate` refuses the same way. Scope: whole-manifest identity only. A mutation
+      that changes tools the task never calls still counts as a change.
 - [ ] Replace `index_session`'s last-writer-wins with a defined stateful response policy.
 - [ ] Re-scope value-only semantic matching as exploratory: two schema-valid calls can
       carry identical values in different semantic roles, and after the limitation-18 fix

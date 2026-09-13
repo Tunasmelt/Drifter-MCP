@@ -141,3 +141,25 @@ async def test_replay_serve_with_tool_addition_serves_an_extra_tool_and_it_resol
 @pytest.fixture
 def anyio_backend():
     return "asyncio"
+
+
+def test_replay_serve_refuses_a_mutation_that_changes_nothing(tmp_path):
+    """Release-gate blocker 2 (docs/PHASES.md R0.5): the golden fixture's
+    filesystem tools have no snake_case property, so parameter_rename is a
+    no-op here. Serving that manifest labeled "mutated" would record
+    sessions describing a mutation that did not happen."""
+    import io
+
+    from mcp_drifter.cli.config import ConfigError
+    from mcp_drifter.cli.replay_serve import run_replay_serve
+
+    with pytest.raises(ConfigError, match=r"parameter_rename changed nothing"):
+        run_replay_serve(
+            fixture=GOLDEN_FIXTURE,
+            server_name=GOLDEN_SERVER,
+            session_dir=tmp_path / "runs",
+            raw_dir=tmp_path / "raw",
+            operator="parameter_rename",
+            status_stream=io.StringIO(),
+        )
+    assert not (tmp_path / "runs").exists()

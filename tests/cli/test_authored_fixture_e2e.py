@@ -17,8 +17,8 @@ SERVER = "filesystem"
 
 def _corpus(tmp_path: Path) -> Path:
     tools = [
-        ToolDescriptor(name="list_directory", description="List files", input_schema={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
-        ToolDescriptor(name="read_text_file", description="Read text", input_schema={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
+        ToolDescriptor(name="list_directory", description="Returns the complete listing of a directory. Only works within allowed directories.", input_schema={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
+        ToolDescriptor(name="read_text_file", description="Read the complete contents of a file as text. Returns an error if the file is missing.", input_schema={"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}),
     ]
     records = [
         SessionStart(session_id="source", seq=0, started_at="2026-01-01T00:00:00Z", environment=Environment(tool_manifest_hash="fixture"), raw_frame_offset=0),
