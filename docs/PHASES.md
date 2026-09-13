@@ -966,6 +966,19 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
   carry `authored_fixture` provenance and cannot become historical replay evidence.
   This proves the mechanism composes; dependable real-agent claims still require the
   same test against the Gate 3 dogfood agent and an explicit fixture-maintenance story.
+  **Real-agent test done (docs/SPEC.md §15 limitation 20):** claude-code/2.1.270, control
+  0/4 valid and 0/4 correct; fixture arm 4/4 + 4/4 valid, 8/8 navigation, 8/8 correct
+  answers, TASK PASS both arms, trajectory identical to live with no shortcut.
+
+- [ ] **Release-gate agents against a real agent.** Limitation 20 shows capability
+  PRESERVATION is measured correctly. Still untested: a deliberately unadapted agent
+  failing for the expected reason, and an adapting agent recovering, under a mutation
+  that actually perturbs behaviour.
+- [ ] **Fixture authoring and maintenance story.** Limitation 20's bodies came from files
+  the experimenter controls. A real user needs a way to author fixtures for their own
+  server and keep them in step with it.
+- [ ] **Split `authored_fixture` out of the `exact` provenance bucket.** CONFIDENCE
+  currently prints `exact 100%` for authored bodies (limitation 20).
 
 ### R1 — Run lifecycle and recording schema
 

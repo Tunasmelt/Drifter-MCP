@@ -1167,3 +1167,62 @@ when*.
     recording plus EXPLICITLY EXPERIMENTAL structural mutation and replay; dependable
     task-regression claims return only after a content-preserving fixture approach passes
     end-to-end tests.
+
+20. **Authored response fixtures preserved task capability for a real agent on the
+    content-dependent task limitation 19 failed — one task, stated narrowly.** Recorded
+    with checkable identity so the claim is a measurement, not a memory.
+
+    **Identity.** Wheel `mcp-drifter 0.1.0` built from checkout `f07be3c`, installed into
+    a clean venv outside the repository, MCP SDK `mcp 2.2.0`. Agent
+    `claude-code/2.1.270` through the http adapter. Real server
+    `secure-filesystem-server 0.2.0` for the observe corpus. Workspace
+    `C:\Users\user\drifter-dogfood` (the earlier Temp-hosted workspace and its corpus
+    were deleted by OS temp cleanup between sessions, so the corpus was re-recorded
+    rather than reused). Corpus: 10 live observe sessions, 40 calls, 4 distinct
+    requests, every session the same nested trajectory. Fixture: `responses.yaml`, 4
+    entries, each bound to an exact recorded request and accepted by the loader;
+    bodies authored from the controlled workspace files, listing text in the server's
+    own `[DIR]`/`[FILE]` format, one level at a time. Experiments `fx-off` (shape-only
+    control) and `fx-on` (`--response-fixture`), fresh directories, same wheel, corpus,
+    authored task, and oracle (`calls: [read_text_file]`, `answer_matches: '\b2\b'`),
+    `--repeats 4`, operator `description_update`.
+
+    **Control (`fx-off`).** Baseline 0/4 valid (0.67/0.50/0.50/0.57, all below the
+    floor); mutated arm skipped; TASK UNKNOWN (no valid run to evaluate). Navigation 0/4:
+    every run listed the root, received an empty listing, never discovered `data/`,
+    guessed `drifter-dogfood\readings.csv`, and missed — limitation 17 reproduced.
+    Answers 0/4 correct; all four asked the user to confirm the file location or grant
+    permissions.
+
+    **Treatment (`fx-on`).** Baseline 4/4 valid, mutated 4/4 valid, request-match
+    coverage 1.00 both arms, BEHAVIOR NO_REGRESSION (deviation 0%), TASK baseline PASS
+    4/4 and mutated PASS 4/4, SAFETY NO VIOLATION. Navigation 8/8. Answers 8/8 correct
+    ("readings.csv has a header row (alpha,beta,gamma) followed by 2 data rows").
+    Every call carried `authored_fixture` provenance.
+
+    **No shortcut.** Unlike R0 (limitation 19), the treatment trajectory was identical to
+    the live one in all 8 runs: `list_allowed_directories` → `list_directory(root)` →
+    `list_directory(data)` → `read_text_file(readings.csv)`. The authored listing
+    disclosed one level at a time, so the agent had exactly the information the real
+    server gave it, when the real server gave it.
+
+    **What this establishes.** For this task, with this agent, authored content-
+    preserving fixtures turn a replay that cannot support any task claim into one where
+    task capability is demonstrably preserved in BOTH arms, and a NO_REGRESSION verdict
+    is backed by an oracle rather than resting on request-match coverage alone.
+
+    **What it does NOT establish.** (a) Generality: one task, one tiny controlled
+    workspace, one operator, 4 runs per arm. (b) Detection power: `description_update`
+    did not perturb this agent, so this shows capability PRESERVATION being measured
+    correctly, not that a real breaking mutation is caught. The release gate's other two
+    agents — a deliberately unadapted agent failing for the expected reason, and an
+    adapting agent recovering — remain untested against a real agent. (c) A practical
+    fixture story: these bodies were authored from files the experimenter controls.
+    For a real user's server, how fixtures are authored and kept in step with the real
+    system is unsolved. (d) Statistical validity of the verdict rule (R4) is untouched.
+
+    **Open labeling gap found while reading the report.** CONFIDENCE rendered
+    `exact 100%` for calls whose response bodies were authored, because
+    `_provenance_counts` places `authored_fixture` in the `exact` bucket. The REQUEST
+    match was genuinely exact; the CONTENT was not recorded. That is limitation 19's
+    presentation defect in a new place, and should be split into its own bucket.

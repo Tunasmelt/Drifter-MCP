@@ -8,8 +8,15 @@ offers **experimental** structural mutation and offline replay of the tool inter
 > run, but replay serves recorded response *shapes*, not contents, so an agent whose
 > task depends on reading what a tool returned cannot complete that task under replay
 > ([`docs/SPEC.md` §15 limitations 17 and 19](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)).
-> Treat behavioral verdicts as experimental, and do not use them for release decisions
-> until a content-preserving fixture approach has been validated end to end.
+> Treat behavioral verdicts as experimental, and do not use them for release decisions.
+>
+> Authored response fixtures (`--response-fixture`) close that gap for a task you can
+> write fixtures for: against a real Claude Code agent on a content-dependent task,
+> shape-only replay produced 0/4 valid runs and 0/4 correct answers, while authored
+> fixtures produced 8/8 valid runs and 8/8 correct answers in both arms
+> ([limitation 20](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)).
+> That is one task, one operator, 4 runs per arm, and it shows capability preservation
+> being measured correctly — not yet that a real breaking change is detected.
 
 Console command: `drifter`. Install with `uv tool install mcp-drifter` — see
 [Install](#install).

@@ -6,6 +6,47 @@ not just a diff.
 
 ---
 
+## Authored fixtures pass the real-agent test limitation 19 failed
+
+The content-preserving fixture spike (`--response-fixture`, commit f07be3c) had proven
+the mechanism composes against a scripted agent. This ran the same question against the
+real dogfood agent. Recorded as docs/SPEC.md §15 limitation 20, with full identity.
+
+**Result.** Same wheel, corpus, authored task and answer oracle; only the fixture flag
+differed. Control `fx-off`: 0/4 valid, navigation 0/4, correct answers 0/4 — limitation 17
+reproduced, every run guessing the wrong path after an empty listing. Treatment `fx-on`:
+4/4 baseline and 4/4 mutated valid, navigation 8/8, correct answers 8/8, TASK PASS in both
+arms, and a trajectory identical to the live recording in every run.
+
+The last point is what separates this from R0. R0's hints disclosed the deep path at the
+first listing and shortened the workflow; the authored listing discloses one level at a
+time in the server's own format, so the agent had the same information at the same moment
+it had live. Assistance would have invalidated the comparison. This is restoration.
+
+**What changed in the evidence.** Before, a NO_REGRESSION verdict could rest on request-
+match coverage alone — limitation 19 showed that pairing 0.88 coverage with zero correct
+answers. Here NO_REGRESSION sits beside TASK PASS in both arms from an outcome oracle, so
+"the mutation preserved task capability" is backed by the thing it claims.
+
+**Kept narrow, deliberately.** One task, one tiny controlled workspace, one operator, 4
+runs per arm. `description_update` did not perturb the agent, so this validates measuring
+capability PRESERVATION, not detecting a real break — the release gate's unadapted-agent
+and adapting-agent cases are still untested against a real agent. The fixture bodies were
+authored from files the experimenter controls; a practical authoring-and-maintenance story
+for a real user's server does not exist yet. The verdict rule's statistics (R4) are
+untouched.
+
+**Environment note.** The earlier workspace lived in OS Temp and was deleted between
+sessions, taking the limitation-19 corpus with it. The corpus was re-recorded rather than
+reconstructed, and the workspace now lives at `C:\Users\user\drifter-dogfood`.
+
+**A labeling gap the report exposed.** CONFIDENCE printed `exact 100%` for calls whose
+bodies were authored: `_provenance_counts` files `authored_fixture` under `exact`. The
+request match was genuinely exact; the content was not recorded. Same presentation defect
+as limitation 19, new location — open, and small.
+
+---
+
 ## Content-preserving authored response fixture spike
 
 R0.5's remaining spike is implemented behind `drifter run --response-fixture`. The
