@@ -1380,13 +1380,3 @@ when*.
     name is rejected before lookup even when the served JSON Schema permits additional
     properties. Finally, a parameter-rename report with no inverse-tier hit warns that no
     successful call exercised the rename.
-
-    **Authenticated servers and native hosts.** HTTP MCP authorization is a client
-    responsibility. Drifter must either act as an explicit OAuth client (discovery,
-    authorization code + PKCE, audience-bound tokens, refresh and secure storage) or accept
-    credentials deliberately supplied for a test environment. It must not copy or discover
-    bearer tokens from Claude.ai, an IDE, or another MCP host: those credentials belong to
-    that client and token passthrough breaks the authorization boundary. For stdio servers,
-    credentials belong in the spawned process environment. For IDE/native use, the safe
-    integration is host-assisted delegation with visible consent and least-privilege,
-    short-lived credentials. Auth state may be recorded only as non-secret metadata.

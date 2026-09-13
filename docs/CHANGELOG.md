@@ -6,7 +6,7 @@ not just a diff.
 
 ---
 
-## Real-server findings A–C fixed; authenticated-server boundary defined
+## Real-server findings A–C fixed
 
 S2 exposed that a schema-invalid first guess followed by a correct retry was excluded as
 if replay had failed. `ToolCall.fault_code` now records the JSON-RPC code (nullable for old
@@ -19,13 +19,6 @@ active rename even if the served schema allows unknown properties, preventing an
 optional name from resolving against the original recording. Reports now warn when no
 successful mutated call used any renamed argument, so a task that missed the mutation is
 identified rather than presented as evidence about it.
-
-Authenticated MCP is scoped separately. Near-term explicit credentials must be supplied
-by environment reference and never persisted. Standards-based remote support requires an
-OAuth client with discovery, PKCE, resource indicators, refresh and secure storage. Host
-credentials from Claude.ai or an IDE are not copied or passed through; native integrations
-must use deliberate host delegation and visible consent. Auth tests use local fixtures or
-disposable read-only accounts, never production-capable email/payment/deploy tools.
 
 ---
 

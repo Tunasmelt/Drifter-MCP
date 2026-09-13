@@ -1059,24 +1059,6 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
   the rename.
 - [ ] **Bundle S1/S2 evidence** (`C:\Users\user\drifter-servers`) as for E2.
 
-### Authenticated and host-managed MCP servers
-
-- [ ] Add explicit credential injection for user-owned test environments: stdio
-  environment variables and HTTP headers whose values are read from named environment
-  variables at runtime. Never persist resolved values in config, sessions, raw mirrors,
-  reports, fixtures, or mutation audits.
-- [ ] Add MCP OAuth 2.1 client support for protected Streamable HTTP servers: protected
-  resource and authorization-server discovery, authorization code + PKCE, resource
-  indicators, refresh, scope escalation, and OS credential-store persistence. Treat this
-  as a client feature with an interactive login command, not token passthrough from an IDE
-  or Claude host.
-- [ ] Add a host-assisted adapter for IDE/native development use. The host remains the
-  OAuth client and consent surface; Drifter receives a deliberately delegated connection
-  or short-lived credential. Do not read Claude, VS Code, or another client's private token
-  store. Record auth state only as non-secret metadata (method/scopes/audience/expiry class).
-- [ ] Authenticated-server tests use a local OAuth fixture and read-only scopes. Write-
-  capable tools require an isolated disposable account plus the existing safety policy;
-  no email, payment, deploy, or production mutation in release-gate tests.
 - [x] **Remaining release-gate conditions** not exercised by E1/E2: fresh wheel installed
   outside the repo, replay with the upstream server unavailable, and a byte-identical
   report rebuild. Done (docs/SPEC.md §15 limitation 22). Fresh wheel in a clean venv ran
