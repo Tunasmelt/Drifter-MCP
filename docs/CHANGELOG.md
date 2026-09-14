@@ -6,6 +6,51 @@ not just a diff.
 
 ---
 
+## Fixture authoring and maintenance: `drifter fixture capture` / `check`
+
+Every experiment through limitation 23 used response fixtures written by hand or by a
+one-off script, and the external review named two gaps: no supported way for a user to
+author fixtures for their own server, and no content-validity signal, since request-match
+coverage says nothing about whether a stored body is still what the server returns.
+
+**`capture`.** Plans the distinct REAL answered requests in the corpus. It opens one live
+session, classifies tools from the live manifest (annotations included), calls only
+read-only tools, and writes the bodies with provenance (`live_capture`, `captured_at`,
+server name and version, `content_sha256`). The file header states that it holds
+unredacted payloads. It refuses to overwrite without `--force`.
+
+**`check`.** Marks entries whose request is not in the corpus UNBOUND without calling
+them, re-calls the rest, and compares a hash of the live body with a hash of the STORED
+body. Hand edits are therefore caught even if provenance still carries the capture
+hash. Entries without provenance are labelled hand-authored. Exit code 1 means STALE,
+UNBOUND or ERROR; 4 means a config error. SKIPPED entries are reported but do not fail,
+because they mean "not verified" and the output says why.
+
+**Safety.** `--allow-tool` promotes only tools classified `unknown`; writes and
+destructive tools are refused even when named. Requests whose recorded arguments contain
+a redaction marker are skipped, because the redacted value would be sent live. Every live
+session runs under a timeout, and a hanging server is reported as ERROR. Per CLAUDE.md's
+shutdown-hang rule this is timed: a 5-second timeout finishes well inside 20 seconds.
+
+**Tests.** 11, against `tests/fixtures/orders_server.py` and a corpus recorded through
+`drifter observe`. The code was written before the tests, so red was checked afterwards:
+disabling STALE detection and removing the write gate each failed their tests; restoring
+the source passed all 11.
+
+**Smoke test on a real server** (`mcp-server-time`, S1's corpus, installed CLI). `capture`
+wrote 1 entry (`convert_time` is `unknown` by name, but read-only by the live server's own
+annotations, so no `--allow-tool` was needed). An immediate `check` reported FRESH, exit
+0. `check` on S1's hand-authored fixture from 2026-09-14 reported STALE, exit 1. The
+response embeds the conversion date, so yesterday's body differs from today's, although
+the task answer `01:00` is unchanged.
+
+**Limits, stated.** No normalization for bodies that legitimately change over time: the
+smoke test above shows a date-bearing body going STALE while its task-relevant answer
+still holds. No capture for write tools. No merging into
+a hand-edited fixture.
+
+---
+
 ## Limitations 22 and 23 evidence committed; E1's revised outcome labelled
 
 **Bundles.** `limitation_22_gate` (fresh wheel, upstream unavailable, report rebuild),

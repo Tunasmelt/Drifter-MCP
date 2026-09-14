@@ -147,6 +147,23 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Max wall-clock seconds across both arms before remaining repeats are skipped (F-32)",
     )
 
+    fixture_parser = subparsers.add_parser("fixture", help="Author and maintain response fixtures from the live server (read-only tools only)")
+    fixture_sub = fixture_parser.add_subparsers(dest="fixture_command")
+    for name, help_text in (
+        ("capture", "Call the live server with each recorded request and write a response fixture"),
+        ("check", "Re-call the live server for each fixture entry and report FRESH / STALE / UNBOUND"),
+    ):
+        sub = fixture_sub.add_parser(name, help=help_text)
+        sub.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+        sub.add_argument("--server", default=None, help="Server name from drifter.yaml (required if more than one)")
+        sub.add_argument("--fixture", type=Path, nargs="+", required=True, help="Recorded session file(s) or directory: the corpus")
+        sub.add_argument("--allow-tool", action="append", default=[], dest="allow_tools",
+                         help="Permit a tool classified 'unknown' to be called live (never a write/destructive tool)")
+        sub.add_argument("--timeout", type=float, default=120.0, help="Seconds for the whole live session")
+    fixture_sub.choices["capture"].add_argument("--output", type=Path, required=True, help="Response fixture YAML to write")
+    fixture_sub.choices["capture"].add_argument("--force", action="store_true", help="Overwrite an existing --output")
+    fixture_sub.choices["check"].add_argument("--responses", type=Path, required=True, help="Response fixture YAML to verify")
+
     replay_serve_parser = subparsers.add_parser("replay-serve", help="Serve a replayed manifest over real stdio, for a real agent to connect to")
     replay_serve_parser.add_argument(
         "--fixture", type=Path, required=True, nargs="+",
@@ -280,6 +297,26 @@ def main() -> None:
         except ConfigError as e:
             print(f"drifter replay-serve: {e}", file=sys.stderr)
             raise SystemExit(4) from None
+    elif args.command == "fixture":
+        from mcp_drifter.cli.fixture import check_failed, run_fixture_capture, run_fixture_check
+
+        try:
+            if args.fixture_command == "capture":
+                run_fixture_capture(
+                    fixture=args.fixture, output=args.output, config_path=args.config, server_name=args.server,
+                    allow_tools=args.allow_tools, force=args.force, timeout_s=args.timeout,
+                )
+                raise SystemExit(0)
+            if args.fixture_command == "check":
+                statuses = run_fixture_check(
+                    fixture=args.fixture, responses=args.responses, config_path=args.config, server_name=args.server,
+                    allow_tools=args.allow_tools, timeout_s=args.timeout,
+                )
+                raise SystemExit(1 if check_failed(statuses) else 0)
+        except ConfigError as e:
+            print(f"drifter fixture {args.fixture_command}: {e}", file=sys.stderr)
+            raise SystemExit(4) from None
+        parser.parse_args(["fixture", "--help"])
     else:
         parser.print_help(sys.stderr)
         raise SystemExit(1 if args.command else 0)

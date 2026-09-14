@@ -1090,7 +1090,14 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
   mutated run's `get_order` call rejected with `-31003`,
   read from the raw mirror (`error.code` survives redaction). Control: 3/3 valid, TASK
   PASS.
-- [ ] **Fixture authoring and maintenance story.** Limitation 20's bodies came from files
+- [x] **Fixture authoring and maintenance story.** Done, narrowly: `drifter fixture capture`
+  replays each distinct recorded request against the live server (read-only tools only;
+  `--allow-tool` promotes `unknown`, never a write) and writes bodies with provenance;
+  `drifter fixture check` re-calls the live server and reports FRESH / STALE / UNBOUND /
+  SKIPPED / ERROR, exit 1 on drift. Not covered: write tools, requests with redacted
+  arguments (skipped, author by hand), content that legitimately varies per call
+  (always STALE; no normalization rules yet), and merging captures into a hand-edited file.
+  Original note: Limitation 20's bodies came from files
   the experimenter controls. A real user needs a way to author fixtures for their own
   server and keep them in step with it.
 - [x] **Split `authored_fixture` out of the `exact` provenance bucket.** CONFIDENCE
