@@ -1,0 +1,19 @@
+version: 1
+server: time
+responses:
+- tool_name: convert_time
+  arguments:
+    source_timezone: Asia/Tokyo
+    time: '14:00'
+    target_timezone: America/New_York
+  result:
+    content:
+    - type: text
+      text: "{\n  \"source\": {\n    \"timezone\": \"Asia/Tokyo\",\n    \"datetime\"\
+        : \"2026-09-14T14:00:00+09:00\",\n    \"day_of_week\": \"Monday\",\n    \"\
+        is_dst\": false\n  },\n  \"target\": {\n    \"timezone\": \"America/New_York\"\
+        ,\n    \"datetime\": \"2026-09-14T01:00:00-04:00\",\n    \"day_of_week\":\
+        \ \"Monday\",\n    \"is_dst\": true\n  },\n  \"time_difference\": \"-13.0h\"\
+        \n}"
+    isError: false
+    resultType: complete

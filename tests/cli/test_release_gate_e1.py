@@ -6,9 +6,16 @@ Pre-registered before this test existed:
 - subject `tests/fixtures/orders_old_contract_client.py`, a scripted client
   bound to the old contract, trajectory n=2;
 - control: 3/3 valid, TASK PASS;
-- mutated: k=1 of n=2 rejected -> coverage 0.50 < 0.70 floor -> 3/3 runs
-  excluded, TASK UNKNOWN, and each run's get_order rejected with -31003,
-  read from the raw mirror.
+- mutated (as originally pre-registered): k=1 of n=2 rejected -> coverage
+  0.50 < 0.70 floor -> 3/3 runs excluded, TASK UNKNOWN.
+
+Revised in c44ed82, openly, not silently: docs/SPEC.md §15 limitation 23's
+finding A showed request-match coverage wrongly counted an agent's own
+schema-rejected call (-31003) as a replay miss, excluding a real recovery.
+Coverage now measures replay availability only, so the same deterministic
+client is 3/3 VALID at coverage 1.00 and the task oracle reports TASK FAIL.
+The detection reason is unchanged: each get_order is rejected with -31003,
+read from `ToolCall.fault_code` and the raw mirror.
 
 Deterministic: any other outcome is a defect, not noise.
 """

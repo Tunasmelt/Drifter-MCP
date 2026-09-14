@@ -1,0 +1,17 @@
+version: 1
+servers:
+- name: econ
+  url: https://econ-index.mcp.claude.com/mcp
+record:
+  dir: .drifter/runs
+  redact: shape
+agent:
+  mode: http
+  env_var: DRIFTER_PROXY_URL
+  command: ['REPO/.venv/Scripts/python.exe', 'WORKSPACE/agent_wrapper.py', '{task.prompt}']
+tasks:
+- id: japan-index
+  prompt: Using ONLY the econ index MCP tools (do not use any other tools), look up Japan (country code JPN) and report Japan's Anthropic Usage Index value.
+  assert:
+    calls: [econ_index_get_usage_by_country]
+    answer_matches: '\b1\.91\b'

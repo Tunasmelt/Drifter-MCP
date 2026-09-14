@@ -1,0 +1,84 @@
+{
+  "experiment": "limitation_23_s2_econ",
+  "spec_reference": "docs/SPEC.md section 15, limitation 23 (S2)",
+  "identity": {
+    "drifter": "commit 8861c04, repo venv",
+    "agent": "claude-code/2.1.270",
+    "server": "https://econ-index.mcp.claude.com/mcp (public, read-only, url mode)"
+  },
+  "claims": {
+    "corpus_sessions": 2,
+    "renamed": {
+      "econ_index_get_usage_by_country": {
+        "countryCode": "country_code"
+      }
+    },
+    "baseline": {
+      "total": 4,
+      "valid": 4,
+      "task": "PASS",
+      "argument": "country_code",
+      "tier": "exact"
+    },
+    "mutated": {
+      "total": 4,
+      "valid": 3,
+      "task": "PASS",
+      "argument": "countryCode",
+      "tier": "inverse"
+    },
+    "recovered_run": {
+      "first_call_arguments": [
+        "country"
+      ],
+      "first_call_code": -31003,
+      "retry_arguments": [
+        "countryCode"
+      ],
+      "answer_correct": true,
+      "fault_code_field_on_record": null,
+      "still_excluded_under_c44ed82": true,
+      "why": "Recorded before ToolCall.fault_code existed; an unknown code is not treated as a -31003 rejection, so coverage still counts the guess as a replay miss. The raw mirror shows it was -31003."
+    }
+  },
+  "oracle": {
+    "calls": [
+      "econ_index_get_usage_by_country"
+    ],
+    "answer_matches": "\\b1\\.91\\b"
+  },
+  "normalization": "Machine roots -> WORKSPACE / REPO in files that contained them; every other file is a byte-for-byte copy. Raw frames are not committed; fault_codes.json holds the JSON-RPC error code of every faulted call, extracted from the raw mirror at the call's raw_frame_offset.",
+  "harness_status": "Archived harness sources, not turnkey: WORKSPACE and REPO must be replaced, and the scripts expect the original .drifter/runs layout.",
+  "transcoded_cp1252_to_utf8": [
+    "harness/s2_output.txt"
+  ],
+  "files": {
+    "corpus/b4adc47a13604331bef3dc28fa3e4e4a.jsonl": "e54522a239ecadd0c250761c92f570672df067eae7eb7661a327d5d1b2bd075a",
+    "corpus/be7e363756654e059a583618758288b8.jsonl": "30b6684fe4a04b60288e8388cdeb96d9852f6460959c816a26676bc6aecccd8d",
+    "fault_codes.json": "bd1298a36de9d650fcb61064e90ef81bf70b7cb69924fe8ed49893e4548f81e8",
+    "harness/agent_wrapper.py": "5bdb1a02700c4ab42d97ad8080d0be7256a4dd2e6fb982dc0975757f02bcceaf",
+    "harness/author_fixture.py": "fbc23a3db3d6d904b16e7dd2d14a5d083c75ee50fa63ce671be12c2717bea71d",
+    "harness/drifter.yaml": "36b907a6128c1ed97546f9dd716150baa1bf365f794989e20a35a2b080a7c0d0",
+    "harness/observe-mcp.json": "fcc8bb561e10d1c7a17b1b299858bccfadc3a247dc00503c9267457532b88c5a",
+    "harness/PREREGISTRATION.txt": "ffddd53b5854a25c55eb9d4033321d1f73060908b41547e42b7e7e943dbacb32",
+    "harness/responses.yaml": "21a8f86b73de1b4a7c7d54b182ea7f412a2199d0ed67e6ddc017d17659079a50",
+    "harness/s2_output.txt": "ceb664846cc961b7625e249d4acf3ae5d5944959dc2db21b12afac8576a144f8",
+    "run/japan-index/baseline/60ddf3eda6644d77ae7a26aa39642439.jsonl": "626eb8399142ef2dfc1750ff00115a3ee5eebe47eb2c08587ca9008e60645379",
+    "run/japan-index/baseline/60ddf3eda6644d77ae7a26aa39642439.stdout.txt": "a091fd1b322f0a68fa5ab2b6ed2f59e461e6358edcfda779d49a96df1f6a004d",
+    "run/japan-index/baseline/8cba5a4139dc4166bbabd198cae5dec0.jsonl": "842b33516609f78d0b3d6fe95f5581e07ba6a684b741b27144c3d011079b4daf",
+    "run/japan-index/baseline/8cba5a4139dc4166bbabd198cae5dec0.stdout.txt": "4ae463c268e00d8f12f9ed8a79794fe2855dc0458ca989315fa6a4a964bf68dc",
+    "run/japan-index/baseline/971d6ee3778a4885b6aed4deb9ed66ea.jsonl": "59d48f8ac455309e404e40b6e21d6f55855c2b86d53320f4d46d1941142831f5",
+    "run/japan-index/baseline/971d6ee3778a4885b6aed4deb9ed66ea.stdout.txt": "044c04014453763a56274daa2771737f0a9a0ff6ed82f08422973f7a15b9e66a",
+    "run/japan-index/baseline/b31a4506429b41b486fb0a6b35581e2f.jsonl": "e8058c99addb1bb6142d25294087362dc63da5f98d8521c028e027382d94b46a",
+    "run/japan-index/baseline/b31a4506429b41b486fb0a6b35581e2f.stdout.txt": "5829f5616551c8476741e3f6cbbb12c9087193a5348c2c291a84886c9e9db093",
+    "run/japan-index/mutated/192773e8301d4b53b58f006143ea0a92.jsonl": "245e7ebeba826345793920116f0781e419ef312f14bbd70118c77aa7399cc7c1",
+    "run/japan-index/mutated/192773e8301d4b53b58f006143ea0a92.stdout.txt": "2f152235a78c9e72df730149471bcf0895fcb7f8a68e980419f9ca8151058334",
+    "run/japan-index/mutated/4b601dd660524d0aa718afbaa3add1ba.jsonl": "227493e8a2e4843f214e5b77db43bb90cbe98c0f00473b70eb73230a652eff31",
+    "run/japan-index/mutated/4b601dd660524d0aa718afbaa3add1ba.stdout.txt": "8e4f4678a558141c2535c09852ddd85ba27ba5e562258a6e2307155572bcf9a4",
+    "run/japan-index/mutated/51340fd211474ab4a09810a73305440f.jsonl": "a7b4f0cc56bca539979cfa8c98b20c745046f19f30d60ab9e9dd0a60893f551e",
+    "run/japan-index/mutated/51340fd211474ab4a09810a73305440f.stdout.txt": "be7b8e1b2939f154cfb37c5482c1300c4f674e3592f31d6ea6aff1b89e505370",
+    "run/japan-index/mutated/b45ed03c3d3e4ff390f6109c7dc96f2e.jsonl": "00e41689ca8b903955f43c08175056f8a2eaf74b32582c1e9e80a69663e3ba81",
+    "run/japan-index/mutated/b45ed03c3d3e4ff390f6109c7dc96f2e.stdout.txt": "8b676e123373ccce79331347f20598eb746aa545ba9054e97b0ecd4db36ff645",
+    "run/japan-index/mutations.jsonl": "c4a39e00e5cbf523667c237c6d08992b5b2f35fd581bf3fd557ac9c5935c3b5f"
+  }
+}

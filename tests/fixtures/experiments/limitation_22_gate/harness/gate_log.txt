@@ -1,0 +1,9 @@
+== upstream made unavailable
+[FAIL] server 'orders': unexpected error talking to 'orders' ('WORKSPACE/.venv/Scripts/python.exe WORKSPACE/server/orders_server.py'): unhandled errors in a TaskGroup (1 sub-exception)
+== run
+run exit 0
+== report rebuild x2
+report1 exit 0
+report2 exit 0
+== server still absent:
+orders_server.py.unavailable

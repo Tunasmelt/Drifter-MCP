@@ -1,0 +1,74 @@
+{
+  "experiment": "limitation_22_gate",
+  "spec_reference": "docs/SPEC.md section 15, limitation 22",
+  "identity": {
+    "wheel": "mcp-drifter 0.1.0 built from a3730b4, clean Python 3.14 venv outside the repo; rebuild step used a second wheel with the report fix",
+    "mcp": "2.2.0",
+    "agent": "claude-code/2.1.270",
+    "server": "tests/fixtures/orders_server.py"
+  },
+  "claims": {
+    "baseline": {
+      "total": 3,
+      "valid": 3,
+      "task": "PASS",
+      "id_argument": "order_id",
+      "tier": "exact"
+    },
+    "mutated": {
+      "total": 3,
+      "valid": 3,
+      "task": "PASS",
+      "id_argument": "orderId",
+      "tier": "inverse"
+    },
+    "upstream_unavailable": {
+      "doctor_reported_fail": true,
+      "run_exit": 0,
+      "server_file_absent_after": true
+    },
+    "report_rebuild": {
+      "before_fix_operator_unknown": true,
+      "after_fix_byte_identical_to_live_report_section": true
+    }
+  },
+  "oracle": {
+    "calls": [
+      "find_order",
+      "get_order"
+    ],
+    "answer_matches": "(?i)\\b1,?240\\b"
+  },
+  "normalization": "Machine roots -> WORKSPACE / REPO in files that contained them; every other file is a byte-for-byte copy. Raw frames are not committed; fault_codes.json holds the JSON-RPC error code of every faulted call, extracted from the raw mirror at the call's raw_frame_offset.",
+  "harness_status": "Archived harness sources, not turnkey: WORKSPACE and REPO must be replaced, and the scripts expect the original .drifter/runs layout.",
+  "transcoded_cp1252_to_utf8": [],
+  "files": {
+    "corpus/29a90b7231954edf8bb6ce99c30fd055.jsonl": "aeefcbd8f483c4e982c8c3b7fa0a5a40857440197f45f21ec5406dc0e2c7314c",
+    "corpus/c162af75d4ed414f9399b52f1dae0c5a.jsonl": "7e2b00e489f9eb51a2bb6aaaa23e98aac358a3a8f81686820d70f3090082fa54",
+    "fault_codes.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "harness/.mcp.json": "b4a5acabca479bd1cbda2133883a561a95711dbd49b24acbd6e5535ceb5882a3",
+    "harness/agent_wrapper.py": "fc014cecd7cc15a4fe8f2a44a364c7449a65762e21a691297720ada930bb9f1a",
+    "harness/drifter.yaml": "e62a9e4143a68e93050ccfac3bf71b1bc51fcb896593a1a9e5057befe5c17f7b",
+    "harness/gate_log.txt": "5e9bbe608577d150d396c530d940e24348ea513b930e2461c272d75ae000635f",
+    "harness/observe-mcp.json": "52e427ee3de696878825f765001711406ed5eef33599bd18043566a525461b9e",
+    "harness/report_1.txt": "b8b8ad0f5f11b53e6f5e9a04bb143a637b058824f3bc8f18a9c88223e0bb1197",
+    "harness/report_2.txt": "b8b8ad0f5f11b53e6f5e9a04bb143a637b058824f3bc8f18a9c88223e0bb1197",
+    "harness/report_fixed_1.txt": "e248850f7c4ed26e48fe9fe09f6f0a44199254a7cb68ab5c3aa1e125c6998097",
+    "harness/report_fixed_2.txt": "e248850f7c4ed26e48fe9fe09f6f0a44199254a7cb68ab5c3aa1e125c6998097",
+    "harness/responses.yaml": "9264ecf69e25b7ab7bdfb3e476f7e067e3b526f169d12645f87fc71088469e6e",
+    "harness/run_output.txt": "704213ad893b92528f46db06f1cb0c136cafd8b00f1570d84c1a907b0deb74ec",
+    "run/gate/baseline/16dea573e9124da78175e0f4f2da89af.jsonl": "f5c7de6711fc641b991de2173083d6e52f64c8017d39fc0745c17afe5cf71640",
+    "run/gate/baseline/16dea573e9124da78175e0f4f2da89af.stdout.txt": "3f30e1395adc901a6c67bc8accb0059aebe0386fe486d64626102b52133f1e64",
+    "run/gate/baseline/635f92feaae448ee95493f37153fcb76.jsonl": "88cf3a3c80036be21d69c065d943b340c17ead7ac5370dba765b5f6ba3b74dc7",
+    "run/gate/baseline/635f92feaae448ee95493f37153fcb76.stdout.txt": "3f30e1395adc901a6c67bc8accb0059aebe0386fe486d64626102b52133f1e64",
+    "run/gate/baseline/64514ce2feef48d1a38e9fbf55393701.jsonl": "895880005038c3871db751c2beb2aafc26cb68715a1c5959638a85c615386b61",
+    "run/gate/baseline/64514ce2feef48d1a38e9fbf55393701.stdout.txt": "3f30e1395adc901a6c67bc8accb0059aebe0386fe486d64626102b52133f1e64",
+    "run/gate/mutated/ba67f7ec40a64471882c35f6050ed311.jsonl": "1120eddcb71a0eeaaba7846dbe938c8e805d1d5b8dd53ac6d98959f417c10095",
+    "run/gate/mutated/ba67f7ec40a64471882c35f6050ed311.stdout.txt": "3f30e1395adc901a6c67bc8accb0059aebe0386fe486d64626102b52133f1e64",
+    "run/gate/mutated/d3ca7a3231f4462ea73a41e72783bf34.jsonl": "9729b2d217a5f9ad09c8c0203003e11a864e91dac7ab66db09b4d8bef80e2617",
+    "run/gate/mutated/d3ca7a3231f4462ea73a41e72783bf34.stdout.txt": "3f30e1395adc901a6c67bc8accb0059aebe0386fe486d64626102b52133f1e64",
+    "run/gate/mutated/e9216d5faf98416b8599a922fa2a65c6.jsonl": "03e426d469609b85b296d0fb84d8ef009e456e511350333a612f222e8c0669d9",
+    "run/gate/mutated/e9216d5faf98416b8599a922fa2a65c6.stdout.txt": "3f30e1395adc901a6c67bc8accb0059aebe0386fe486d64626102b52133f1e64",
+    "run/gate/mutations.jsonl": "f056e37db58b1216410748ec339ef0cbaf11d7da09e8c6fd452272cc60ea8a0d"
+  }
+}

@@ -1,0 +1,5 @@
+Japan's Anthropic Usage Index is **1.91** (rank 32 of 121 countries).
+
+This means Claude usage in Japan is about 91% higher than what its share of the world's working-age population alone would predict (1.0 = proportional to population; this is a comparison, not a causal signal).
+
+Source and methodology: https://www.anthropic.com/economic-index

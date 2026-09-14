@@ -1,0 +1,20 @@
+DRIFTER RUN — gate  (mutation: (unknown — reconstructed from stored sessions, not re-verified))
+
+BASELINE  3/3 valid runs
+          dominant path: find_order → get_order
+MUTATED   3/3 valid runs
+          dominant path: find_order → get_order
+
+BEHAVIOR  NO_REGRESSION
+          deviation from baseline: 0%
+          effect size: 0.00×
+
+TASK      baseline PASS (3/3 runs passed)
+          mutated  PASS (3/3 runs passed)
+
+SAFETY    NO VIOLATION
+
+CONFIDENCE  baseline request-match coverage 1.00 (authored_fixture 100%)
+            mutated  request-match coverage 1.00 (authored_fixture 100%)
+            (calls resolving against recordings — NOT response fidelity, NOT task success)
+

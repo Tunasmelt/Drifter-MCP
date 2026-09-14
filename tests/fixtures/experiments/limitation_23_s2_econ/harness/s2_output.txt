@@ -1,0 +1,48 @@
+REPLAY CORPUS  2 of 2 session(s) recorded against 'econ', 2 call(s) indexed
+REPLAY COVERAGE  ~100% projected (exact 2, semantic 0, missed 0 of 2 calls across 2 sessions, leave-one-out)
+                 NOTE: a high projection is not a guarantee â€” this replays RECORDED calls, whose arguments already encode response content your agent will NOT receive at replay time (recording is shape-only). An agent that builds arguments from prior results (paths from a listing, ids from a search) can still miss. See docs/SPEC.md Â§15 limitation 17.
+
+Planned: 1 workflow(s) Â· 8 agent run(s) Â· ~8 tool call(s) (estimated from the fixture)
+         8 read_only_local
+DRIFTER RUN â€” japan-index  (mutation: parameter_rename)
+
+BASELINE  4/4 valid runs
+          dominant path: econ_index_get_usage_by_country
+MUTATED   3/4 valid runs
+          dominant path: econ_index_get_usage_by_country
+
+BEHAVIOR  NO_REGRESSION
+          deviation from baseline: 0%
+          effect size: 0.00Ã—
+
+TASK      baseline PASS (4/4 runs passed)
+          mutated  PASS (3/3 runs passed)
+
+SAFETY    NO VIOLATION
+
+CONFIDENCE  baseline request-match coverage 1.00 (authored_fixture 100%)
+            mutated  request-match coverage 1.00 (authored_fixture 100%)
+            (calls resolving against recordings â€” NOT response fidelity, NOT task success)
+
+MUTATED EXCLUSIONS:
+  b45ed03c3d3e4ff390f6109c7dc96f2e: fidelity 0.50 below floor 0.70
+
+MUTATION LOG:
+  econ_index_get_dataset_overview (parameter_rename), seed=42, inverse=None
+  econ_index_list_subregions (parameter_rename), seed=42, inverse={'countryCode': 'country_code'}
+  econ_index_get_usage_by_subregion (parameter_rename), seed=42, inverse={'includeRequests': 'include_requests'}
+  econ_index_list_countries (parameter_rename), seed=42, inverse=None
+  econ_index_get_usage_by_country (parameter_rename), seed=42, inverse={'countryCode': 'country_code'}
+  econ_index_get_occupation_usage (parameter_rename), seed=42, inverse={'includeTasks': 'include_tasks'}
+  econ_index_compare_regions (parameter_rename), seed=42, inverse={'regionCodes': 'region_codes'}
+  econ_index_list_top_work_tasks (parameter_rename), seed=42, inverse=None
+  econ_index_get_global_usage (parameter_rename), seed=42, inverse=None
+run exit 0
+CALLS baseline [('econ_index_get_usage_by_country', ['country_code'], False, 'exact', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (rank 32 of 121 countries). This means Claude us
+CALLS baseline [('econ_index_get_usage_by_country', ['country_code'], False, 'exact', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (ranked 32nd out of 121 countries), meaning Clau
+CALLS baseline [('econ_index_get_usage_by_country', ['country_code'], False, 'exact', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (ranked 32nd out of 121 countries), meaning Clau
+CALLS baseline [('econ_index_get_usage_by_country', ['country_code'], False, 'exact', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (rank 32 of 121 countries). This means Japan's s
+CALLS mutated [('econ_index_get_usage_by_country', ['countryCode'], False, 'inverse', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (rank 32 of 121 covered countries) — meaning Jap
+CALLS mutated [('econ_index_get_usage_by_country', ['countryCode'], False, 'inverse', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (ranked 32nd of 121 countries), meaning Claude u
+CALLS mutated [('econ_index_get_usage_by_country', ['countryCode'], False, 'inverse', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (rank 32 of 121 countries), meaning Claude usage
+CALLS mutated [('econ_index_get_usage_by_country', ['country'], True, None, 'real'), ('econ_index_get_usage_by_country', ['countryCode'], False, 'inverse', 'authored_fixture')] | Japan's Anthropic Usage Index is **1.91** (as of 2026-05-01), ranked 32nd out of 121 cover

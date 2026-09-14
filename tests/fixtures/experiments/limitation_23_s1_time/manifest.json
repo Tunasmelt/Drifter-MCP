@@ -1,0 +1,69 @@
+{
+  "experiment": "limitation_23_s1_time",
+  "spec_reference": "docs/SPEC.md section 15, limitation 23 (S1)",
+  "identity": {
+    "drifter": "commit 8861c04, repo venv",
+    "agent": "claude-code/2.1.270",
+    "server": "uvx mcp-server-time (real, local)"
+  },
+  "claims": {
+    "corpus_sessions": 2,
+    "renamed": {
+      "convert_time": {
+        "sourceTimezone": "source_timezone"
+      }
+    },
+    "baseline": {
+      "total": 4,
+      "valid": 4,
+      "task": "PASS",
+      "argument": "source_timezone",
+      "tier": "exact"
+    },
+    "mutated": {
+      "total": 4,
+      "valid": 4,
+      "task": "PASS",
+      "argument": "sourceTimezone",
+      "tier": "inverse"
+    }
+  },
+  "oracle": {
+    "calls": [
+      "convert_time"
+    ],
+    "answer_matches": "\\b01:00\\b"
+  },
+  "normalization": "Machine roots -> WORKSPACE / REPO in files that contained them; every other file is a byte-for-byte copy. Raw frames are not committed; fault_codes.json holds the JSON-RPC error code of every faulted call, extracted from the raw mirror at the call's raw_frame_offset.",
+  "harness_status": "Archived harness sources, not turnkey: WORKSPACE and REPO must be replaced, and the scripts expect the original .drifter/runs layout.",
+  "transcoded_cp1252_to_utf8": [],
+  "files": {
+    "corpus/2c54125aa7814f7bb80a5efbdf4967a3.jsonl": "a7691c9c2e47e5c276e7e2d4df7ced499c35525bc213dda5e943acf23b619a97",
+    "corpus/45f95e861e6b4b6994ad77e26f5400c4.jsonl": "782f93d854608f247df759962bb77c5a20f7a7619c99e847274159c6b19560a1",
+    "fault_codes.json": "ca3d163bab055381827226140568f3bef7eaac187cebd76878e0b63e9e442356",
+    "harness/agent_wrapper.py": "72f1a85c00847684b03e1d18abce9e3f9188ade3c12a354bea686d4b94c20182",
+    "harness/author_fixture.py": "be968bd809fdd9047e600e8195243892538b148d39105a02ff30254e63c09d63",
+    "harness/drifter.yaml": "de80b4ee3f0b4116cbd7c3352344a549a0ed1c48d6255e0e960f37bdf61b8b2f",
+    "harness/observe-mcp.json": "1be22efebe138b5db9b7c772cdc9cd0166bdb4c07233cc7f50894fa08eb121f3",
+    "harness/PREREGISTRATION.txt": "45f7e33701fabaa687e34a865d9fbe8639517f6c13b8931e89a0d67c40dd627d",
+    "harness/responses.yaml": "ce69e1a51d12360926b7d0612f7f9f281ba1eb7aa06095603804f000cd46f141",
+    "harness/s1_output.txt": "8a2a8ad2aa1eab9c033c8bf467be4a6e1db6e34db7faa4de67063296fa037805",
+    "run/tokyo-ny/baseline/1baa3777a62f4d12b939ec3b170b2f7e.jsonl": "ba4b6bb4b3b0fc519a3f6219fe503e98dc441bcd7ba12dd62e35fc6a2deaf1c6",
+    "run/tokyo-ny/baseline/1baa3777a62f4d12b939ec3b170b2f7e.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/baseline/691c275378cc49a3be6169a8e4ba4f84.jsonl": "3cedd42170cdd2553b1b67688e25779f6c765c36cf14d4805bcb53fb27865083",
+    "run/tokyo-ny/baseline/691c275378cc49a3be6169a8e4ba4f84.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/baseline/7610b0c7551247d4a7a317f77f9b0667.jsonl": "d7fca1647e2878990c9955361d8a36d9b464f45d60d347e49ba001ee01e0d668",
+    "run/tokyo-ny/baseline/7610b0c7551247d4a7a317f77f9b0667.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/baseline/f4419d71495946879a420f8f581a3c34.jsonl": "f82c22aace436e11a7173f4efc8ff58aa09ef747cb09095184f826beba638326",
+    "run/tokyo-ny/baseline/f4419d71495946879a420f8f581a3c34.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/mutated/07c021b2a9e742b888a941f51be6f66f.jsonl": "f383b34586caf273f00830ddc3d0addcc075da4be4596d4b459c2a8c4175a55f",
+    "run/tokyo-ny/mutated/07c021b2a9e742b888a941f51be6f66f.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/mutated/88f0987d3efb4414afc5439884ecf02e.jsonl": "4d0f42b1c6fc72042095ca0aae3bc39308c282a9d34a037e0ec24b5718f96d4a",
+    "run/tokyo-ny/mutated/88f0987d3efb4414afc5439884ecf02e.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/mutated/af7d06683f764ccfbd2c71a112306f8c.jsonl": "04c1c7a92ab2896a510c163d2c355042440e3b53634b9f8c67896dfe04e87098",
+    "run/tokyo-ny/mutated/af7d06683f764ccfbd2c71a112306f8c.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/mutated/decde44e67bd45dbbc1dc82b71b5863f.jsonl": "7800bf29f5f3ea2670b9d973a7d25b15b52c07f0528169a86b431ed135128a59",
+    "run/tokyo-ny/mutated/decde44e67bd45dbbc1dc82b71b5863f.stdout.txt": "607486dd7dce7ae8bf7ca214e1de5cb02f1a8283734b8e81e0faa737ba11c492",
+    "run/tokyo-ny/mutations.jsonl": "cfc739320002327c893f8525c4aac614fb4ef1107b9b38a83349aed2de3e763e"
+  }
+}

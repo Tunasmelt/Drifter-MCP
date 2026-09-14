@@ -1,0 +1,9 @@
+S1 time server, written before any run. 2026-09-14.
+Drifter commit 8861c04 (repo venv). Agent claude-code/2.1.270, http adapter. Server: uvx mcp-server-time (real, local).
+Operator parameter_rename, seed 42. Prediction: renames convert_time.source_timezone -> sourceTimezone (alphabetically first eligible; required). get_current_time has no underscore param.
+Prompt (verbatim): Using ONLY the time MCP tools (do not use any other tools), convert 14:00 Asia/Tokyo time to America/New_York time. Report the converted time as HH:MM.
+Oracle: calls [convert_time] (successful only); answer_matches \b01:00\b  (JST UTC+9, EDT UTC-4 on this date).
+Corpus: 2 live observe sessions. Fixture: authored from a real convert_time response for the exact recorded request.
+Runs: --repeats 4 --no-adaptive.
+Predictions: baseline 4/4 valid TASK PASS. Mutated: agent reads served schema and sends sourceTimezone -> inverse tier -> valid, TASK PASS (adaptation), like E2.
+Report as-is; no re-runs until it passes.

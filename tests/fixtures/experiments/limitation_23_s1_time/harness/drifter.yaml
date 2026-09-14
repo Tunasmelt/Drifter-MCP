@@ -1,0 +1,17 @@
+version: 1
+servers:
+- name: time
+  command: ['uvx', 'mcp-server-time']
+record:
+  dir: .drifter/runs
+  redact: shape
+agent:
+  mode: http
+  env_var: DRIFTER_PROXY_URL
+  command: ['REPO/.venv/Scripts/python.exe', 'WORKSPACE/agent_wrapper.py', '{task.prompt}']
+tasks:
+- id: tokyo-ny
+  prompt: Using ONLY the time MCP tools (do not use any other tools), convert 14:00 Asia/Tokyo time to America/New_York time. Report the converted time as HH:MM.
+  assert:
+    calls: [convert_time]
+    answer_matches: '\b01:00\b'

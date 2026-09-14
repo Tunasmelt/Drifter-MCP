@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "orders": {
+      "command": "WORKSPACE/.venv/Scripts/python.exe",
+      "args": [
+        "WORKSPACE/server/orders_server.py"
+      ]
+    }
+  }
+}

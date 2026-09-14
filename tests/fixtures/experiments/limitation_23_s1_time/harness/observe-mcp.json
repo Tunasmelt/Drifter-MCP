@@ -1,0 +1,18 @@
+{
+  "mcpServers": {
+    "time": {
+      "command": "REPO/.venv/Scripts/drifter.exe",
+      "args": [
+        "observe",
+        "--config",
+        "WORKSPACE/drifter.yaml",
+        "--server",
+        "time"
+      ],
+      "env": {
+        "DRIFTER_RUNS_DIR": "WORKSPACE/.drifter/runs",
+        "DRIFTER_RAW_DIR": "WORKSPACE/.drifter/raw"
+      }
+    }
+  }
+}

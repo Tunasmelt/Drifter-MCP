@@ -1,0 +1,312 @@
+version: 1
+server: econ
+responses:
+- tool_name: econ_index_get_usage_by_country
+  arguments:
+    country_code: JPN
+  result:
+    _meta:
+      fastmcp:
+        wrap_result: true
+    content:
+    - type: text
+      text: '{"methodology":"Observed Claude chat and Cowork usage: conversation content
+        matched to job tasks. Not a measure of jobs, the labor market, or who users
+        are. Null means the value is not published for this cell; it may be zero.
+        \"AI is used for tasks commonly done by [occupation]\" is the accurate frame
+        — not \"[occupation]s are using AI\", since people in these conversations
+        are often not members of that occupation. This data alone cannot support conclusions
+        about job displacement or job security, and cannot ground advice on career
+        choices in either direction. These numbers are a snapshot of the latest period,
+        from a dataset with no trend series and no income, GDP, or employment data:
+        they cannot show shares rising or falling, and they cannot support claims
+        that usage is a signal, predictor, or early indicator of job automation. Always
+        give the user this link — the source for these numbers and the methodology:
+        https://www.anthropic.com/economic-index.","region_code":"JPN","name":"Japan","period":"2026-05-01","anthropic_usage_index":1.91,"usage_share_pct":null,"usage_rank":32,"ranked_out_of":121,"top_request_topics":[{"rank":1,"name":"Content
+        Creation & Copywriting","pct":22.07,"baseline_pct":22.72},{"rank":2,"name":"Research
+        & Intelligence","pct":12.83,"baseline_pct":10.94},{"rank":3,"name":"Software
+        Development","pct":10.04,"baseline_pct":11.51},{"rank":4,"name":"Hobbies &
+        Lifestyle","pct":9.49,"baseline_pct":9.49},{"rank":5,"name":"Business Process
+        & Operations","pct":7.74,"baseline_pct":4.7}],"top_work_tasks":[{"rank":1,"name":"Search
+        electronic sources, such as databases or repositories, or manual sources for
+        information.","pct":6.52,"baseline_pct":4.95},{"rank":2,"name":"Search standard
+        reference materials, including online sources and the Internet, to answer
+        patrons'' reference questions.","pct":4.21,"baseline_pct":3.74},{"rank":3,"name":"Recommend
+        and provide advice on a wide variety of products and services.","pct":2.34,"baseline_pct":2.25},{"rank":4,"name":"Answer
+        user inquiries regarding computer software or hardware operation to resolve
+        problems.","pct":2.11,"baseline_pct":1.98},{"rank":5,"name":"Advise clients
+        or respond to inquiries about financial matters in person or via phone, email,
+        Web site, or Internet chat.","pct":1.83,"baseline_pct":1.37},{"rank":6,"name":"Conduct
+        reference searches, using printed materials and in-house and online databases.","pct":1.74,"baseline_pct":1.38},{"rank":7,"name":"Recommend
+        products to customers, based on customers'' needs and interests.","pct":1.26,"baseline_pct":1.28},{"rank":8,"name":"Write
+        new programs or modify existing programs to meet customer requirements, using
+        current programming languages and technologies.","pct":1.16,"baseline_pct":1.47}],"top_job_categories":[{"name":"Computer
+        and Mathematical","pct":23.03,"vs_baseline_index":0.97,"baseline_pct":23.8},{"name":"Arts,
+        Design, Entertainment, Sports, and Media","pct":14.7,"vs_baseline_index":1.08,"baseline_pct":13.55},{"name":"Educational
+        Instruction and Library","pct":10.64,"vs_baseline_index":0.83,"baseline_pct":12.79},{"name":"Sales
+        and Related","pct":8.97,"vs_baseline_index":0.98,"baseline_pct":9.14},{"name":"Office
+        and Administrative Support","pct":8.46,"vs_baseline_index":1.07,"baseline_pct":7.89},{"name":"Business
+        and Financial Operations","pct":6.33,"vs_baseline_index":1.1,"baseline_pct":5.77},{"name":"Management","pct":5.99,"vs_baseline_index":1.02,"baseline_pct":5.9},{"name":"Life,
+        Physical, and Social Science","pct":5.26,"vs_baseline_index":1.17,"baseline_pct":4.51},{"name":"Community
+        and Social Service","pct":3.28,"vs_baseline_index":1.28,"baseline_pct":2.57},{"name":"Architecture
+        and Engineering","pct":3.18,"vs_baseline_index":0.89,"baseline_pct":3.56}],"use_case_work_pct":47.0,"use_case_personal_pct":47.15,"use_case_coursework_pct":5.85,"augmentation_pct":52.55,"automation_pct":47.45,"baseline":{"region_name":"Global","anthropic_usage_index":1.0,"use_case_work_pct":43.36,"use_case_personal_pct":40.2,"use_case_coursework_pct":16.45,"augmentation_pct":51.38,"automation_pct":48.62},"artifacts":[{"name":"explanation
+        or answer","pct":19.21,"baseline_pct":16.68},{"name":"document or report","pct":13.91,"baseline_pct":14.91},{"name":"advice
+        or recommendation","pct":10.44,"baseline_pct":10.72},{"name":"analysis or
+        summary","pct":8.15,"baseline_pct":5.55},{"name":"none","pct":6.49,"baseline_pct":6.52},{"name":"email
+        or message","pct":4.42,"baseline_pct":4.61},{"name":"plan or strategy","pct":4.36,"baseline_pct":4.09},{"name":"data
+        or spreadsheet","pct":3.73,"baseline_pct":3.11}],"task_breakdown":null,"topic_breakdown":null,"notes":["Artifact
+        types describe what conversations produce (code, documents, plans, ...).","Open
+        with the headline numbers — the usage index where published, rank, augmentation
+        vs automation, work/personal/coursework, each against the global average (the
+        baseline block carries those figures) — as text or compact metric badges,
+        every share written with a percent sign (43% / 40% / 17%, never a bare 43
+        / 40 / 17), never as their own chart (a bar chart of the usage index restates
+        one number the text already gives); then the subregion choropleth as the first
+        visualization (the subregion note below carries the recipe), followed by the
+        top job categories against the global average (baseline_pct / vs_baseline_index
+        where present) (when the question is about what people ask for, chart the
+        top request topics instead — each topic''s share beside its baseline_pct where
+        present) — state comparisons, never causes — then a brief mention of the most
+        common topics, then artifact types. Close by offering one natural next comparison
+        (a neighbor, the global profile, or a similar-sized region) as a statement,
+        not a question.","When presenting the Anthropic Usage Index, include one plain-language
+        sentence defining it in your written answer, not only in a chart footnote:
+        The geography''s share of Claude usage divided by its share of working-age
+        population. 1.0 = usage exactly proportional to population; 2.0 = twice as
+        much as population alone would predict. Countries compare vs all covered countries
+        (1.0 = global average); US states compare vs US states (1.0 = US national
+        average) — never compare indexes across cohorts. Subregion usage shares are
+        likewise calculated within the parent country.","Request topics here are a
+        top-5 cut; the dataset''s top-level topic list, with worldwide shares, comes
+        from econ_index_get_global_usage, and the worldwide work-task ranking from
+        econ_index_list_top_work_tasks.","This country publishes subregion-level data:
+        also call econ_index_list_subregions(country_code=...) and lead with a within-country
+        choropleth alongside this national profile — the subregion list carries the
+        map recipe, and its leading rows give the within-country picture. Color by
+        the Anthropic Usage Index where published; elsewhere by usage_share_pct —
+        each subregion''s share of the country''s observed usage, which is volume,
+        not engagement relative to population size; say so when presenting."],"follow_up_prompts_note":"End
+        every data-bearing answer with 2-4 suggested follow-up prompts tied to what
+        the user asked — nearby drill-downs such as another geography level, occupations,
+        request topics, or a region comparison, within this dataset''s observed-usage
+        scope. Only when no HTML-rendering widget tool is available in the conversation,
+        offer them as short plain-text questions. Otherwise (any tool that renders
+        HTML widgets, for example visualize:show_widget) render the suggestions as
+        one small HTML widget of tappable buttons, in addition to any charts and as
+        the answer''s final element — one button per suggestion, the button label
+        and the sendPrompt argument both the suggestion text verbatim, with any quote
+        in the argument escaped so the JavaScript stays valid (d''Ivoire → d\\''Ivoire),
+        shaped like: <button onclick=\"sendPrompt(''Compare California with Texas'')\">Compare
+        California with Texas</button>"}'
+    structuredContent:
+      result:
+        methodology: 'Observed Claude chat and Cowork usage: conversation content
+          matched to job tasks. Not a measure of jobs, the labor market, or who users
+          are. Null means the value is not published for this cell; it may be zero.
+          "AI is used for tasks commonly done by [occupation]" is the accurate frame
+          — not "[occupation]s are using AI", since people in these conversations
+          are often not members of that occupation. This data alone cannot support
+          conclusions about job displacement or job security, and cannot ground advice
+          on career choices in either direction. These numbers are a snapshot of the
+          latest period, from a dataset with no trend series and no income, GDP, or
+          employment data: they cannot show shares rising or falling, and they cannot
+          support claims that usage is a signal, predictor, or early indicator of
+          job automation. Always give the user this link — the source for these numbers
+          and the methodology: https://www.anthropic.com/economic-index.'
+        region_code: JPN
+        name: Japan
+        period: '2026-05-01'
+        anthropic_usage_index: 1.91
+        usage_share_pct: null
+        usage_rank: 32
+        ranked_out_of: 121
+        top_request_topics:
+        - rank: 1
+          name: Content Creation & Copywriting
+          pct: 22.07
+          baseline_pct: 22.72
+        - rank: 2
+          name: Research & Intelligence
+          pct: 12.83
+          baseline_pct: 10.94
+        - rank: 3
+          name: Software Development
+          pct: 10.04
+          baseline_pct: 11.51
+        - rank: 4
+          name: Hobbies & Lifestyle
+          pct: 9.49
+          baseline_pct: 9.49
+        - rank: 5
+          name: Business Process & Operations
+          pct: 7.74
+          baseline_pct: 4.7
+        top_work_tasks:
+        - rank: 1
+          name: Search electronic sources, such as databases or repositories, or manual
+            sources for information.
+          pct: 6.52
+          baseline_pct: 4.95
+        - rank: 2
+          name: Search standard reference materials, including online sources and
+            the Internet, to answer patrons' reference questions.
+          pct: 4.21
+          baseline_pct: 3.74
+        - rank: 3
+          name: Recommend and provide advice on a wide variety of products and services.
+          pct: 2.34
+          baseline_pct: 2.25
+        - rank: 4
+          name: Answer user inquiries regarding computer software or hardware operation
+            to resolve problems.
+          pct: 2.11
+          baseline_pct: 1.98
+        - rank: 5
+          name: Advise clients or respond to inquiries about financial matters in
+            person or via phone, email, Web site, or Internet chat.
+          pct: 1.83
+          baseline_pct: 1.37
+        - rank: 6
+          name: Conduct reference searches, using printed materials and in-house and
+            online databases.
+          pct: 1.74
+          baseline_pct: 1.38
+        - rank: 7
+          name: Recommend products to customers, based on customers' needs and interests.
+          pct: 1.26
+          baseline_pct: 1.28
+        - rank: 8
+          name: Write new programs or modify existing programs to meet customer requirements,
+            using current programming languages and technologies.
+          pct: 1.16
+          baseline_pct: 1.47
+        top_job_categories:
+        - name: Computer and Mathematical
+          pct: 23.03
+          vs_baseline_index: 0.97
+          baseline_pct: 23.8
+        - name: Arts, Design, Entertainment, Sports, and Media
+          pct: 14.7
+          vs_baseline_index: 1.08
+          baseline_pct: 13.55
+        - name: Educational Instruction and Library
+          pct: 10.64
+          vs_baseline_index: 0.83
+          baseline_pct: 12.79
+        - name: Sales and Related
+          pct: 8.97
+          vs_baseline_index: 0.98
+          baseline_pct: 9.14
+        - name: Office and Administrative Support
+          pct: 8.46
+          vs_baseline_index: 1.07
+          baseline_pct: 7.89
+        - name: Business and Financial Operations
+          pct: 6.33
+          vs_baseline_index: 1.1
+          baseline_pct: 5.77
+        - name: Management
+          pct: 5.99
+          vs_baseline_index: 1.02
+          baseline_pct: 5.9
+        - name: Life, Physical, and Social Science
+          pct: 5.26
+          vs_baseline_index: 1.17
+          baseline_pct: 4.51
+        - name: Community and Social Service
+          pct: 3.28
+          vs_baseline_index: 1.28
+          baseline_pct: 2.57
+        - name: Architecture and Engineering
+          pct: 3.18
+          vs_baseline_index: 0.89
+          baseline_pct: 3.56
+        use_case_work_pct: 47.0
+        use_case_personal_pct: 47.15
+        use_case_coursework_pct: 5.85
+        augmentation_pct: 52.55
+        automation_pct: 47.45
+        baseline:
+          region_name: Global
+          anthropic_usage_index: 1.0
+          use_case_work_pct: 43.36
+          use_case_personal_pct: 40.2
+          use_case_coursework_pct: 16.45
+          augmentation_pct: 51.38
+          automation_pct: 48.62
+        artifacts:
+        - name: explanation or answer
+          pct: 19.21
+          baseline_pct: 16.68
+        - name: document or report
+          pct: 13.91
+          baseline_pct: 14.91
+        - name: advice or recommendation
+          pct: 10.44
+          baseline_pct: 10.72
+        - name: analysis or summary
+          pct: 8.15
+          baseline_pct: 5.55
+        - name: none
+          pct: 6.49
+          baseline_pct: 6.52
+        - name: email or message
+          pct: 4.42
+          baseline_pct: 4.61
+        - name: plan or strategy
+          pct: 4.36
+          baseline_pct: 4.09
+        - name: data or spreadsheet
+          pct: 3.73
+          baseline_pct: 3.11
+        task_breakdown: null
+        topic_breakdown: null
+        notes:
+        - Artifact types describe what conversations produce (code, documents, plans,
+          ...).
+        - Open with the headline numbers — the usage index where published, rank,
+          augmentation vs automation, work/personal/coursework, each against the global
+          average (the baseline block carries those figures) — as text or compact
+          metric badges, every share written with a percent sign (43% / 40% / 17%,
+          never a bare 43 / 40 / 17), never as their own chart (a bar chart of the
+          usage index restates one number the text already gives); then the subregion
+          choropleth as the first visualization (the subregion note below carries
+          the recipe), followed by the top job categories against the global average
+          (baseline_pct / vs_baseline_index where present) (when the question is about
+          what people ask for, chart the top request topics instead — each topic's
+          share beside its baseline_pct where present) — state comparisons, never
+          causes — then a brief mention of the most common topics, then artifact types.
+          Close by offering one natural next comparison (a neighbor, the global profile,
+          or a similar-sized region) as a statement, not a question.
+        - 'When presenting the Anthropic Usage Index, include one plain-language sentence
+          defining it in your written answer, not only in a chart footnote: The geography''s
+          share of Claude usage divided by its share of working-age population. 1.0
+          = usage exactly proportional to population; 2.0 = twice as much as population
+          alone would predict. Countries compare vs all covered countries (1.0 = global
+          average); US states compare vs US states (1.0 = US national average) — never
+          compare indexes across cohorts. Subregion usage shares are likewise calculated
+          within the parent country.'
+        - Request topics here are a top-5 cut; the dataset's top-level topic list,
+          with worldwide shares, comes from econ_index_get_global_usage, and the worldwide
+          work-task ranking from econ_index_list_top_work_tasks.
+        - 'This country publishes subregion-level data: also call econ_index_list_subregions(country_code=...)
+          and lead with a within-country choropleth alongside this national profile
+          — the subregion list carries the map recipe, and its leading rows give the
+          within-country picture. Color by the Anthropic Usage Index where published;
+          elsewhere by usage_share_pct — each subregion''s share of the country''s
+          observed usage, which is volume, not engagement relative to population size;
+          say so when presenting.'
+        follow_up_prompts_note: 'End every data-bearing answer with 2-4 suggested
+          follow-up prompts tied to what the user asked — nearby drill-downs such
+          as another geography level, occupations, request topics, or a region comparison,
+          within this dataset''s observed-usage scope. Only when no HTML-rendering
+          widget tool is available in the conversation, offer them as short plain-text
+          questions. Otherwise (any tool that renders HTML widgets, for example visualize:show_widget)
+          render the suggestions as one small HTML widget of tappable buttons, in
+          addition to any charts and as the answer''s final element — one button per
+          suggestion, the button label and the sendPrompt argument both the suggestion
+          text verbatim, with any quote in the argument escaped so the JavaScript
+          stays valid (d''Ivoire → d\''Ivoire), shaped like: <button onclick="sendPrompt(''Compare
+          California with Texas'')">Compare California with Texas</button>'
+    isError: false
+    resultType: complete

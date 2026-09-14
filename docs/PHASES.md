@@ -1057,7 +1057,13 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
 - [x] **Say when a mutation touched no argument the task sent** (finding C). Done: a
   parameter-rename report with no inverse-tier hit warns that the verdict did not exercise
   the rename.
-- [ ] **Bundle S1/S2 evidence** (`C:\Users\user\drifter-servers`) as for E2.
+- [x] **Bundle S1/S2 evidence** (`C:\Users\user\drifter-servers`) as for E2. Done:
+  `limitation_23_s1_time`, `limitation_23_s2_econ`, tested by
+  `tests/evaluate/test_limitations_22_23_evidence.py`.
+- [ ] **Historical rejections carry no `fault_code`.** S2's recovered run predates the field,
+  so it is still excluded after c44ed82, although its raw mirror shows `-31003`. Decide
+  whether `drifter score`/`report` may backfill the code from the raw mirror (opt-in, with
+  the raw mirror as provenance) or whether such runs stay excluded.
 
 - [x] **Remaining release-gate conditions** not exercised by E1/E2: fresh wheel installed
   outside the repo, replay with the upstream server unavailable, and a byte-identical
@@ -1066,7 +1072,8 @@ Recorded as deferred in docs/CHANGELOG.md; sequenced here so that record is true
   away, `run` completed 3/3 + 3/3 with TASK PASS. The rebuild first failed (operator
   "unknown", no MUTATION LOG) and was fixed to read `mutations.jsonl`; after the fix, two
   rebuilds were byte-identical to the original report.
-- [ ] **Bundle the gate run's evidence** (`C:\Users\user\drifter-gate`) like E2's.
+- [x] **Bundle the gate run's evidence** (`C:\Users\user\drifter-gate`) like E2's. Done:
+  `tests/fixtures/experiments/limitation_22_gate`.
   4. The `calls` assertion counts every recorded call, including one that was rejected
      or faulted (`evaluate_run` checks `tool_name` only). "It called `read_text_file`"
      can therefore hold for a call that never succeeded. ~~Open decision.~~ Decided and

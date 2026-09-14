@@ -1380,3 +1380,16 @@ when*.
     name is rejected before lookup even when the served JSON Schema permits additional
     properties. Finally, a parameter-rename report with no inverse-tier hit warns that no
     successful call exercised the rename.
+
+    **Evidence committed (after this entry was written).** Limitation 22 and both
+    limitation-23 server runs are bundled under `tests/fixtures/experiments/`
+    (`limitation_22_gate`, `limitation_23_s1_time`, `limitation_23_s2_econ`) and recomputed by
+    `tests/evaluate/test_limitations_22_23_evidence.py`. Raw frames are not committed; each
+    faulted call's JSON-RPC code is extracted to `fault_codes.json`. The gate's live and
+    rebuilt reports are byte copies, and the test compares them as bytes.
+
+    **Finding A, re-checked on S2 after c44ed82.** The recovered run is still excluded. Its
+    rejected guess was recorded before `ToolCall.fault_code` existed, so the field is null,
+    and an unknown code is correctly not treated as `-31003`. The raw mirror shows the code
+    was `-31003`. The fix therefore applies to new recordings only; S2's historical result
+    stays 3/4 valid.

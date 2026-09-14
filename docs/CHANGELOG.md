@@ -6,6 +6,29 @@ not just a diff.
 
 ---
 
+## Limitations 22 and 23 evidence committed; E1's revised outcome labelled
+
+**Bundles.** `limitation_22_gate` (fresh wheel, upstream unavailable, report rebuild),
+plus `limitation_23_s1_time` and `limitation_23_s2_econ` (real servers), with
+`test_limitations_22_23_evidence.py` (17 tests). Raw frames are excluded because they
+carry response payloads; each faulted call's code is extracted into `fault_codes.json`.
+Files containing no machine path are byte copies, so the gate's report-rebuild claim is
+checked as bytes. One console capture (`s2_output.txt`) was cp1252 and is committed as
+UTF-8, which its manifest records. Checked red: tampering an S2 claim, an S1 tier and rename
+claim, and one report byte failed the matching 6 tests; rebuilding restored all 17.
+
+**S2 after c44ed82.** The recovered run is still excluded. Its `fault_code` is null
+because it was recorded before the field existed, although the raw mirror shows `-31003`.
+This is the intended nullable-field behaviour, not a defect in the fix. Whether to backfill
+from the raw mirror is an open PHASES decision.
+
+**E1 docstring.** It still stated the original pre-registered outcome (exclusion, TASK
+UNKNOWN) above assertions for the revised one (valid at coverage 1.00, TASK FAIL). It now
+gives both, naming finding A and c44ed82 as the reason, so the change reads as an open
+revision rather than a silent edit to a pre-registration.
+
+---
+
 ## Real-server findings A–C fixed
 
 S2 exposed that a schema-invalid first guess followed by a correct retry was excluded as
