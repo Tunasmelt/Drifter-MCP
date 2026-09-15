@@ -57,6 +57,7 @@ see `replay/corpus.py` and docs/SPEC.md §7's own cross-reference.
 
 from __future__ import annotations
 
+import json
 import sys
 from collections.abc import Sequence
 import shutil
@@ -70,7 +71,12 @@ from mcp_drifter.cli.subprocess_adapter import make_run_once
 from mcp_drifter.evaluate.assertions import TaskAssertions, evaluate_task
 from mcp_drifter.evaluate.baseline import run_baseline
 from mcp_drifter.evaluate.scheduling import run_mutated_adaptively
-from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.evaluate.effect_size import (
+    PATH_SOURCE_CORPUS,
+    compute_behavior_effect_size,
+    path_of_interest_from_sessions,
+)
+from mcp_drifter.cli.report_format import BEHAVIOR_PATH_FILE
 from mcp_drifter.replay.corpus_facts import build_corpus_facts
 from mcp_drifter.replay.authored_responses import AuthoredResponseError, load_authored_responses
 from mcp_drifter.mutate.audit import write_mutation_audit
@@ -245,6 +251,19 @@ def run_mutation_comparison(
             f"that applies to this server's tools."
         )
 
+    # docs/PHASES.md R4: the Behavior verdict's path of interest is chosen from
+    # the CORPUS, before either arm runs, and persisted so a rebuilt report uses
+    # the same choice. Choosing it from the baseline arm would score that arm on
+    # the path it was selected to favour.
+    path_of_interest = path_of_interest_from_sessions(corpus.session_paths, server_name)
+    if path_of_interest is not None:
+        session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / BEHAVIOR_PATH_FILE).write_text(
+            json.dumps({"path": list(path_of_interest), "source": PATH_SOURCE_CORPUS,
+                        "corpus_sessions": len(corpus.session_paths)}, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
     baseline_run_once = budget_limited(
         make_run_once(
             command=command,
@@ -307,10 +326,9 @@ def run_mutation_comparison(
     mutated_task_id = f"{task_id}__mutated_{operator}"
     effective_repeats = repeats if repeats is not None else calibration.baseline.repeats
     if adaptive:
-        # F-27: stops as soon as no remaining run could change the verdict.
-        # Provably verdict-preserving, so this is on by default -- see
-        # evaluate/scheduling.py for the bound and why it is a proof rather
-        # than a peek at an interim result.
+        # F-27, reduced under docs/PHASES.md R4: stops only when no mutated run
+        # can matter under any rule (a baseline too thin for a verdict, or the
+        # ceiling). Verdict-based early stopping is disabled.
         scheduled = run_mutated_adaptively(
             mutated_task_id, mutated_run_once, baseline_result, effective_repeats, calibration=calibration
         )
@@ -325,7 +343,10 @@ def run_mutation_comparison(
         )
         scheduling_note = None
 
-    effect = compute_behavior_effect_size(baseline_result, mutated_result, calibration=calibration)
+    effect = compute_behavior_effect_size(
+        baseline_result, mutated_result, calibration=calibration,
+        path_of_interest=path_of_interest, path_source=PATH_SOURCE_CORPUS if path_of_interest else None,
+    )
     effective_policy = policy or PolicyConfig()
     safety = evaluate_safety_across_arms(
         session_dir, effective_policy.destructive, effective_policy.confirmation_required

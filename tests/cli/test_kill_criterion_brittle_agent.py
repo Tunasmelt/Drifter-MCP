@@ -79,10 +79,26 @@ def test_harness_reports_regression_against_a_known_planted_break(tmp_path):
         f"SELECT:{PLANTED_SUBSTRING}|{json.dumps(REAL_LIST_DIRECTORY_ARGS)}",
     ]
 
+    # docs/PHASES.md R4 + amendment A: the Behavior verdict scores the corpus's
+    # usual path, so the corpus must be a recording of THIS task. The full golden
+    # session is a 7-call trajectory this one-call agent never takes; against it
+    # the planted break read INCONCLUSIVE (and would have read NO_REGRESSION at
+    # 20 runs) before the amendment, and UNKNOWN after it. The golden session
+    # trimmed to its first call (list_directory) is this task's recording.
+    task_corpus = tmp_path / "task_corpus.jsonl"
+    kept, tool_calls = [], 0
+    for line in GOLDEN_FIXTURE.read_text(encoding="utf-8").splitlines():
+        if json.loads(line).get("record_type") == "tool_call":
+            tool_calls += 1
+            if tool_calls > 1:
+                continue
+        kept.append(line)
+    task_corpus.write_text("\n".join(kept) + "\n", encoding="utf-8")
+
     result = run_mutation_comparison(
         task_id="kill_criterion_brittle_agent",
         prompt="",
-        fixture=GOLDEN_FIXTURE,
+        fixture=task_corpus,
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",

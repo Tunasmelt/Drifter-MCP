@@ -18,9 +18,31 @@ from pydantic import BaseModel, ConfigDict
 
 
 class EffectSize(BaseModel):
+    """STALE, unread since docs/PHASES.md R4 replaced the effect-size rule. Kept
+    so an existing user calibration.yaml that still sets it keeps loading."""
+
     model_config = ConfigDict(extra="allow")
     inconclusive: float = 1.0
     regression: float = 2.0
+
+
+class Behavior(BaseModel):
+    """The R4 Behavior verdict (evaluate/effect_size.py). Guesses in the
+    calibration-register sense: chosen by simulation (docs/PHASES.md R4), not
+    derived from real agents.
+
+    `margin`: the drop in on-path share that counts as a practical regression.
+    0.2 was rejected in simulation (5% false alarms at p=0.8, N=10; 10 runs could
+    never establish NO_REGRESSION). `z`: 1.645, a 90% two-sided interval, i.e. a
+    one-sided 5% bound on each decision."""
+
+    model_config = ConfigDict(extra="allow")
+    margin: float = 0.3
+    z: float = 1.645
+    # Amendment A (docs/PHASES.md R4): below this share of baseline runs on the
+    # corpus path, the path is not the task's usual path and the verdict is
+    # UNKNOWN. 0.5 = "the majority of baseline runs", a guess with that meaning.
+    min_baseline_share: float = 0.5
 
 
 class Segmentation(BaseModel):
@@ -31,7 +53,9 @@ class Segmentation(BaseModel):
 
 class Baseline(BaseModel):
     model_config = ConfigDict(extra="allow")
-    repeats: int = 10
+    # 20 per arm under docs/PHASES.md R4: the pre-registered acceptance bars
+    # (false REGRESSION <= 5%, power >= 90% for a 0.6 drop) were set at N=20.
+    repeats: int = 20
 
 
 class MutationRepeats(BaseModel):
@@ -112,6 +136,7 @@ class Calibration(BaseModel):
     min_valid_runs: int = 3
     plateau: Plateau = Plateau()
     effect_size: EffectSize = EffectSize()
+    behavior: Behavior = Behavior()
     segmentation: Segmentation = Segmentation()
     baseline: Baseline = Baseline()
     mutation: Mutation = Mutation()

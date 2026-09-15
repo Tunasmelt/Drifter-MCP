@@ -1166,8 +1166,65 @@ an unchanged agent choosing path A 90% of the time, `0.9^10 x (1 - 0.9^10)` is a
 of ten-run comparisons producing a false regression from that event alone. That figure is
 a constructed counterexample, not a measured product rate, and must not be quoted as one.
 
-- [ ] Prespecified fixed-size comparison, a practical regression margin, and an
+**Measured, 2026-09-15 (scratch simulation, 20,000 null trials per cell, Drifter's own
+`compute_behavior_effect_size`).** The current rule falsely reports REGRESSION for an unchanged
+agent at 12–26% whenever the agent is not deterministic, and more runs do not fix it: p=0.95
+gives 24% at N=10 and 23% at N=20. The rates track `p^N (1 - p^N)` almost exactly, which
+identifies the zero-spread branch as the cause. The constructed counterexample above is
+therefore also the measured behaviour.
+
+**Pre-registered replacement (approved: margin 0.3, N=20). Written before implementation.**
+- *Path of interest P:* the most frequent whole-session tool path among the corpus sessions
+  for the server (ties broken by first appearance in corpus order). It is written to
+  `<session_dir>/behavior_path.json` before either arm runs, and a rebuilt report reads it.
+  Choosing P from the baseline arm itself biased the null rate up to 11% at p=0.5 in
+  simulation; that is kept only as the fallback for run directories without the file, and
+  the report must say "path chosen from the baseline arm (biased)".
+- *Measure:* `s_b` and `s_m`, the shares of each arm's VALID runs whose path equals P;
+  `d = s_b - s_m`.
+- *Interval:* Newcombe hybrid-score interval for `d` from Wilson intervals at `z = 1.645`.
+- *Verdict:* REGRESSION if `lower > 0` and `d >= margin`; NO_REGRESSION if `upper < margin`;
+  INCONCLUSIVE otherwise. UNKNOWN below `min_valid_runs` in either arm (unchanged).
+- *Calibration:* `behavior.margin: 0.3`, `behavior.z: 1.645`; default repeats 20 per arm. These
+  are still guesses in the calibration-register sense, chosen by simulation, not derived from
+  real agents.
+- *Adaptive stopping:* disabled. Every arm runs the fixed N. F-27's proof preserved agreement
+  with the old rule and does not transfer.
+- *Report:* BEHAVIOR prints `d`, the interval, the margin and where P came from, separately
+  from TASK, so behavioural drift is not presented as task harm.
+
+**Acceptance bars, committed as a seeded simulation test against the implemented code:** at
+N=20 with P from an independent corpus sample, (1) false REGRESSION <= 5% for every p in
+{1.0, 0.95, 0.9, 0.8, 0.7, 0.5}; (2) REGRESSION >= 90% for a 0.6 drop for every p in
+{1.0, 0.95, 0.9, 0.8, 0.7}. Inconclusive rates are reported, not gated. A result that misses
+a bar is reported as a miss, not tuned until it passes.
+
+**Amendment A, after the first implementation run (approved 2026-09-15).** The limitation
+below turned out to be worse than "visible": the existing end-to-end tests replay one to three
+calls of the 7-call golden session, so the corpus path was a trajectory no run took. Both arms
+scored 0% on it, and a deterministic planted break read INCONCLUSIVE at 3 runs, and would have
+read NO_REGRESSION at 20. Rule added: if fewer than `behavior.min_baseline_share` (0.5) of the
+baseline arm's valid runs take the corpus path, the verdict is UNKNOWN, with a reason telling
+the user to record a corpus of this task. Considered and rejected: falling back to the
+baseline arm's own dominant path, which restores the selection bias (up to 11% false alarms
+at p=0.5 in simulation) that the pre-registration exists to avoid. The acceptance-bar
+simulation is re-run under the amended rule.
+
+**Known limitation, stated in advance:** P comes from the whole corpus. A corpus that mixes
+tasks can pick a path that belongs to a different task; the report shows P so this is visible.
+
+- [x] Prespecified fixed-size comparison, a practical regression margin, and an
       uncertainty interval. Report behavioural drift separately from task harm.
+      Implemented as pre-registered (`evaluate/effect_size.py`, `calibration.behavior`,
+      default repeats 20, `behavior_path.json`, verdict-based early stopping disabled).
+      **Acceptance bars, first run against the implemented code (seeded, 4,000 trials):**
+      bar (1) MET, with false REGRESSION <= 5% at every p. Bar (2) MET at p in
+      {1.0, 0.95, 0.9, 0.8}; **MISSED at p=0.7 (0.894 < 0.90)**, recorded as a strict xfail,
+      not tuned. Cause confirmed at 20,000 trials: a 10-session corpus picks path B as the
+      path of interest 9.9% of the time at p=0.7, and those trials detect nothing (given a
+      path-A pick, detection is 0.993). The weakness is choosing P from a small corpus of an
+      inconsistent agent, not the interval rule. Open follow-up: a larger corpus, or
+      reporting when P's corpus majority is weak.
 - [ ] Measure false-alarm, detection-power and inconclusive rates against unchanged
       agents, deterministic and stochastic, including the 90/10 case.
 - [ ] Only then reintroduce adaptive stopping, on a footing valid under optional

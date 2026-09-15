@@ -1,211 +1,259 @@
-"""Tests for behavior effect-size scoring (F-23), docs/SPEC.md §8.
+"""Tests for the Behavior verdict (F-23), as replaced under docs/PHASES.md R4.
 
-BaselineResult instances built directly (not via run_baseline/
-aggregate_baseline_runs) -- this module tests the pure comparison
-logic given two already-computed results, not the aggregation that
-produces them (already covered in tests/evaluate/test_baseline.py).
+BaselineResult instances are built directly: this module tests the comparison
+given two already-aggregated arms, not the aggregation (tests/evaluate/
+test_baseline.py). The pre-registered acceptance bars are checked separately by
+tests/evaluate/test_r4_verdict_rule_simulation.py.
 """
 
 import dataclasses
+from pathlib import Path
 
 import pytest
 
 from mcp_drifter.evaluate.baseline import BaselineResult
-from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.evaluate.effect_size import (
+    PATH_SOURCE_BASELINE,
+    PATH_SOURCE_CORPUS,
+    compute_behavior_effect_size,
+    newcombe_difference_interval,
+    path_of_interest_from_sessions,
+    verdict_for_counts,
+    wilson_interval,
+)
 from mcp_drifter.record.calibration import Calibration
+from mcp_drifter.record.schema import Environment, SessionStart, ToolCall
+
+A, B = ("a", "b"), ("a", "c")
 
 
-def _result(
-    dominant_path,
-    variant_frequencies,
-    natural_variation,
-    baseline_spread,
-    valid_runs,
-    has_data=True,
-):
+def _arm(counts: dict, total_runs: int | None = None) -> BaselineResult:
+    valid = sum(counts.values())
+    if valid == 0:
+        return BaselineResult(
+            task_id="t", total_runs=total_runs or 0, valid_runs=0, dominant_path=None, variant_frequencies={},
+            natural_variation=None, baseline_spread=None, baseline_fidelity=None, excluded_runs=[],
+        )
+    dominant = max(counts, key=lambda p: counts[p])
     return BaselineResult(
-        task_id="t",
-        total_runs=valid_runs,
-        valid_runs=valid_runs if has_data else 0,
-        dominant_path=dominant_path if has_data else None,
-        variant_frequencies=variant_frequencies if has_data else {},
-        natural_variation=natural_variation if has_data else None,
-        baseline_spread=baseline_spread if has_data else None,
-        baseline_fidelity=1.0 if has_data else None,
-        excluded_runs=[],
+        task_id="t", total_runs=total_runs or valid, valid_runs=valid, dominant_path=dominant,
+        variant_frequencies=dict(counts), natural_variation=0.0, baseline_spread=0.0,
+        baseline_fidelity=1.0, excluded_runs=[],
     )
 
 
-def test_identical_baseline_and_mutated_paths_is_no_regression():
-    baseline = _result(("a", "b"), {("a", "b"): 10}, natural_variation=0.0, baseline_spread=0.0, valid_runs=10)
-    mutated = _result(("a", "b"), {("a", "b"): 10}, natural_variation=0.0, baseline_spread=0.0, valid_runs=10)
-    result = compute_behavior_effect_size(baseline, mutated)
-    assert result.verdict == "NO_REGRESSION"
-    assert result.deviation_rate == 0.0
-    assert result.effect_size == 0.0
+# --- the interval ---------------------------------------------------------------
 
 
-def test_total_deviation_against_a_zero_variance_baseline_is_regression():
-    """baseline_spread == 0.0 (a perfectly stable baseline) makes the
-    formula's denominator zero -- decided explicitly (module docstring):
-    any real deviation from a rock-solid baseline is a genuine
-    regression signal, reported with effect_size=None (undefined
-    magnitude, not "zero" and not "no data")."""
-    baseline = _result(("a", "b"), {("a", "b"): 10}, natural_variation=0.0, baseline_spread=0.0, valid_runs=10)
-    mutated = _result(("a", "c"), {("a", "c"): 10}, natural_variation=0.0, baseline_spread=0.0, valid_runs=10)
-    result = compute_behavior_effect_size(baseline, mutated)
-    assert result.verdict == "REGRESSION"
-    assert result.deviation_rate == 1.0
-    assert result.effect_size is None  # undefined magnitude, not "no signal"
+def test_wilson_matches_a_textbook_value():
+    """0 of 10 at z=1.96: Wilson upper bound 0.2775 (standard reference value)."""
+    lower, upper = wilson_interval(0, 10, 1.96)
+    assert lower == 0.0
+    assert upper == pytest.approx(0.2775, abs=5e-4)
 
 
-def test_verdict_is_unknown_when_baseline_has_no_data():
-    baseline = _result(None, {}, None, None, valid_runs=0, has_data=False)
-    mutated = _result(("a",), {("a",): 5}, natural_variation=0.0, baseline_spread=0.0, valid_runs=5)
-    result = compute_behavior_effect_size(baseline, mutated)
-    assert result.verdict == "UNKNOWN"
-    assert result.deviation_rate is None
-    assert result.effect_size is None
+def test_wilson_is_bounded_and_symmetric():
+    assert wilson_interval(10, 10, 1.645)[1] == pytest.approx(1.0)
+    lo, hi = wilson_interval(3, 10, 1.645)
+    lo2, hi2 = wilson_interval(7, 10, 1.645)
+    assert lo == pytest.approx(1 - hi2) and hi == pytest.approx(1 - lo2)
 
 
-def test_verdict_is_unknown_when_mutated_has_no_data():
-    baseline = _result(("a",), {("a",): 5}, natural_variation=0.0, baseline_spread=0.0, valid_runs=5)
-    mutated = _result(None, {}, None, None, valid_runs=0, has_data=False)
-    result = compute_behavior_effect_size(baseline, mutated)
-    assert result.verdict == "UNKNOWN"
+def test_newcombe_interval_contains_the_point_estimate():
+    d, lower, upper = newcombe_difference_interval(17, 20, 9, 20, 1.645)
+    assert d == pytest.approx(0.4)
+    assert lower < d < upper
 
 
-def test_moderate_deviation_within_natural_variation_is_no_regression():
-    # Baseline itself naturally wobbles 20% of the time (spread 0.4);
-    # mutated arm deviates at the same 20% rate -- no real signal.
-    baseline = _result(
-        ("a", "b"), {("a", "b"): 8, ("a", "c"): 2}, natural_variation=0.2, baseline_spread=0.4, valid_runs=10
-    )
-    mutated = _result(
-        ("a", "b"), {("a", "b"): 8, ("a", "c"): 2}, natural_variation=0.2, baseline_spread=0.4, valid_runs=10
-    )
-    result = compute_behavior_effect_size(baseline, mutated)
-    assert result.deviation_rate == pytest.approx(0.2)
-    assert result.effect_size == pytest.approx(0.0, abs=1e-9)
-    assert result.verdict == "NO_REGRESSION"
+# --- the rule, on counts at the pre-registered N=20, margin 0.3 -----------------
 
 
-def test_large_deviation_beyond_natural_variation_is_regression():
-    baseline = _result(
-        ("a", "b"), {("a", "b"): 8, ("a", "c"): 2}, natural_variation=0.2, baseline_spread=0.2, valid_runs=10
-    )
-    # Mutated arm deviates from baseline's dominant_path in 9/10 runs --
-    # far beyond baseline's own 20% natural wobble.
-    mutated = _result(("a", "b"), {("a", "b"): 1, ("a", "d"): 9}, natural_variation=0.0, baseline_spread=0.0, valid_runs=10)
-    result = compute_behavior_effect_size(baseline, mutated)
-    assert result.deviation_rate == pytest.approx(0.9)
+def test_the_old_rules_false_alarm_shape_is_now_no_regression():
+    """The case R4 measured: a stable baseline (20/20 on path) and ONE mutated
+    run off path. The old zero-spread branch called this REGRESSION."""
+    verdict, d, lower, upper = verdict_for_counts(20, 20, 19, 20, margin=0.3, z=1.645)
+    assert verdict == "NO_REGRESSION"
+    assert d == pytest.approx(0.05)
+    assert upper < 0.3
+
+
+def test_identical_arms_are_no_regression():
+    assert verdict_for_counts(20, 20, 20, 20, 0.3, 1.645)[0] == "NO_REGRESSION"
+    assert verdict_for_counts(18, 20, 18, 20, 0.3, 1.645)[0] == "NO_REGRESSION"
+
+
+def test_a_large_drop_is_regression():
+    verdict, d, lower, _ = verdict_for_counts(20, 20, 4, 20, 0.3, 1.645)
+    assert verdict == "REGRESSION"
+    assert d == pytest.approx(0.8) and lower > 0.0
+
+
+def test_a_drop_just_under_the_margin_is_inconclusive_not_forced():
+    """d = 0.25: provably above 0, but neither provably below the margin nor at it."""
+    verdict, d, lower, upper = verdict_for_counts(20, 20, 15, 20, 0.3, 1.645)
+    assert d == pytest.approx(0.25) and lower > 0.0 and upper >= 0.3
+    assert verdict == "INCONCLUSIVE"
+
+
+def test_a_drop_exactly_at_the_margin_with_a_positive_lower_bound_is_regression():
+    """The pre-registered rule is `d >= margin`, inclusive. (A first draft of this
+    test expected INCONCLUSIVE at d = 0.30; that contradicted the rule as written.)"""
+    verdict, d, lower, _ = verdict_for_counts(20, 20, 14, 20, 0.3, 1.645)
+    assert d == pytest.approx(0.3) and lower > 0.0
+    assert verdict == "REGRESSION"
+
+
+def test_a_significant_but_small_drop_is_not_regression():
+    """lower > 0 alone is not enough; the drop must also reach the margin."""
+    verdict, d, lower, upper = verdict_for_counts(200, 200, 170, 200, 0.3, 1.645)
+    assert d == pytest.approx(0.15) and lower > 0.0
+    assert verdict == "NO_REGRESSION" if upper < 0.3 else verdict == "INCONCLUSIVE"
+    assert verdict != "REGRESSION"
+
+
+def test_three_runs_cannot_establish_no_regression():
+    """Why R4 moved the default to 20: at 3 runs, even identical arms leave an
+    interval wider than the margin."""
+    assert verdict_for_counts(3, 3, 3, 3, 0.3, 1.645)[0] == "INCONCLUSIVE"
+
+
+def test_margin_and_z_come_from_calibration():
     calibration = Calibration()
-    expected = (0.9 - 0.2) / 0.2
-    assert result.effect_size == pytest.approx(expected)
-    assert expected > calibration.effect_size.regression
+    calibration.behavior.margin = 0.5
+    result = compute_behavior_effect_size(_arm({A: 20}), _arm({A: 12, B: 8}), calibration=calibration)
+    assert result.margin == 0.5
+    assert result.verdict == "INCONCLUSIVE"  # d=0.4 is below this margin, but not provably
+
+
+# --- compute_behavior_effect_size ------------------------------------------------
+
+
+def test_the_result_carries_the_evidence_behind_the_verdict():
+    result = compute_behavior_effect_size(_arm({A: 20}), _arm({A: 4, B: 16}), path_of_interest=A, path_source=PATH_SOURCE_CORPUS)
     assert result.verdict == "REGRESSION"
+    assert result.baseline_share == 1.0 and result.mutated_share == pytest.approx(0.2)
+    assert result.effect_size == pytest.approx(0.8)
+    assert result.deviation_rate == pytest.approx(0.8)
+    assert result.path_of_interest == A and result.path_source == "corpus"
+    assert result.interval[0] > 0.0
 
 
-def test_verdict_thresholds_use_calibration_constants_not_hardcoded():
+def test_without_a_corpus_path_the_baseline_path_is_used_and_labelled_biased():
+    result = compute_behavior_effect_size(_arm({A: 20}), _arm({A: 20}))
+    assert result.path_of_interest == A
+    assert result.path_source == PATH_SOURCE_BASELINE == "baseline arm (biased)"
+
+
+def test_the_corpus_path_is_not_re_picked_from_the_arms():
+    """The path of interest stays the corpus's even when the arms favour another
+    path. Before amendment A this scored 0% vs 0% and returned NO_REGRESSION;
+    that silent pass is exactly what the amendment removed."""
+    result = compute_behavior_effect_size(_arm({B: 20}), _arm({B: 20}), path_of_interest=A, path_source=PATH_SOURCE_CORPUS)
+    assert result.path_of_interest == A
+    assert result.baseline_share == 0.0
+    assert result.verdict == "UNKNOWN"
+
+
+# --- amendment A: a corpus path this task does not usually take ----------------
+
+
+def test_a_corpus_path_the_baseline_never_takes_is_unknown_not_no_regression():
+    """The planted-break shape that motivated amendment A: the corpus path is a
+    longer trajectory than the task. Both arms score 0% on it; without the guard
+    this read INCONCLUSIVE at small N and NO_REGRESSION at N=20."""
+    full_session = ("list_directory", "search_files", "read_text_file")
+    result = compute_behavior_effect_size(
+        _arm({("list_directory",): 20}), _arm({(): 20}),
+        path_of_interest=full_session, path_source=PATH_SOURCE_CORPUS,
+    )
+    assert result.verdict == "UNKNOWN"
+    assert "0/20 baseline runs" in result.reason and "Record a corpus of this task" in result.reason
+    assert result.interval is None and result.effect_size is None
+    assert result.path_of_interest == full_session and result.baseline_share == 0.0
+
+
+def test_the_guard_uses_a_majority_of_baseline_runs():
+    below = compute_behavior_effect_size(_arm({A: 9, B: 11}), _arm({A: 9, B: 11}), path_of_interest=A, path_source=PATH_SOURCE_CORPUS)
+    at = compute_behavior_effect_size(_arm({A: 10, B: 10}), _arm({A: 10, B: 10}), path_of_interest=A, path_source=PATH_SOURCE_CORPUS)
+    assert below.verdict == "UNKNOWN"
+    assert at.verdict != "UNKNOWN"
+
+
+def test_the_guard_threshold_comes_from_calibration():
     calibration = Calibration()
-    calibration.effect_size.inconclusive = 0.5
-    calibration.effect_size.regression = 0.6
-
-    baseline = _result(("a",), {("a",): 10}, natural_variation=0.0, baseline_spread=0.2, valid_runs=10)
-    mutated = _result(("a",), {("a",): 4, ("b",): 6}, natural_variation=0.0, baseline_spread=0.0, valid_runs=10)
-    # deviation_rate = 0.6, effect_size = (0.6-0.0)/0.2 = 3.0 with default
-    # thresholds (regression) -- but with the custom low thresholds
-    # above, still comfortably above regression=0.6.
-    result = compute_behavior_effect_size(baseline, mutated, calibration=calibration)
-    assert result.effect_size == pytest.approx(3.0)
-    assert result.verdict == "REGRESSION"
+    calibration.behavior.min_baseline_share = 0.9
+    result = compute_behavior_effect_size(_arm({A: 17, B: 3}), _arm({A: 17, B: 3}), calibration=calibration,
+                                          path_of_interest=A, path_source=PATH_SOURCE_CORPUS)
+    assert result.verdict == "UNKNOWN" and "90%" in result.reason
 
 
-# --- minimum-evidence gate (docs/SPEC.md §15 limitation 16) -----------------
-# Written and confirmed to FAIL against the pre-gate implementation (which
-# returned a confident REGRESSION for the 1-valid-baseline-run shape below)
-# BEFORE the gate was added, per CLAUDE.md's required procedure.
+# --- minimum-evidence gate (docs/SPEC.md §15 limitation 16), unchanged ------------
+
+
+def test_verdict_is_unknown_when_either_arm_has_no_data():
+    assert compute_behavior_effect_size(_arm({}), _arm({A: 20})).verdict == "UNKNOWN"
+    assert compute_behavior_effect_size(_arm({A: 20}), _arm({})).verdict == "UNKNOWN"
 
 
 def test_a_single_surviving_baseline_run_is_unknown_not_a_confident_regression():
-    """The exact shape docs/SPEC.md §15 limitation 16 recorded from the real
-    blind-agent Gate 4 test: 10 repeats per arm, 9/10 baseline and 8/10
-    mutated runs excluded for low fidelity, leaving 1 valid baseline and 2
-    valid mutated runs -- which the report then presented as a confident
-    "BEHAVIOR REGRESSION at 100% deviation from baseline."
-
-    That verdict was structurally guaranteed, not bad luck: with one valid
-    baseline run, `natural_variation` is 0.0 (a single run always matches
-    its own dominant path) and `baseline_spread` is 0.0 (pstdev of one
-    sample), so the zero-spread branch reports REGRESSION for ANY nonzero
-    deviation in the mutated arm. One run cannot measure natural variation,
-    so there is nothing for a deviation to be "beyond."
-    """
-    baseline = _result(("a", "b"), {("a", "b"): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
-    baseline = dataclasses.replace(baseline, total_runs=10)
-    mutated = _result(("a", "c"), {("a", "c"): 2}, natural_variation=0.0, baseline_spread=0.0, valid_runs=2)
-    mutated = dataclasses.replace(mutated, total_runs=10)
-
-    result = compute_behavior_effect_size(baseline, mutated)
-
-    assert result.verdict == "UNKNOWN"
-    assert result.effect_size is None
-    assert result.deviation_rate is None
-
-
-def test_two_valid_runs_are_still_too_few_to_measure_natural_variation():
-    """Two identical runs give baseline_spread == 0.0 legitimately, but
-    still cannot distinguish "genuinely stable" from "we only looked
-    twice" -- below the calibrated minimum, the honest answer is UNKNOWN."""
-    baseline = _result(("a",), {("a",): 2}, natural_variation=0.0, baseline_spread=0.0, valid_runs=2)
-    mutated = _result(("b",), {("b",): 2}, natural_variation=0.0, baseline_spread=0.0, valid_runs=2)
-
+    """The exact Gate 4 blind-agent shape limitation 16 recorded."""
+    baseline = dataclasses.replace(_arm({A: 1}), total_runs=10)
+    mutated = dataclasses.replace(_arm({B: 2}), total_runs=10)
     result = compute_behavior_effect_size(baseline, mutated)
     assert result.verdict == "UNKNOWN"
+    assert result.effect_size is None and result.deviation_rate is None and result.interval is None
 
 
-def test_the_unknown_verdict_states_why_rather_than_being_bare():
-    """Limitation 16's other half: the report gave "no visible signal to a
-    cold reader that its verdict rests on mostly-excluded runs." An UNKNOWN
-    that doesn't say why reproduces exactly that problem in a quieter
-    form."""
-    baseline = _result(("a",), {("a",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
-    mutated = _result(("b",), {("b",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
-
-    result = compute_behavior_effect_size(baseline, mutated)
+def test_the_unknown_verdict_states_why():
+    result = compute_behavior_effect_size(_arm({A: 1}), _arm({B: 1}))
     assert result.verdict == "UNKNOWN"
-    assert result.reason is not None
-    assert "1" in result.reason  # names the actual surviving-run count
+    assert result.reason is not None and "1" in result.reason
 
 
 def test_a_thin_arm_is_gated_even_when_the_other_arm_is_healthy():
-    """Only ONE arm needs to be too thin for the comparison between them to
-    be unsupportable -- the gate is on both, not on their average."""
-    healthy = _result(("a",), {("a",): 10}, natural_variation=0.0, baseline_spread=0.1, valid_runs=10)
-    thin = _result(("b",), {("b",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
-
+    healthy, thin = _arm({A: 20}), _arm({B: 1})
     assert compute_behavior_effect_size(healthy, thin).verdict == "UNKNOWN"
     assert compute_behavior_effect_size(thin, healthy).verdict == "UNKNOWN"
 
 
-def test_at_the_minimum_a_real_verdict_is_still_computed_not_gated_away():
-    """The gate must not be so conservative it swallows legitimate small-N
-    results: exactly at min_valid_runs, a real verdict is still produced."""
+def test_min_valid_runs_is_calibration_driven():
     calibration = Calibration()
-    n = calibration.min_valid_runs
-    baseline = _result(("a",), {("a",): n}, natural_variation=0.0, baseline_spread=0.0, valid_runs=n)
-    mutated = _result(("b",), {("b",): n}, natural_variation=0.0, baseline_spread=0.0, valid_runs=n)
-
-    result = compute_behavior_effect_size(baseline, mutated, calibration=calibration)
+    calibration.min_valid_runs = 1
+    result = compute_behavior_effect_size(_arm({A: 1}), _arm({B: 1}), calibration=calibration)
     assert result.verdict != "UNKNOWN"
-    assert result.deviation_rate == pytest.approx(1.0)
 
 
-def test_min_valid_runs_is_calibration_driven_not_hardcoded():
-    calibration = Calibration()
-    calibration.min_valid_runs = 1  # a caller who genuinely wants N=1 results
-    baseline = _result(("a",), {("a",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
-    mutated = _result(("b",), {("b",): 1}, natural_variation=0.0, baseline_spread=0.0, valid_runs=1)
+# --- path of interest from the corpus ---------------------------------------------
 
-    result = compute_behavior_effect_size(baseline, mutated, calibration=calibration)
-    assert result.verdict == "REGRESSION"  # the old, ungated behavior, now opt-in
+
+def _session(dir_path: Path, sid: str, tools: list[str], server: str = "srv", provenance: str = "real") -> Path:
+    dir_path.mkdir(parents=True, exist_ok=True)
+    lines = [SessionStart(session_id=sid, seq=0, started_at="2026-09-15T00:00:00Z",
+                          environment=Environment(tool_manifest_hash="h"), raw_frame_offset=0).model_dump_json()]
+    for i, name in enumerate(tools, start=1):
+        lines.append(ToolCall(session_id=sid, seq=i, timestamp="2026-09-15T00:00:01Z", server=server, tool_name=name,
+                              arguments={}, result_shape={"type": "object"}, is_error=False, duration_ms=1.0,
+                              fault=False, result_provenance=provenance, raw_frame_offset=i).model_dump_json())
+    path = dir_path / f"{sid}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_path_of_interest_is_the_most_frequent_corpus_path(tmp_path):
+    paths = [_session(tmp_path, "s0", ["a", "c"]), _session(tmp_path, "s1", ["a", "b"]), _session(tmp_path, "s2", ["a", "b"])]
+    assert path_of_interest_from_sessions(paths, "srv") == ("a", "b")
+
+
+def test_path_of_interest_ties_break_by_first_appearance(tmp_path):
+    paths = [_session(tmp_path, "s0", ["x"]), _session(tmp_path, "s1", ["y"])]
+    assert path_of_interest_from_sessions(paths, "srv") == ("x",)
+
+
+def test_path_of_interest_ignores_other_servers_and_non_real_calls(tmp_path):
+    paths = [
+        _session(tmp_path, "s0", ["other"], server="elsewhere"),
+        _session(tmp_path, "s1", ["authored"], provenance="authored_fixture"),
+        _session(tmp_path, "s2", ["a"]),
+    ]
+    assert path_of_interest_from_sessions(paths, "srv") == ("a",)
+    assert path_of_interest_from_sessions([paths[0]], "srv") is None

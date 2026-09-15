@@ -1,5 +1,15 @@
 """Adaptive repeat scheduling (F-27), docs/SPEC.md §8.
 
+**Verdict-based early stopping is DISABLED under docs/PHASES.md R4.** The
+proof below showed agreement with the OLD Behavior rule, which R4 measured to
+raise false REGRESSIONs on unchanged agents at 12-26%; agreement with a broken
+rule is not validity, and the proof does not transfer to the new interval
+rule. R4 reintroduces stopping only on a footing valid under optional stopping
+(time-uniform confidence sequences). What remains here stops only when no
+mutated run can matter under ANY rule: the repeat ceiling, and a baseline too
+thin for any verdict. The history below is kept as the record of what was
+proven, and for what.
+
 Spend real agent runs only where the answer is still in doubt. F-27's own
 "Done when" is the bar: fewer total runs than fixed-N, with **the same
 final verdicts**.
@@ -75,7 +85,6 @@ from mcp_drifter.evaluate.baseline import (
     _run_once_failed_reason,
     aggregate_baseline_runs,
 )
-from mcp_drifter.evaluate.effect_size import verdict_for_deviation
 from mcp_drifter.record.calibration import Calibration, load_calibration
 
 
@@ -139,32 +148,8 @@ def next_decision(
             f"mutated arm has {m} valid run(s), below the {calibration.min_valid_runs} needed for any verdict",
         )
 
-    matching = mutated_so_far.variant_frequencies.get(baseline.dominant_path, 0)
-    r = attempts_remaining
-    # See the module docstring for why these two bracket every reachable
-    # outcome, excluded runs included.
-    deviation_if_all_match = 1.0 - (matching + r) / (m + r)
-    deviation_if_none_match = 1.0 - matching / (m + r)
-
-    best_verdict, _ = verdict_for_deviation(
-        deviation_if_all_match, baseline.natural_variation, baseline.baseline_spread, calibration
-    )
-    worst_verdict, _ = verdict_for_deviation(
-        deviation_if_none_match, baseline.natural_variation, baseline.baseline_spread, calibration
-    )
-
-    if best_verdict == worst_verdict:
-        return SchedulingDecision(
-            False,
-            f"verdict is already settled at {best_verdict} after {m} valid run(s) — no outcome of the "
-            f"remaining {r} could change it",
-        )
-
-    return SchedulingDecision(
-        True,
-        f"still undecided after {m} valid run(s) (remaining runs could yield "
-        f"{best_verdict} or {worst_verdict})",
-    )
+    # docs/PHASES.md R4: no verdict-based early stop. Every arm runs its fixed N.
+    return SchedulingDecision(True, "fixed N: verdict-based early stopping is disabled (docs/PHASES.md R4)")
 
 
 @dataclass(frozen=True)

@@ -37,12 +37,18 @@ produced its sessions.
 from __future__ import annotations
 
 import dataclasses
+import json
 import sys
 from pathlib import Path
 from typing import TextIO
 
 from mcp_drifter.cli.config import ConfigError, DrifterConfig, PolicyConfig, assertions_for, load_config
-from mcp_drifter.cli.report_format import RunResult, budget_exceeded_from_excluded_runs, render_run_result
+from mcp_drifter.cli.report_format import (
+    BEHAVIOR_PATH_FILE,
+    RunResult,
+    budget_exceeded_from_excluded_runs,
+    render_run_result,
+)
 from mcp_drifter.cli.stats import resolve_runs_dir
 from mcp_drifter.evaluate.assertions import TaskAssertions, evaluate_task
 from mcp_drifter.evaluate.baseline import aggregate_baseline_runs
@@ -110,7 +116,18 @@ def build_report_result(
 
     baseline_result = aggregate_baseline_runs(task_id, baseline_paths, calibration=calibration)
     mutated_result = aggregate_baseline_runs(f"{task_id}__mutated", mutated_paths, calibration=calibration)
-    effect = compute_behavior_effect_size(baseline_result, mutated_result, calibration=calibration)
+    # docs/PHASES.md R4: the path of interest `drifter run` chose from the corpus.
+    # A run directory without it (older runs) falls back to the baseline arm's
+    # dominant path, which the report labels as biased.
+    behavior_path = session_dir / BEHAVIOR_PATH_FILE
+    path_of_interest = path_source = None
+    if behavior_path.exists():
+        stored = json.loads(behavior_path.read_text(encoding="utf-8"))
+        path_of_interest, path_source = tuple(stored["path"]), stored.get("source")
+    effect = compute_behavior_effect_size(
+        baseline_result, mutated_result, calibration=calibration,
+        path_of_interest=path_of_interest, path_source=path_source,
+    )
     safety = evaluate_safety_across_arms(session_dir, policy.destructive, policy.confirmation_required)
 
     # F-24: unlike `mutation_log`, task assertions ARE reconstructable from

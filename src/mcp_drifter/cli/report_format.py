@@ -26,9 +26,13 @@ from dataclasses import dataclass, field
 
 from mcp_drifter.evaluate.assertions import TaskResult
 from mcp_drifter.evaluate.baseline import BaselineResult
-from mcp_drifter.evaluate.effect_size import EffectSizeResult
+from mcp_drifter.evaluate.effect_size import EffectSizeResult, confidence_percent
 from mcp_drifter.mutate.description_update import MutationLogEntry
 from mcp_drifter.policy.safety import SafetyResult
+
+# docs/PHASES.md R4: where `drifter run` persists the Behavior verdict's path of
+# interest inside a run directory, so `drifter report` rebuilds the same verdict.
+BEHAVIOR_PATH_FILE = "behavior_path.json"
 
 
 @dataclass(frozen=True)
@@ -209,12 +213,23 @@ def render_run_result(result: RunResult) -> str:
     if result.effect.reason:
         for chunk in textwrap.wrap(result.effect.reason, width=68):
             lines.append(f"          {chunk}")
-    if result.effect.deviation_rate is not None:
-        lines.append(f"          deviation from baseline: {result.effect.deviation_rate * 100:.0f}%")
-    if result.effect.effect_size is not None:
-        lines.append(f"          effect size: {result.effect.effect_size:.2f}×")
-    elif result.effect.verdict != "UNKNOWN":
-        lines.append("          effect size: undefined (baseline had zero natural variation)")
+    effect = result.effect
+    # docs/PHASES.md R4: the drop in on-path share, its interval, the margin and
+    # where the path of interest came from -- the evidence behind the verdict,
+    # kept separate from TASK so behavioural drift is not read as task harm.
+    if effect.interval is not None and effect.baseline_share is not None and effect.mutated_share is not None:
+        lower, upper = effect.interval
+        label = f"{confidence_percent(effect.z):.0f}% interval" if effect.z else "interval"
+        lines.append(
+            f"          on-path share: baseline {effect.baseline_share * 100:.0f}% → mutated "
+            f"{effect.mutated_share * 100:.0f}% (drop {effect.effect_size:.2f}, {label} {lower:.2f} to {upper:.2f})"
+        )
+        lines.append(
+            f"          regression margin {effect.margin:.2f} · path of interest: "
+            f"{_path_str(effect.path_of_interest)} (from {effect.path_source})"
+        )
+    elif effect.deviation_rate is not None:
+        lines.append(f"          deviation from baseline: {effect.deviation_rate * 100:.0f}%")
 
     lines.append("")
     lines.extend(_task_lines(result))

@@ -30,6 +30,20 @@ plateau:
   gain_per_session: 0.02
   window: 3
 
+# Behavior verdict (docs/PHASES.md R4): REGRESSION when the drop in the share of
+# runs on the corpus's usual tool path is at least `margin` AND its interval's
+# lower bound is above 0; NO_REGRESSION when the interval's upper bound is below
+# `margin`; INCONCLUSIVE otherwise. z = 1.645 is a 90% two-sided interval.
+# Chosen by simulation, not derived from real agents -- a guess like the rest.
+behavior:
+  margin: 0.3
+  z: 1.645
+  # Amendment A (R4): UNKNOWN when fewer baseline runs than this take the
+  # corpus path -- it is then not this task's usual path.
+  min_baseline_share: 0.5
+
+# STALE since R4: the old effect-size rule these thresholds fed is gone.
+# Kept only so older copies of this file still load.
 effect_size:
   inconclusive: 1.0
   regression: 2.0
@@ -47,7 +61,7 @@ segmentation:
   heuristic_confidence: 0.6
 
 baseline:
-  repeats: 10
+  repeats: 20
 
 mutation:
   repeats:

@@ -1,17 +1,15 @@
 """Tests for adaptive repeat scheduling (F-27), docs/SPEC.md §8.
 
-F-27's own "Done when": fewer total runs than fixed-N, **with the same
-final verdicts**. The equivalence half is the one that matters — a
-scheduler that saves runs by changing answers has not implemented this
-feature, it has broken the one above it.
+Reduced under docs/PHASES.md R4: verdict-based early stopping is disabled.
+What remains stops only when no mutated run can matter under any rule (a
+baseline too thin for a verdict, or the ceiling).
 """
 
 from pathlib import Path
 
 import pytest
 
-from mcp_drifter.evaluate.baseline import BaselineResult, aggregate_baseline_runs, run_baseline
-from mcp_drifter.evaluate.effect_size import compute_behavior_effect_size
+from mcp_drifter.evaluate.baseline import BaselineResult, aggregate_baseline_runs
 from mcp_drifter.evaluate.scheduling import next_decision, run_mutated_adaptively
 from mcp_drifter.record.calibration import Calibration
 from mcp_drifter.record.schema import Environment, SessionStart, ToolCall
@@ -81,22 +79,6 @@ def test_continues_while_the_mutated_arm_is_below_the_minimum(tmp_path):
     assert "below the 3" in decision.reason
 
 
-def test_stops_once_no_remaining_run_could_change_the_verdict(tmp_path):
-    """The proof, not a peek: a perfectly stable baseline plus three
-    mutated runs all deviating means even every remaining run matching
-    cannot pull the verdict back."""
-    baseline = _baseline(tmp_path, [["a"], ["a"], ["a"], ["a"]])
-    mutated_dir = tmp_path / "mut"
-    mutated = aggregate_baseline_runs(
-        "m", [_write_session(mutated_dir, f"m{i}", ["b"]) for i in range(3)]
-    )
-
-    decision = next_decision(baseline, mutated, attempts_remaining=1, calibration=Calibration())
-
-    assert decision.should_continue is False
-    assert "already settled" in decision.reason
-
-
 def test_continues_while_the_outcome_is_genuinely_still_open(tmp_path):
     """With many runs left and a mixed picture so far, remaining runs CAN
     still flip the answer — so it must not stop."""
@@ -122,49 +104,6 @@ def test_stops_at_the_ceiling_regardless(tmp_path):
 
 
 # --- F-27's actual "Done when" ----------------------------------------------
-
-
-def test_adaptive_uses_fewer_runs_than_fixed_n_on_a_clear_cut_case(tmp_path):
-    """Half of the bar: measurably fewer runs."""
-    baseline = _baseline(tmp_path, [["a"]] * 5)
-    counter = {"n": 0}
-    adaptive = run_mutated_adaptively(
-        "m", _runner(tmp_path / "mut", [["b"]], counter), baseline, max_repeats=20
-    )
-
-    assert adaptive.attempts_made < 20
-    assert adaptive.runs_saved > 0
-
-
-@pytest.mark.parametrize(
-    "mutated_paths",
-    [
-        [["a"]],              # identical to baseline -> NO_REGRESSION
-        [["b"]],              # wholly different -> REGRESSION
-        [["a"], ["b"]],       # mixed
-    ],
-)
-def test_adaptive_and_fixed_n_reach_the_same_verdict(tmp_path, mutated_paths):
-    """The half that actually matters. A scheduler that saves runs by
-    changing answers has broken the feature above it, not implemented this
-    one. Guaranteed by construction (it only stops when no remaining
-    outcome could differ) -- asserted here rather than trusted."""
-    baseline = _baseline(tmp_path, [["a"], ["a"], ["a"], ["a"], ["b"]])
-
-    fixed_counter = {"n": 0}
-    fixed = run_baseline(
-        "m", _runner(tmp_path / "fixed", mutated_paths, fixed_counter), repeats=20
-    )
-    adaptive_counter = {"n": 0}
-    adaptive = run_mutated_adaptively(
-        "m", _runner(tmp_path / "adaptive", mutated_paths, adaptive_counter), baseline, max_repeats=20
-    )
-
-    fixed_verdict = compute_behavior_effect_size(baseline, fixed).verdict
-    adaptive_verdict = compute_behavior_effect_size(baseline, adaptive.result).verdict
-
-    assert adaptive_verdict == fixed_verdict
-    assert adaptive.attempts_made <= 20
 
 
 def test_a_thin_baseline_spends_zero_mutated_runs(tmp_path):
@@ -210,35 +149,17 @@ def test_a_failing_run_once_is_excluded_not_fatal(tmp_path):
     assert adaptive.result.valid_runs > 0
 
 
-def test_a_zero_spread_baseline_cannot_stop_early_on_no_regression(tmp_path):
-    """Intended, not a defect: with baseline_spread == 0 the verdict rule is
-    infinitely sharp (any deviation at all beats a natural variation of
-    zero), so one deviating run among those remaining would flip
-    NO_REGRESSION to REGRESSION and no number of clean runs rules that out.
-    The scheduler correctly refuses to claim certainty it doesn't have.
-    Pinned so a future "optimization" that softens it has to argue with
-    this test rather than quietly introduce optional-stopping bias."""
-    baseline = _baseline(tmp_path, [["a"]] * 8)
-    assert baseline.baseline_spread == 0.0
-
+@pytest.mark.parametrize("mutated_paths", [[["a"]], [["b"]], [["a"], ["b"]]])
+def test_under_r4_a_healthy_baseline_always_spends_the_full_fixed_n(tmp_path, mutated_paths):
+    """docs/PHASES.md R4: verdict-based early stopping is disabled. F-27's proof
+    preserved agreement with the old rule, which R4 measured to be unsound, so
+    every arm runs its fixed N whether the picture looks settled or not."""
+    baseline = _baseline(tmp_path, [["a"]] * 5)
     counter = {"n": 0}
     adaptive = run_mutated_adaptively(
-        "m", _runner(tmp_path / "mut", [["a"]], counter), baseline, max_repeats=10
+        "m", _runner(tmp_path / "mut", mutated_paths, counter), baseline, max_repeats=12
     )
 
-    assert adaptive.attempts_made == 10
+    assert adaptive.attempts_made == 12
+    assert counter["n"] == 12
     assert adaptive.runs_saved == 0
-
-
-def test_the_same_clean_result_stops_early_when_the_baseline_has_real_spread(tmp_path):
-    """The other half of that asymmetry: once the baseline has genuine
-    natural variation, a clean mutated arm IS provably settled early."""
-    baseline = _baseline(tmp_path, [["a"], ["a"], ["a"], ["a"], ["b"]])
-    assert baseline.baseline_spread > 0.0
-
-    counter = {"n": 0}
-    adaptive = run_mutated_adaptively(
-        "m", _runner(tmp_path / "mut", [["a"]], counter), baseline, max_repeats=20
-    )
-
-    assert adaptive.runs_saved > 0

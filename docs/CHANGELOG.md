@@ -6,6 +6,75 @@ not just a diff.
 
 ---
 
+## R4: the Behavior verdict is replaced by a pre-registered interval rule
+
+**Measured first.** Simulating unchanged agents against Drifter's own
+`compute_behavior_effect_size` (20,000 null trials per cell), the old rule raised a false
+REGRESSION 12-26% of the time whenever the agent was not deterministic. More runs did not
+fix it (p=0.95: 24% at N=10, 23% at N=20). The rates tracked `p^N (1 - p^N)`, which
+identifies the zero-spread branch: a stable-looking baseline turned any single deviation
+into REGRESSION.
+
+**Replacement, pre-registered in docs/PHASES.md R4 before any code, approved at margin 0.3
+and N=20.** The path of interest is chosen from the corpus before either arm runs and
+persisted as `behavior_path.json`. The measure is the drop `d` in on-path share, with a
+Newcombe hybrid-score interval from Wilson intervals at z=1.645. REGRESSION needs
+`lower > 0` and `d >= margin`; NO_REGRESSION needs `upper < margin`; everything else is
+INCONCLUSIVE. It is implemented from the published statistics, not from any other
+project's code. `drifter report` reads the persisted path; older run directories fall back
+to the baseline arm's path, labelled "(biased)".
+
+**Consequences, stated.**
+- Default repeats go from 10 to 20 per arm.
+- F-27's verdict-based early stopping is disabled. Its proof preserved agreement with a
+  rule now measured to be unsound. What remains stops only on the ceiling or on a baseline
+  too thin for any verdict.
+- The report's BEHAVIOR block now prints on-path shares, `d`, the interval, the margin
+  and the path's source, in place of "deviation" and "effect size x".
+- `calibration.effect_size` is stale but still loads.
+- Tests that asserted NO_REGRESSION after 3 repeats become INCONCLUSIVE: three runs cannot
+  bound a drop below 0.3.
+
+**Acceptance bars, first run against the implemented code.** Bar 1, false REGRESSION at
+most 5% at every p, was met. Bar 2, detecting a 0.6 drop at least 90% of the time, was met
+at p = 1.0, 0.95, 0.9 and 0.8, and **missed at p=0.7 (0.894)**. It is recorded as a strict
+xfail, not tuned. The cause is confirmed: a 10-session corpus picks the wrong path of
+interest 9.9% of the time at p=0.7, and those trials detect nothing.
+
+**A test error of mine, corrected.** A unit test expected INCONCLUSIVE at `d = 0.30` with a
+positive lower bound. The rule as written (`d >= margin`) says REGRESSION, so the test was
+wrong, not the code. It now tests `d = 0.30` as REGRESSION and `d = 0.25` as INCONCLUSIVE.
+
+**Amendment A, found by the full suite and approved.** Ten end-to-end tests failed. Eight
+only needed more runs, because 3 runs cannot bound a drop below 0.3. Two exposed a real
+defect: those tests replay part of the 7-call golden session, so the corpus path was one no run
+ever took, and a deterministic planted break read INCONCLUSIVE (NO_REGRESSION at 20 runs).
+The rule now reports UNKNOWN when fewer than half the baseline runs take the corpus path. The
+two regression tests use the golden session trimmed to their own task and report REGRESSION at
+3 runs. The hand-built report tests write 20 sessions per arm. The Gate 4 persona test keeps 3
+repeats and asserts INCONCLUSIVE plus identical 100% on-path shares.
+
+**The amended rule, re-measured at 20,000 trials** (N=20, a 10-session corpus):
+
+| p | null REGRESSION | null UNKNOWN | 0.6-drop REGRESSION | 0.6-drop UNKNOWN |
+|---|---|---|---|---|
+| 1.0 | 0.000 | 0.000 | 0.999 | 0.000 |
+| 0.95 | 0.000 | 0.000 | 0.993 | 0.000 |
+| 0.9 | 0.002 | 0.001 | 0.989 | 0.001 |
+| 0.8 | 0.009 | 0.020 | 0.971 | 0.019 |
+| 0.7 | 0.022 | 0.109 | 0.883 | 0.111 |
+| 0.5 | 0.037 | 0.409 | n/a | n/a |
+
+Bar 1 still holds, and false alarms can only fall under the guard. The p=0.7 power miss
+stands (0.883). The roughly 11% of trials that were silent misses are now explicit UNKNOWN.
+At p=0.5, 41% of comparisons are UNKNOWN: an agent with no majority path has no usual path
+to score, and the report says so.
+
+**Not yet done.** Live unchanged-agent trials: the same real agent in both arms, to
+measure the real false-alarm rate rather than a simulated one.
+
+---
+
 ## Fixture authoring and maintenance: `drifter fixture capture` / `check`
 
 Every experiment through limitation 23 used response fixtures written by hand or by a

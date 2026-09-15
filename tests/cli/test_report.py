@@ -105,15 +105,17 @@ def test_build_report_result_raises_actionable_error_for_an_unrun_task(tmp_path)
 
 def test_build_report_result_reconstructs_a_clean_no_regression_report(tmp_path):
     session_dir = tmp_path / "run" / "my_task"
-    for i in range(3):
+    # 20 per arm: docs/PHASES.md R4's interval rule cannot establish NO_REGRESSION
+    # from 3 runs (the interval is wider than the 0.3 margin).
+    for i in range(20):
         _write_session(session_dir / "baseline", f"b{i}", ["a", "b"])
         _write_session(session_dir / "mutated", f"m{i}", ["a", "b"])
 
     result = build_report_result("my_task", tmp_path)
 
     assert result.task_id == "my_task"
-    assert result.baseline.valid_runs == 3
-    assert result.mutated.valid_runs == 3
+    assert result.baseline.valid_runs == 20
+    assert result.mutated.valid_runs == 20
     assert result.effect.verdict == "NO_REGRESSION"
     assert result.safety.verdict == "NO_VIOLATION"
     assert result.mutation_log == []  # genuinely not reconstructable, see module docstring
@@ -156,7 +158,7 @@ def test_render_run_result_output_matches_what_a_real_drifter_run_would_show(tmp
     like."
     """
     session_dir = tmp_path / "run" / "shape_task"
-    for i in range(3):
+    for i in range(20):  # R4: 20 per arm, the calibrated default
         _write_session(session_dir / "baseline", f"b{i}", ["a"])
         _write_session(session_dir / "mutated", f"m{i}", ["a"])
 
@@ -164,8 +166,9 @@ def test_render_run_result_output_matches_what_a_real_drifter_run_would_show(tmp
     output = render_run_result(result)
 
     assert "DRIFTER RUN — shape_task" in output
-    assert "BASELINE  3/3 valid runs" in output
+    assert "BASELINE  20/20 valid runs" in output
     assert "BEHAVIOR  NO_REGRESSION" in output
+    assert "(from baseline arm (biased))" in output  # no behavior_path.json in a hand-built run dir
     assert "SAFETY    NO VIOLATION" in output
     # No mutations.jsonl was written for this hand-built run (a pre-F-18
     # layout), so there is genuinely nothing to show.

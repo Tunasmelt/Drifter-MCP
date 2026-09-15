@@ -48,6 +48,23 @@ def _golden_calls() -> list[ToolCall]:
     return [r for r in read_session(GOLDEN_FIXTURE) if isinstance(r, ToolCall)]
 
 
+def _task_corpus(tmp_path: Path, k: int) -> Path:
+    """The golden session trimmed to its first `k` tool calls: a recording of a
+    task that makes exactly those calls. docs/PHASES.md R4 (amendment A) scores
+    the corpus's usual path, so a corpus must be a recording of the task under
+    test; the full 7-call golden session is not a recording of a 1-3 call task."""
+    kept, calls = [], 0
+    for line in GOLDEN_FIXTURE.read_text(encoding="utf-8").splitlines():
+        if json.loads(line).get("record_type") == "tool_call":
+            calls += 1
+            if calls > k:
+                continue
+        kept.append(line)
+    path = tmp_path / f"task_corpus_{k}.jsonl"
+    path.write_text("\n".join(kept) + "\n", encoding="utf-8")
+    return path
+
+
 def _spec(tool_name: str, arguments: dict) -> str:
     return f"{tool_name}|{json.dumps(arguments)}"
 
@@ -382,7 +399,7 @@ def test_run_mutation_comparison_description_update_end_to_end(tmp_path):
     result = run_mutation_comparison(
         task_id="desc_update_task",
         prompt="",
-        fixture=GOLDEN_FIXTURE,
+        fixture=_task_corpus(tmp_path, 3),
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",
@@ -397,13 +414,18 @@ def test_run_mutation_comparison_description_update_end_to_end(tmp_path):
     expected_path = tuple(c.tool_name for c in calls)
     assert result.baseline.dominant_path == expected_path
     assert result.mutated.dominant_path == expected_path
-    assert result.effect.verdict == "NO_REGRESSION"
-    assert result.effect.deviation_rate == 0.0
+    # docs/PHASES.md R4: 3 runs cannot bound a drop below the 0.3 margin, so an
+    # unchanged agent is INCONCLUSIVE here. Both arms 100% on the corpus path is
+    # the evidence nothing changed.
+    assert result.effect.verdict == "INCONCLUSIVE"
+    assert result.effect.baseline_share == 1.0 and result.effect.mutated_share == 1.0
+    assert result.effect.effect_size == 0.0
+    assert result.effect.path_source == "corpus"
     assert len(result.mutation_log) == len(tools_served_from_session(GOLDEN_FIXTURE))
     assert result.safety.verdict == "NO_VIOLATION"  # F-25: the golden fixture's real tools are all benign
 
     output = render_run_result(result)
-    assert "NO_REGRESSION" in output
+    assert "BEHAVIOR  INCONCLUSIVE" in output
     assert "desc_update_task" in output
     assert "SAFETY    NO VIOLATION" in output
 
@@ -425,7 +447,7 @@ def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_over
     result = run_mutation_comparison(
         task_id="safety_task",
         prompt="",
-        fixture=GOLDEN_FIXTURE,
+        fixture=_task_corpus(tmp_path, 3),
         server_name=GOLDEN_SERVER,
         agent_command=command,
         operator="description_update",
@@ -436,7 +458,8 @@ def test_run_mutation_comparison_reports_a_real_safety_violation_via_policy_over
         policy=PolicyConfig(destructive=[forced_destructive]),
     )
 
-    assert result.effect.verdict == "NO_REGRESSION"  # behavior itself is unaffected
+    assert result.effect.verdict == "INCONCLUSIVE"  # R4: 3 runs; behavior itself is unaffected
+    assert result.effect.effect_size == 0.0
     assert result.safety.verdict == "VIOLATION"
     assert any(f.tool_name == forced_destructive for f in result.safety.findings)
 
@@ -503,7 +526,7 @@ def test_run_run_end_to_end_via_config_with_agent_mode_http(tmp_path):
     out = io.StringIO()
     run_run(
         config_path=config_path,
-        fixture=GOLDEN_FIXTURE,
+        fixture=_task_corpus(tmp_path, 2),
         server_name=GOLDEN_SERVER,
         task_id="http_mode_task",
         operator="description_update",
@@ -515,7 +538,8 @@ def test_run_run_end_to_end_via_config_with_agent_mode_http(tmp_path):
     )
     output = out.getvalue()
     assert "http_mode_task" in output
-    assert "NO_REGRESSION" in output
+    assert "BEHAVIOR  INCONCLUSIVE" in output  # R4: 3 runs cannot establish NO_REGRESSION
+    assert "on-path share: baseline 100% → mutated 100% (drop 0.00" in output
 
 
 def test_run_mutation_comparison_tool_addition_end_to_end_over_http(tmp_path):
@@ -561,7 +585,11 @@ def test_run_mutation_comparison_tool_addition_end_to_end_over_http(tmp_path):
     expected_path = (*[c.tool_name for c in calls], added_tool.name)
     assert result.baseline.dominant_path == expected_path
     assert result.mutated.dominant_path == expected_path
-    assert result.effect.verdict == "NO_REGRESSION"
+    # docs/PHASES.md R4 amendment A: this task's path ends in the tool the
+    # mutation injects, which no recorded corpus can contain, so the corpus path
+    # is not the task's usual path and no behavior verdict is claimed.
+    assert result.effect.verdict == "UNKNOWN"
+    assert "not this task's usual path" in result.effect.reason
 
 
 def test_run_mutation_comparison_reports_a_real_regression_over_http(tmp_path):
@@ -578,7 +606,7 @@ def test_run_mutation_comparison_reports_a_real_regression_over_http(tmp_path):
     result = run_mutation_comparison(
         task_id="regression_over_http",
         prompt="",
-        fixture=GOLDEN_FIXTURE,
+        fixture=_task_corpus(tmp_path, 1),  # R4: a recording of this one-call task
         server_name=GOLDEN_SERVER,
         agent_command=[sys.executable, str(SCRIPTED_AGENT), select_spec],
         operator="description_update",
@@ -641,7 +669,11 @@ def test_run_mutation_comparison_tool_addition_end_to_end(tmp_path):
     expected_path = (*[c.tool_name for c in calls], added_tool.name)
     assert result.baseline.dominant_path == expected_path
     assert result.mutated.dominant_path == expected_path
-    assert result.effect.verdict == "NO_REGRESSION"
+    # docs/PHASES.md R4 amendment A: this task's path ends in the tool the
+    # mutation injects, which no recorded corpus can contain, so the corpus path
+    # is not the task's usual path and no behavior verdict is claimed.
+    assert result.effect.verdict == "UNKNOWN"
+    assert "not this task's usual path" in result.effect.reason
 
     assert len(result.mutation_log) == 1
     assert result.mutation_log[0].tool_name == added_tool.name

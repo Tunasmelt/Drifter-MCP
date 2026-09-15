@@ -124,4 +124,9 @@ def test_user_1_happy_path_end_to_end(tmp_path):
     )
     output = out.getvalue()
     assert "test_user_1" in output
-    assert "NO_REGRESSION" in output
+    # docs/PHASES.md R4: 3 repeats cannot bound a drop below the 0.3 margin, so an
+    # unchanged agent reads INCONCLUSIVE here rather than NO_REGRESSION. The
+    # evidence that nothing changed is the on-path share, identical in both arms.
+    assert "BEHAVIOR  INCONCLUSIVE" in output
+    assert "on-path share: baseline 100% → mutated 100% (drop 0.00" in output
+    assert "(from corpus)" in output

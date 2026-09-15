@@ -1,100 +1,141 @@
-"""Behavior effect-size scoring (F-23), docs/SPEC.md §8.
+"""Behavior verdict (F-23), docs/SPEC.md §8 — replaced under docs/PHASES.md R4.
 
-`effect_size = (deviation_rate − natural_variation) / baseline_spread`.
-Scheduled as "partial" in Gate 2 (docs/PHASES.md: "baseline and scoring
-only, no mutation yet") — `natural_variation`/`baseline_spread` were
-computable from Gate 2 onward, but `deviation_rate` needs a real
-mutation arm to compare against, which didn't exist until Gate 3's
-`description_update`/`tool_addition` (F-16/F-17). This module is where
-that gap closes, not a new, unplanned feature.
+**Why the old rule was replaced.** It scored `(deviation_rate -
+natural_variation) / baseline_spread` and, when the baseline happened to show
+zero spread, reported REGRESSION for ANY deviation. Simulated against unchanged
+agents (both arms drawn from the same distribution), it raised a false
+REGRESSION 12-26% of the time whenever the agent was not deterministic, and
+more runs did not fix it (p=0.95: 24% at N=10, 23% at N=20). Recorded in
+docs/PHASES.md R4 with the pre-registration this module implements.
 
-`deviation_rate`: the fraction of the MUTATED arm's valid runs whose
-tool-call path differs from the BASELINE arm's own `dominant_path` —
-computed from `BaselineResult.variant_frequencies` (an aggregate count
-already available), not by threading individual per-run paths through
-a new API. Comparing against the baseline's dominant path, not the
-mutated arm's own, is the point: the question is "did behavior drift
-away from what was normal," not "is the mutated arm internally
-consistent with itself."
+**The rule (pre-registered, approved margin 0.3, N=20).**
 
-Verdict defaults to UNKNOWN when either arm has no data at all
-(`has_data is False`) — same non-negotiable discipline as the task-
-assertion default (CLAUDE.md, docs/SPEC.md §3): a verdict computed from
-zero real observations is not a real verdict, and reporting NO_
-REGRESSION by default would be exactly the "lies calmly" failure mode
-CLAUDE.md warns about, just relocated to a different axis.
+- Path of interest `P`: the most frequent whole-session tool path in the
+  CORPUS for this server, chosen before either arm runs and persisted by
+  `drifter run`. Choosing it from the baseline arm biases the comparison (the
+  arm is then scored on the path it was selected to favour); that is only the
+  fallback for run directories without the persisted choice, and it is
+  labelled as biased.
+- `s_b`, `s_m`: the share of each arm's VALID runs whose path equals `P`;
+  `d = s_b - s_m`, the drop.
+- Interval: Newcombe's hybrid score interval for a difference of independent
+  proportions, built from Wilson score intervals at `z` (standard, published
+  technique; implemented from first principles, not from any other project).
+- REGRESSION if `lower > 0` and `d >= margin`; NO_REGRESSION if
+  `upper < margin`; INCONCLUSIVE otherwise.
+- UNKNOWN when either arm has fewer than `calibration.min_valid_runs` valid
+  runs (docs/SPEC.md §15 limitation 16) — unchanged, and checked first.
 
-`baseline_spread == 0.0` (a perfectly stable baseline — the *best* real
-outcome per BaselineResult's own docs, not degenerate data) makes the
-formula's denominator zero. Decided explicitly, not left undefined:
-if the mutated arm ALSO deviates at exactly the baseline's own rate
-(both effectively zero drift), effect_size is reported as `0.0`
-(genuinely no signal) rather than raising or silently returning None.
-Any OTHER deviation against a zero-variance baseline has no finite
-ratio to report — `effect_size` is `None` (undefined magnitude, not
-"zero" and not "unknown data"), but the verdict is still resolved
-directly from the sign of the comparison: a real baseline with zero
-natural variation that the mutated arm deviates from at all is exactly
-the shape of a genuine regression signal, calibration thresholds
-notwithstanding (there's no ratio to compare against them with).
+Field names `deviation_rate` / `effect_size` are kept for compatibility with
+existing callers: `deviation_rate` is now the mutated arm's share of runs NOT
+on `P`, and `effect_size` is `d`, the drop in on-path share.
 """
 
 from __future__ import annotations
 
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Literal
 
 from mcp_drifter.evaluate.baseline import BaselineResult
 from mcp_drifter.record.calibration import Calibration, load_calibration
+from mcp_drifter.record.reader import read_session
+from mcp_drifter.record.schema import ToolCall
 
 Verdict = Literal["NO_REGRESSION", "INCONCLUSIVE", "REGRESSION", "UNKNOWN"]
+
+PATH_SOURCE_CORPUS = "corpus"
+PATH_SOURCE_BASELINE = "baseline arm (biased)"
 
 
 @dataclass(frozen=True)
 class EffectSizeResult:
-    """`deviation_rate`/`effect_size` are `None` exactly when `verdict`
-    is `"UNKNOWN"` OR when `baseline_spread == 0.0` produced an
-    undefined-magnitude comparison (see module docstring) — check
-    `verdict` first, don't infer "no signal" from a `None` `effect_size`
-    alone, since a real `REGRESSION` verdict can carry `effect_size=None`
-    in the zero-baseline-spread case.
-    """
+    """`deviation_rate` / `effect_size` / `interval` are `None` exactly when
+    `verdict` is UNKNOWN; `reason` is set only then."""
 
     deviation_rate: float | None
     effect_size: float | None
     verdict: Verdict
-    # Why the verdict is UNKNOWN, in a form a cold reader can act on --
-    # `None` for every other verdict. Added for docs/SPEC.md §15
-    # limitation 16's second half ("the report gives no visible signal to
-    # a cold reader that its verdict rests on mostly-excluded runs"): a
-    # bare UNKNOWN reproduces that same problem in a quieter form, since
-    # "not enough surviving runs" and "no data at all" are different
-    # situations calling for different fixes from the user.
     reason: str | None = None
+    interval: tuple[float, float] | None = None
+    margin: float | None = None
+    baseline_share: float | None = None
+    mutated_share: float | None = None
+    path_of_interest: tuple[str, ...] | None = None
+    path_source: str | None = None
+    z: float | None = None
+
+
+def wilson_interval(successes: int, n: int, z: float) -> tuple[float, float]:
+    """Wilson score interval for a binomial proportion."""
+    if n <= 0:
+        return 0.0, 1.0
+    p = successes / n
+    denominator = 1.0 + z * z / n
+    centre = (p + z * z / (2 * n)) / denominator
+    half = z * math.sqrt(p * (1.0 - p) / n + z * z / (4 * n * n)) / denominator
+    return max(0.0, centre - half), min(1.0, centre + half)
+
+
+def newcombe_difference_interval(
+    x_baseline: int, n_baseline: int, x_mutated: int, n_mutated: int, z: float
+) -> tuple[float, float, float]:
+    """`(d, lower, upper)` for `d = p_baseline - p_mutated`, Newcombe's hybrid
+    score method (his method 10) from the two Wilson intervals."""
+    p_b, p_m = x_baseline / n_baseline, x_mutated / n_mutated
+    l_b, u_b = wilson_interval(x_baseline, n_baseline, z)
+    l_m, u_m = wilson_interval(x_mutated, n_mutated, z)
+    d = p_b - p_m
+    lower = d - math.sqrt((p_b - l_b) ** 2 + (u_m - p_m) ** 2)
+    upper = d + math.sqrt((u_b - p_b) ** 2 + (p_m - l_m) ** 2)
+    return d, lower, upper
+
+
+def verdict_for_counts(
+    x_baseline: int, n_baseline: int, x_mutated: int, n_mutated: int, margin: float, z: float
+) -> tuple[Verdict, float, float, float]:
+    """The rule alone, on counts: `(verdict, d, lower, upper)`."""
+    d, lower, upper = newcombe_difference_interval(x_baseline, n_baseline, x_mutated, n_mutated, z)
+    if lower > 0.0 and d >= margin:
+        return "REGRESSION", d, lower, upper
+    if upper < margin:
+        return "NO_REGRESSION", d, lower, upper
+    return "INCONCLUSIVE", d, lower, upper
+
+
+def path_of_interest_from_sessions(session_paths: Sequence[Path], server: str | None = None) -> tuple[str, ...] | None:
+    """The most frequent whole-session tool path among `session_paths`, ties
+    broken by first appearance. Only REAL calls count (the corpus is what the
+    agent did against the live server). `None` if no session made a call."""
+    counts: dict[tuple[str, ...], int] = {}
+    for path in session_paths:
+        tool_path = tuple(
+            r.tool_name
+            for r in read_session(path)
+            if isinstance(r, ToolCall) and (server is None or r.server == server) and r.result_provenance == "real"
+        )
+        if tool_path:
+            counts[tool_path] = counts.get(tool_path, 0) + 1
+    if not counts:
+        return None
+    best = max(counts.values())
+    return next(p for p, c in counts.items() if c == best)
+
+
+def confidence_percent(z: float) -> float:
+    """Two-sided coverage of a +/- z interval, for labelling the report."""
+    return math.erf(z / math.sqrt(2.0)) * 100.0
 
 
 def compute_behavior_effect_size(
     baseline: BaselineResult,
     mutated: BaselineResult,
     calibration: Calibration | None = None,
+    path_of_interest: tuple[str, ...] | None = None,
+    path_source: str | None = None,
 ) -> EffectSizeResult:
-    """docs/SPEC.md §8's Behavior axis, with §15 limitation 16's
-    minimum-evidence gate applied FIRST: below `calibration.min_valid_runs`
-    valid runs in either arm, no verdict is computed at all.
-
-    That gate is not a conservatism tweak — it closes a structural defect
-    found by the real Gate 4 blind-agent test. With one surviving valid
-    baseline run, `natural_variation` is 0.0 (a lone run trivially matches
-    its own dominant path) and `baseline_spread` is 0.0 (pstdev of one
-    sample). Both are artifacts of n=1, not measurements, and together they
-    made the zero-spread branch below report a confident `REGRESSION` for
-    ANY nonzero deviation in the mutated arm. That is exactly the
-    "BEHAVIOR REGRESSION at 100% deviation" the real test saw while 85% of
-    its runs had been silently excluded for low fidelity. Same failure
-    shape as the "verdict defaults to UNKNOWN, never PASS" invariant
-    CLAUDE.md names, pointed the other way: a confident FAILURE claim on
-    evidence that cannot support any claim.
-    """
     calibration = calibration or load_calibration()
 
     if not baseline.has_data or not mutated.has_data:
@@ -116,7 +157,7 @@ def compute_behavior_effect_size(
             effect_size=None,
             verdict="UNKNOWN",
             reason=(
-                f"too few valid runs to measure natural variation: "
+                f"too few valid runs to compare behavior: "
                 f"baseline {baseline.valid_runs}/{baseline.total_runs}, "
                 f"mutated {mutated.valid_runs}/{mutated.total_runs} survived exclusion, "
                 f"below the {minimum} per arm calibration.min_valid_runs requires. "
@@ -126,44 +167,46 @@ def compute_behavior_effect_size(
             ),
         )
 
-    matching = mutated.variant_frequencies.get(baseline.dominant_path, 0)
-    deviation_rate = 1.0 - (matching / mutated.valid_runs)
-    verdict, effect_size = verdict_for_deviation(
-        deviation_rate, baseline.natural_variation, baseline.baseline_spread, calibration
+    if path_of_interest is None:
+        path_of_interest, path_source = baseline.dominant_path, PATH_SOURCE_BASELINE
+    source = path_source or PATH_SOURCE_CORPUS
+
+    margin, z = calibration.behavior.margin, calibration.behavior.z
+    x_b = baseline.variant_frequencies.get(path_of_interest, 0)
+    x_m = mutated.variant_frequencies.get(path_of_interest, 0)
+
+    # Amendment A to the pre-registration (docs/PHASES.md R4), added after the
+    # first implementation run: a corpus recorded for a DIFFERENT task (or a
+    # longer version of this one) yields a path this task never takes. Both
+    # arms then score 0% on it, and a planted break read INCONCLUSIVE at 3 runs
+    # and would read NO_REGRESSION at 20. Below this share the path does not
+    # describe the task, so no verdict is claimed.
+    minimum_share = calibration.behavior.min_baseline_share
+    if x_b / baseline.valid_runs < minimum_share:
+        return EffectSizeResult(
+            deviation_rate=None,
+            effect_size=None,
+            verdict="UNKNOWN",
+            reason=(
+                f"the path of interest ({' → '.join(path_of_interest) or '(no calls)'}, from {source}) was taken "
+                f"by only {x_b}/{baseline.valid_runs} baseline runs, below the "
+                f"{minimum_share:.0%} calibration.behavior.min_baseline_share requires — it is not this "
+                f"task's usual path, so a drop on it says nothing. Record a corpus of this task."
+            ),
+            baseline_share=x_b / baseline.valid_runs,
+            path_of_interest=path_of_interest,
+            path_source=source,
+        )
+    verdict, d, lower, upper = verdict_for_counts(x_b, baseline.valid_runs, x_m, mutated.valid_runs, margin, z)
+    return EffectSizeResult(
+        deviation_rate=1.0 - x_m / mutated.valid_runs,
+        effect_size=d,
+        verdict=verdict,
+        interval=(lower, upper),
+        margin=margin,
+        baseline_share=x_b / baseline.valid_runs,
+        mutated_share=x_m / mutated.valid_runs,
+        path_of_interest=path_of_interest,
+        path_source=source,
+        z=z,
     )
-    return EffectSizeResult(deviation_rate=deviation_rate, effect_size=effect_size, verdict=verdict)
-
-
-def verdict_for_deviation(
-    deviation_rate: float,
-    natural_variation: float,
-    baseline_spread: float,
-    calibration: Calibration,
-) -> tuple[Verdict, float | None]:
-    """The verdict rule alone, given a deviation rate and an already-
-    established baseline — extracted so `evaluate/scheduling.py` (F-27) can
-    ask "what verdict would THIS deviation produce" without reimplementing
-    it.
-
-    That sharing is not a convenience: adaptive scheduling decides whether
-    to stop by proving that no remaining run could change the verdict, and
-    a scheduler whose verdict rule drifted from the scorer's would stop on
-    a verdict the scorer then disagrees with — silently returning a
-    different answer than a fixed-N run would. One function, one rule, no
-    possibility of divergence.
-
-    Returns `(verdict, effect_size)`; `effect_size` is `None` in the
-    zero-spread case where the magnitude is genuinely undefined but the
-    direction is not (see this module's docstring).
-    """
-    if baseline_spread == 0.0:
-        if deviation_rate == natural_variation:
-            return "NO_REGRESSION", 0.0
-        return ("REGRESSION" if deviation_rate > natural_variation else "NO_REGRESSION"), None
-
-    effect_size = (deviation_rate - natural_variation) / baseline_spread
-    if effect_size < calibration.effect_size.inconclusive:
-        return "NO_REGRESSION", effect_size
-    if effect_size < calibration.effect_size.regression:
-        return "INCONCLUSIVE", effect_size
-    return "REGRESSION", effect_size
