@@ -293,7 +293,8 @@ def test_a_purely_empty_session_still_gets_a_session_start_at_close(tmp_path):
     recorder = _recorder(tmp_path)
     _initialize(recorder)
     records = _read(recorder)
-    assert len(records) == 1
+    # SessionStart, then SessionEnd (docs/PHASES.md R1: always the last record).
+    assert [r.record_type for r in records] == ["session_start", "session_end"]
     start = records[0]
     assert isinstance(start, SessionStart)
     assert start.environment.agent_identity == "test-agent/1.0"

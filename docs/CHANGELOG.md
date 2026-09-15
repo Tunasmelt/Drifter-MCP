@@ -6,6 +6,49 @@ not just a diff.
 
 ---
 
+## R1: run lifecycle — `SessionEnd`, task attempts, late manifests, unanswered calls
+
+Closes limitation 12 (for adapter-driven runs), limitation 14, and limitation 18's finding 3
+(the adapter never inspected `returncode`, so a crashed or timed-out agent still returned a
+valid-looking session).
+
+**Schema, all nullable, added under the schema-evolution procedure** (the tests in
+`tests/record/test_run_lifecycle.py` were written first and failed at import):
+- a new `SessionEnd` record, always last, with `run_outcome`, `exit_code`, `task_attempted`
+  and a late `tool_manifest_hash`;
+- a new `ToolCall.unanswered` field.
+
+A pre-change corpus (the golden fixture) reads and aggregates exactly as before, and a test
+asserts that.
+
+**Behaviour.** The subprocess adapter sets the outcome from its bounded wait. Its process
+stop and `close()` are shielded from outer cancellation, so an interrupt still stops the
+child and still writes `SessionEnd`, promptly (timed test). Baseline now excludes crashed,
+timed-out and interrupted runs, and completed runs with no attempt. It accepts a late
+manifest hash. Unknown values (from `observe`, `replay-serve` and stdio) keep the old
+treatment.
+
+**R1 surfaced a fourth shutdown hang, in a test fixture.** After R1, five end-to-end tests
+failed intermittently under load. A loop caught the cause in the act: runs of
+`tests/fixtures/scripted_agent.py` recorded `run_outcome: timeout`. Stress-tested in
+isolation, the no-match SELECT mode hung in 4 of 30 runs. Its wire frames showed
+`initialize` and `tools/list` both answered, then no exit. `_stdin_reader` parks a worker
+thread in `sys.stdin.readline()`, and `abandon_on_cancel` lets the task group finish. But
+anyio's `WorkerThread` is not a daemon thread, so interpreter shutdown joins it, and the
+process cannot exit until the parent closes stdin. The adapter only does that after its
+timeout. Before R1 the defect was invisible: a timed-out run that had already recorded its
+calls still counted as valid. The fixture now hard-exits after `anyio.run` returns. After
+the fix, 60 of 60 stress runs completed across both modes, the longest taking 1.2 s. This
+is the same class CLAUDE.md records three times already (`record/proxy.py`,
+`cli/observe.py`, and this adapter's earlier fixture fix), and it was found by timing, not
+by a passing test.
+
+**Deviation from PHASES, recorded there.** Tool attempts are not written before dispatch.
+Unanswered requests are flushed at close as faulted `unanswered` calls. A hang is therefore
+visible, but an attempt is lost if Drifter itself dies before `close()`.
+
+---
+
 ## R4: the Behavior verdict is replaced by a pre-registered interval rule
 
 **Measured first.** Simulating unchanged agents against Drifter's own

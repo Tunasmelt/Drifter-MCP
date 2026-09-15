@@ -50,6 +50,8 @@ from mcp_drifter.record.fingerprint import build_environment, compute_tool_manif
 from mcp_drifter.record.proxy import Direction
 from mcp_drifter.record.redact import redact_rpc_payload, redact_secrets
 from mcp_drifter.record.schema import (
+    RunOutcome,
+    SessionEnd,
     MATCH_TIER_MARKER_KEY,
     SYNTHETIC_RESULT_MARKER_KEY,
     MatchTier,
@@ -221,7 +223,12 @@ class SessionRecorder:
             # (time.monotonic() can't be affected by clock adjustments
             # mid-call, and has far finer resolution than _now()'s
             # one-second-granularity ISO string).
-            self._pending[rpc.id] = {"method": rpc.method, "params": rpc.params or {}, "requested_at": time.monotonic()}
+            self._pending[rpc.id] = {
+                "method": rpc.method,
+                "params": rpc.params or {},
+                "requested_at": time.monotonic(),
+                "raw_frame_offset": offset,
+            }
             if rpc.method == "initialize":
                 client_info = (rpc.params or {}).get("clientInfo") or {}
                 name, version = client_info.get("name"), client_info.get("version")
@@ -337,6 +344,7 @@ class SessionRecorder:
                 # `None` default), so fault_rate can read "definitely zero
                 # faults" rather than "unknown" for a corpus with none.
                 fault=False,
+                unanswered=False,
                 result_provenance=result_provenance,
                 match_tier=match_tier,
                 references=outcome.references,
@@ -345,7 +353,12 @@ class SessionRecorder:
         )
 
     def _write_tool_call_fault(
-        self, params: dict, raw_frame_offset: int, duration_ms: float, fault_code: int | None = None
+        self,
+        params: dict,
+        raw_frame_offset: int,
+        duration_ms: float,
+        fault_code: int | None = None,
+        unanswered: bool = False,
     ) -> None:
         """Writes a ToolCall record for a `tools/call` that failed at the
         protocol level (JSONRPCError) instead of producing a
@@ -381,6 +394,7 @@ class SessionRecorder:
                 duration_ms=duration_ms,
                 fault=True,
                 fault_code=fault_code,
+                unanswered=unanswered,
                 references=outcome.references,
                 raw_frame_offset=raw_frame_offset,
             )
@@ -450,7 +464,21 @@ class SessionRecorder:
             )
         )
 
-    def close(self) -> None:
+    @property
+    def pending_call_count(self) -> int:
+        """`tools/call` requests seen with no response yet (docs/PHASES.md R1)."""
+        return sum(1 for p in self._pending.values() if p["method"] == "tools/call")
+
+    def close(
+        self,
+        run_outcome: RunOutcome | None = None,
+        exit_code: int | None = None,
+        task_attempted: bool | None = None,
+    ) -> None:
+        """Finishes the session. `run_outcome` / `exit_code` / `task_attempted`
+        come from a caller that actually ran the agent (the subprocess adapter);
+        a caller that cannot know them (observe, replay-serve) leaves them None
+        rather than guessing (docs/PHASES.md R1)."""
         # Guard set first, before any work — protects against a second,
         # re-entrant call landing mid-execution (e.g. a signal handler
         # firing twice in quick succession), not just a call after this
@@ -462,7 +490,33 @@ class SessionRecorder:
         # tools/call still gets a SessionStart record, using whatever
         # identity info (e.g. just the initialize handshake) was seen.
         self._ensure_session_start_written()
+        # R1: a tools/call that never got a response (a hang, a crash, an
+        # interrupt) used to be ABSENT from the record. It is now a faulted,
+        # unanswered call, so a hang is visible rather than silent.
+        now = time.monotonic()
+        for pending in list(self._pending.values()):
+            if pending["method"] == "tools/call":
+                self._write_tool_call_fault(
+                    pending["params"], pending["raw_frame_offset"], (now - pending["requested_at"]) * 1000,
+                    unanswered=True,
+                )
+        self._pending.clear()
         for trajectory in self._tracker.close_all():
             self._write_trajectory_end(trajectory)
+        # R1: always the last record. Carries the run's outcome, and a
+        # late-arriving home for the manifest hash (limitation 14): SessionStart
+        # is append-only and may have been written before tools/list happened.
+        self._write_record(
+            SessionEnd(
+                session_id=self.session_id,
+                seq=self._next_seq(),
+                timestamp=_now(),
+                run_outcome=run_outcome,
+                exit_code=exit_code,
+                task_attempted=task_attempted,
+                tool_manifest_hash=self._tool_manifest_hash,
+                raw_frame_offset=self._last_raw_offset,
+            )
+        )
         self._jsonl_file.close()
         self._raw_file.close()

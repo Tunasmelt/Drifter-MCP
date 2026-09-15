@@ -1113,18 +1113,41 @@ alone: a probe can exit 0 without attempting anything, and completion does not r
 missing manifest. Three distinct signals are needed, all nullable, all added under the
 schema-evolution procedure (red test against a pre-change corpus first).
 
-- [ ] `run_outcome` (completed / crashed / timeout / interrupted) + nullable `exit_code`.
+- [x] `run_outcome` (completed / crashed / timeout / interrupted) + nullable `exit_code`.
+      Done: `SessionEnd`, always the last record, set by the subprocess adapter from the
+      bounded wait; `observe`/`replay-serve` leave both null rather than guess.
       `cli/subprocess_adapter.py` currently wraps `process.wait()` in `move_on_after` and
       never inspects `returncode`.
-- [ ] A task-attempt signal, so a connectivity probe is distinguishable from a genuine
+- [x] A task-attempt signal, so a connectivity probe is distinguishable from a genuine
       zero-tool run (limitation 12).
-- [ ] Manifest capture that survives call-order (limitation 14) — either a late-arriving
+- [x] Manifest capture that survives call-order (limitation 14) — either a late-arriving
       home for the hash, or deferring `SessionStart`.
-- [ ] Record tool attempts BEFORE dispatch, with separate completion/error events, so a
+- [x] Record tool attempts BEFORE dispatch, with separate completion/error events, so a
       hang is visible rather than absent.
-- [ ] Acceptance matrix, every case asserted: exit 9 after tools/list; timeout;
+- [x] Acceptance matrix, every case asserted: exit 9 after tools/list; timeout;
       interrupt; genuine no-tool task; connectivity probe; late manifest; and a
       historical pre-change corpus. None may become a valid baseline run.
+
+**R1, as built (2026-09-15), including one deviation stated plainly.**
+- *Task attempt:* `SessionEnd.task_attempted` is True for a tool call or a non-empty final
+  answer, and False only for a COMPLETED run with neither (a connectivity probe). It is
+  None when unobservable: stdio agents have no answer channel, so a zero-call stdio session
+  keeps the old treatment. Only an explicit False excludes a run.
+- *Late manifest:* `SessionEnd.tool_manifest_hash` is the hash known at close. Baseline
+  accepts it when `SessionStart`'s is null; `SessionStart` stays first and append-only.
+- *Tool attempts — deviation:* not written before dispatch. A `tools/call` request with no
+  response by close is written as a faulted call with `unanswered: true`. That makes a hang,
+  crash or interrupt visible in the record, but an attempt is still lost if Drifter's own
+  process dies before `close()` runs. Writing a separate attempt record at request time
+  would shift the `seq` of every later record and needs its own schema decision.
+- *Exclusions:* crashed, timeout and interrupted runs are excluded with the outcome and exit
+  code in the reason; so is a completed run with `task_attempted: false` and no calls.
+- *Shutdown:* process stopping and `close()` run shielded from outer cancellation, so an
+  interrupted run still stops its child and writes `SessionEnd`. Timed: both the timeout
+  and the interrupt case finish well inside 20 s.
+- *Acceptance matrix:* `tests/record/test_run_lifecycle.py`, through the real HTTP adapter
+  (exit 9, timeout, interrupt, probe, genuine no-tool answer, late manifest), plus the
+  golden pre-change corpus, which reads and aggregates exactly as before.
 
 ### R2 — Experiment identity and reproducibility
 

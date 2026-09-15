@@ -51,7 +51,7 @@ from mcp_drifter.cli.score import run_score
 from mcp_drifter.cli.stats import run_stats
 from mcp_drifter.evaluate.baseline import aggregate_baseline_runs
 from mcp_drifter.record.reader import read_session
-from mcp_drifter.record.schema import SessionStart, ToolCall
+from mcp_drifter.record.schema import SessionEnd, SessionStart, ToolCall
 
 FIXTURE_SERVER = str(Path(__file__).parent.parent.parent / "fixtures" / "fake_server.py")
 
@@ -187,12 +187,15 @@ def test_user_6_a_tool_call_before_the_first_list_tools_permanently_nulls_the_ha
     call_count = sum(1 for r in records if isinstance(r, ToolCall))
 
     assert call_count == 1  # a completely real, successful call happened
-    assert start.environment.tool_manifest_hash is None  # yet the hash is permanently null
+    assert start.environment.tool_manifest_hash is None  # SessionStart is still append-only, still null
 
-    # The direct, real consequence: aggregate_baseline_runs excludes this
-    # perfectly legitimate session for the same reason it excludes a
-    # genuine connectivity-check artifact -- the schema can't tell them
-    # apart from this signal alone.
+    # FIXED by docs/PHASES.md R1: the hash now has a late-arriving home in
+    # SessionEnd, the last record, and baseline accepts it there. This test used
+    # to assert the session was excluded; it now asserts the fix, while still
+    # pinning that SessionStart itself carries the null hash.
+    end = records[-1]
+    assert isinstance(end, SessionEnd)
+    assert end.tool_manifest_hash is not None
     result = aggregate_baseline_runs("test_user_6b", session_files)
-    assert result.valid_runs == 0
-    assert len(result.excluded_runs) == 1
+    assert result.valid_runs == 1
+    assert result.excluded_runs == []

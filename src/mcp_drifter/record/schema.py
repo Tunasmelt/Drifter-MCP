@@ -286,6 +286,12 @@ class ToolCall(BaseModel):
     # to distinguish an agent's served-schema violation (-31003) from a real
     # replay miss or transport failure.
     fault_code: int | None = None
+    # docs/PHASES.md R1: True for a tools/call whose request was seen but whose
+    # response never arrived before the session closed (a hang, crash or
+    # interrupt), written at close. False for every call that got an answer.
+    # None for every record written before this field existed -- unknown, not
+    # "answered".
+    unanswered: bool | None = None
     result_provenance: ResultProvenance = "real"
     references: list[DataFlowReference] = []
     # Inverse mapping consumed by replay's F-12 key resolution when this
@@ -337,4 +343,38 @@ class TrajectoryEnd(BaseModel):
     raw_frame_offset: int
 
 
-Record = SessionStart | ToolsList | ToolCall | TrajectoryEnd
+RunOutcome = Literal["completed", "crashed", "timeout", "interrupted"]
+
+
+class SessionEnd(BaseModel):
+    """The last record of a session (docs/PHASES.md R1). Absent from every
+    session recorded before it existed; every field but the envelope is
+    nullable, so an unknown stays unknown.
+
+    - `run_outcome` / `exit_code`: how the agent process ended, set only by a
+      caller that ran it (the subprocess adapter). `observe` and
+      `replay-serve` cannot know, and leave both None.
+    - `task_attempted`: the agent made a tool call or produced a final answer.
+      False only when a completed run did neither (a connectivity probe,
+      limitation 12); None when it cannot be observed (stdio agents have no
+      separate answer channel).
+    - `tool_manifest_hash`: the manifest hash as known at close. SessionStart
+      is append-only and may have been written before the first tools/list
+      (limitation 14); this is the hash's late-arriving home.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    schema_version: Literal["0.1"] = SCHEMA_VERSION
+    record_type: Literal["session_end"] = "session_end"
+    session_id: str
+    seq: int
+    timestamp: str
+    run_outcome: RunOutcome | None = None
+    exit_code: int | None = None
+    task_attempted: bool | None = None
+    tool_manifest_hash: str | None = None
+    raw_frame_offset: int
+
+
+Record = SessionStart | ToolsList | ToolCall | TrajectoryEnd | SessionEnd

@@ -208,3 +208,16 @@ async def main() -> None:
 
 if __name__ == "__main__":
     anyio.run(main)
+    # Hard exit, deliberately (docs/PHASES.md R1; the shutdown-hang pattern
+    # CLAUDE.md records). `_stdin_reader` parks a worker thread in
+    # `sys.stdin.readline()`. `abandon_on_cancel=True` lets the task group
+    # finish, but the thread itself stays blocked, and anyio's WorkerThread is
+    # NOT a daemon thread -- so interpreter shutdown joins it, and the process
+    # cannot exit until the PARENT closes our stdin, which the adapter only
+    # does after its timeout. A race (it depends on whether a fresh readline had
+    # started): measured at 4 of 30 runs timing out. Hidden until R1, because a
+    # timed-out run that had already recorded its calls still counted as valid;
+    # R1 excludes timed-out runs, which surfaced it as flaky end-to-end tests.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)

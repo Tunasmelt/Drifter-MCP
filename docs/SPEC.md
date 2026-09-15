@@ -675,6 +675,10 @@ when*.
     a corpus that might contain connectivity-check noise (any real `.drifter/runs/`
     directory, not just this Gate 3 fixture) needs to filter zero-`ToolCall` sessions
     by hand before trusting `natural_variation`/`baseline_spread`/`dominant_path`.
+    **Addressed for adapter-driven runs (docs/PHASES.md R1):** `SessionEnd.task_attempted`
+    is False for a completed run with no tool call and no final answer, and such a run is
+    excluded. Still open for `observe`/`replay-serve` corpora and stdio agents, where the
+    signal is unobservable and stays null.
 13. `mutate/description_update.py`'s injection check (§10's five literal patterns:
     "ignore", "always call", "you must", "disregard", "instead of") is not a general
     prompt-injection detector, and a real, published MCP tool description proves it
@@ -731,6 +735,9 @@ when*.
     `test_tools_list_arriving_after_the_first_tools_call_is_too_late_to_help`,
     confirming this is genuinely about ORDER, not about whether `tools/list` ever
     happens at all) — `record/writer.py` had no dedicated unit-test file before this.
+    **Fixed (docs/PHASES.md R1):** the hash now also lands in `SessionEnd`, the last
+    record, and baseline accepts it there. `SessionStart` is still written first, and
+    still carries a null hash in this case; the regression tests above keep asserting that.
 15. F-19's "every mutated `tools/list` response sets `ttlMs: 0` and a private
     `cacheScope`" claim (originally recorded here as verified requirement C8, and
     marked "✅ Built" in docs/FEATURES.md) was found completely unimplemented while

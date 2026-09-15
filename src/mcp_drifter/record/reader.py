@@ -11,13 +11,22 @@ import json
 from collections.abc import Iterator
 from pathlib import Path
 
-from mcp_drifter.record.schema import SCHEMA_VERSION, Record, SessionStart, ToolCall, ToolsList, TrajectoryEnd
+from mcp_drifter.record.schema import (
+    SCHEMA_VERSION,
+    Record,
+    SessionEnd,
+    SessionStart,
+    ToolCall,
+    ToolsList,
+    TrajectoryEnd,
+)
 
 _RECORD_TYPES: dict[str, type[Record]] = {
     "session_start": SessionStart,
     "tools_list": ToolsList,
     "tool_call": ToolCall,
     "trajectory_end": TrajectoryEnd,
+    "session_end": SessionEnd,
 }
 
 

@@ -311,6 +311,9 @@ async def run_agent_subprocess(
     write_stream, write_stream_reader = anyio.create_memory_object_stream(0)
 
     process = await anyio.open_process(list(command), env=env, cwd=cwd)
+    # docs/PHASES.md R1: assume interrupted until proven otherwise, so a
+    # cancellation that unwinds from anywhere below is recorded as such.
+    run_outcome, exit_code = "interrupted", None
     try:
         async with anyio.create_task_group() as tg:
             tg.start_soon(_pump_stdout_to_proxy, process, read_stream_writer)
@@ -330,17 +333,26 @@ async def run_agent_subprocess(
                 authored_responses,
             )
 
-            with anyio.move_on_after(timeout_s):
+            with anyio.move_on_after(timeout_s) as wait_scope:
                 await process.wait()
+            run_outcome, exit_code = _outcome_of(wait_scope, process)
             # Either the agent exited on its own, or timeout_s elapsed.
             # Either way, stop the pumps/proxy — closing these streams
             # unwinds run_replay_proxy's server.run() loop cleanly (it
             # sees end-of-stream, not a raw cancellation mid-handler).
             tg.cancel_scope.cancel()
     finally:
-        await _ensure_process_stopped(process)
-
-    recorder.close()
+        # Shielded: under an outer cancellation (an interrupt), an unshielded
+        # await here would raise at once and leave the child running and the
+        # session without its SessionEnd (R1; the shutdown-hang pattern
+        # CLAUDE.md names). Stopping the process is bounded by its own grace
+        # periods.
+        with anyio.CancelScope(shield=True):
+            await _ensure_process_stopped(process)
+        # stdio mode cannot capture a final answer (stdout is the wire), so a
+        # zero-call session's attempt is unknown, not "no attempt".
+        attempted = True if (recorder.call_count or recorder.pending_call_count) else None
+        recorder.close(run_outcome=run_outcome, exit_code=exit_code, task_attempted=attempted)
 
     # recorder.jsonl_path is deterministic -- computed from session_id at
     # SessionRecorder construction (record/writer.py), not re-derived by
@@ -431,16 +443,25 @@ async def run_agent_subprocess_http(
         # `env_var` are overlaid on top of it, never a replacement for it.
         process_env = {**os.environ, **(env or {}), env_var: url}
         process = await anyio.open_process(list(command), env=process_env, cwd=cwd)
+        run_outcome, exit_code = "interrupted", None
         try:
             async with anyio.create_task_group() as tg:
                 tg.start_soon(_capture_stdout_as_text, process, stdout_chunks)
-                with anyio.move_on_after(timeout_s):
+                with anyio.move_on_after(timeout_s) as wait_scope:
                     await process.wait()
+                run_outcome, exit_code = _outcome_of(wait_scope, process)
                 tg.cancel_scope.cancel()
         finally:
-            await _ensure_process_stopped(process)
-
-    recorder.close()
+            with anyio.CancelScope(shield=True):
+                await _ensure_process_stopped(process)
+            # R1: a task attempt is a tool call or a final answer. A completed
+            # run with neither is a connectivity probe, not a zero-tool task.
+            answered = bool("".join(stdout_chunks).strip())
+            if recorder.call_count or recorder.pending_call_count or answered:
+                attempted: bool | None = True
+            else:
+                attempted = False if run_outcome == "completed" else None
+            recorder.close(run_outcome=run_outcome, exit_code=exit_code, task_attempted=attempted)
 
     if not recorder.jsonl_path.exists():
         raise RuntimeError(f"agent subprocess produced no session JSONL at {recorder.jsonl_path}")
@@ -450,6 +471,14 @@ async def run_agent_subprocess_http(
         recorder.jsonl_path.with_suffix(".stdout.txt").write_text(final_answer, encoding="utf-8")
 
     return recorder.jsonl_path
+
+
+def _outcome_of(wait_scope: anyio.CancelScope, process: Process) -> tuple[str, int | None]:
+    """docs/PHASES.md R1: how a run ended, from the wait that bounded it."""
+    if wait_scope.cancelled_caught:
+        return "timeout", None
+    code = process.returncode
+    return ("completed" if code == 0 else "crashed"), code
 
 
 async def _ensure_process_stopped(process: Process) -> None:

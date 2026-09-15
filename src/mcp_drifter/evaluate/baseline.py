@@ -132,9 +132,20 @@ from pathlib import Path
 
 from mcp_drifter.record.calibration import Calibration, load_calibration
 from mcp_drifter.record.reader import read_session
-from mcp_drifter.record.schema import SessionStart, ToolCall
+from mcp_drifter.record.schema import SessionEnd, SessionStart, ToolCall
 
 _NULL_HASH_REASON = "tool_manifest_hash is null"
+_NO_TASK_ATTEMPT_REASON = (
+    "no task attempt: the run completed without a tool call or a final answer "
+    "(a connectivity probe, not a zero-tool task)"
+)
+
+
+def _incomplete_run_reason(end: SessionEnd) -> str:
+    """docs/PHASES.md R1: a run that crashed, timed out or was interrupted is
+    not evidence about the task, whatever it managed to record first."""
+    code = f" (exit code {end.exit_code})" if end.exit_code is not None else ""
+    return f"run {end.run_outcome}{code}"
 
 
 def _run_once_failed_reason(exc: Exception) -> str:
@@ -468,9 +479,33 @@ def aggregate_baseline_runs(
             )
             continue
 
-        if session_start.environment.tool_manifest_hash is None:
+        # R1: SessionEnd is absent from every session recorded before it
+        # existed; each check below applies only when the field was recorded.
+        session_end = next((r for r in records if isinstance(r, SessionEnd)), None)
+        if session_end is not None and session_end.run_outcome in ("crashed", "timeout", "interrupted"):
+            excluded_runs.append(
+                ExcludedRun(session_id=session_start.session_id, path=session_path, reason=_incomplete_run_reason(session_end))
+            )
+            continue
+
+        # Limitation 14: the hash may have arrived after SessionStart was written.
+        manifest_hash = session_start.environment.tool_manifest_hash or (
+            session_end.tool_manifest_hash if session_end is not None else None
+        )
+        if manifest_hash is None:
             excluded_runs.append(
                 ExcludedRun(session_id=session_start.session_id, path=session_path, reason=_NULL_HASH_REASON)
+            )
+            continue
+
+        # Limitation 12: only an explicit False excludes; unknown keeps the old behaviour.
+        if (
+            session_end is not None
+            and session_end.task_attempted is False
+            and not any(isinstance(r, ToolCall) for r in records)
+        ):
+            excluded_runs.append(
+                ExcludedRun(session_id=session_start.session_id, path=session_path, reason=_NO_TASK_ATTEMPT_REASON)
             )
             continue
 
