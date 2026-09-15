@@ -41,6 +41,7 @@ from typing import Literal
 
 from mcp_drifter.evaluate.baseline import BaselineResult
 from mcp_drifter.record.calibration import Calibration, load_calibration
+from mcp_drifter.record.fingerprint import diff_environments
 from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.schema import ToolCall
 
@@ -166,6 +167,24 @@ def compute_behavior_effect_size(
                 f"not agent behavior."
             ),
         )
+
+    # docs/PHASES.md R2: a behavior difference between arms that ran in
+    # different environments cannot be attributed to the mutation. The tool
+    # manifest is exempt: changing it is what the mutation does.
+    if baseline.reference_environment is not None and mutated.reference_environment is not None:
+        environment_diffs = diff_environments(
+            mutated.reference_environment, baseline.reference_environment, compare_manifest=False
+        )
+        if environment_diffs:
+            return EffectSizeResult(
+                deviation_rate=None,
+                effect_size=None,
+                verdict="UNKNOWN",
+                reason=(
+                    "the arms ran in different environments, so a behavior difference cannot be attributed "
+                    "to the mutation (mutated vs baseline): " + "; ".join(environment_diffs)
+                ),
+            )
 
     if path_of_interest is None:
         path_of_interest, path_source = baseline.dominant_path, PATH_SOURCE_BASELINE

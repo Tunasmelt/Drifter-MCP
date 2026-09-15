@@ -1153,15 +1153,37 @@ schema-evolution procedure (red test against a pre-change corpus first).
 
 `ensure_clean_session_dir` is a guard, not the fix. Replace it with real identity.
 
-- [ ] Experiment id per invocation, binding sessions, mutation audit, corpus, assertions,
+- [x] Experiment id per invocation, binding sessions, mutation audit, corpus, assertions,
       policy, calibration and fingerprints.
-- [ ] Reruns create a new experiment directory; nothing is overwritten or merged.
-- [ ] `--dry-run` becomes side-effect free.
-- [ ] Reports reconstruct from persisted experiment settings — the current path can lose
+- [x] Reruns create a new experiment directory; nothing is overwritten or merged.
+- [x] `--dry-run` becomes side-effect free.
+- [x] Reports reconstruct from persisted experiment settings — the current path can lose
       policy/assertions when `--runs-dir` is passed explicitly.
-- [ ] Fingerprint enforcement in `aggregate_baseline_runs` (limitation 18, open finding
+- [x] Fingerprint enforcement in `aggregate_baseline_runs` (limitation 18, open finding
       5): permit the intended mutated-manifest difference, reject unrelated model, agent
       or corpus differences. The helper exists and is simply never called.
+
+**R2, as built (2026-09-15).**
+- *Experiment directories:* `drifter run` writes to `run/<task_id>/<experiment_id>/`, where the
+  id is a UTC timestamp plus a random suffix (sortable, unique within a second). Nothing is
+  created before confirmation, so a declined or `--dry-run` invocation leaves no trace.
+  `ensure_clean_session_dir` is gone. `--force` is accepted and documented as a no-op,
+  because nothing is ever reused or deleted.
+- *`experiment.json`,* written before any agent runs: task, operator, seed, repeats, prompt,
+  server, agent command (secret-shape redacted), agent mode, corpus files with SHA-256,
+  response fixture with SHA-256, assertions, policy, the full calibration, and the run flags.
+- *Reports:* `drifter report` resolves `--experiment`, else the latest experiment, else a
+  pre-R2 directory. Persisted policy, assertions and calibration take precedence over
+  today's config, which fixes the `--runs-dir`-without-config path losing both. A pre-R2
+  directory still renders, with no experiment id.
+- *Fingerprints:* within an arm, the reference is the most common environment (agent,
+  model, server versions, manifest hash; ties broken by first appearance). A session that
+  differs is excluded, and the differing fields are named. Across arms, a differing agent,
+  model or server version makes BEHAVIOR UNKNOWN; the manifest is exempt, because changing
+  it is the mutation.
+- *Red first:* 5 of 7 fingerprint tests and every experiment test failed before
+  implementation. The dry-run test showed the old `--force` deleting a previous experiment
+  during a dry run.
 
 ### R3 — Replay correctness
 

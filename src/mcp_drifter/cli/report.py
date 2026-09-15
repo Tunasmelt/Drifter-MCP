@@ -49,6 +49,7 @@ from mcp_drifter.cli.report_format import (
     budget_exceeded_from_excluded_runs,
     render_run_result,
 )
+from mcp_drifter.cli.experiment import assertions_from_settings, load_experiment_settings, resolve_experiment_dir
 from mcp_drifter.cli.stats import resolve_runs_dir
 from mcp_drifter.evaluate.assertions import TaskAssertions, evaluate_task
 from mcp_drifter.evaluate.baseline import aggregate_baseline_runs
@@ -88,6 +89,7 @@ def build_report_result(
     policy: PolicyConfig | None = None,
     calibration: Calibration | None = None,
     assertions: TaskAssertions | None = None,
+    experiment: str | None = None,
 ) -> RunResult:
     """The pure reconstruction core — given a `runs_dir` matching
     `cli/run.py`'s own `session_dir = runs_dir / "run" / task_id` layout
@@ -99,12 +101,18 @@ def build_report_result(
     doesn't exist) — an actionable message, not a bare "0 sessions found"
     that could be confused with "ran, but nothing valid came of it."
     """
-    session_dir = runs_dir / "run" / task_id
-    if not session_dir.exists():
-        raise ConfigError(
-            f"no recorded `drifter run` found for task {task_id!r} under {runs_dir} "
-            f"(expected {session_dir}) — run `drifter run --task-id {task_id}` first."
-        )
+    # docs/PHASES.md R2: the named experiment, else the latest, else a pre-R2
+    # directory. Settings persisted with the experiment take precedence over
+    # anything passed in: a report must rebuild what was run, not re-evaluate it
+    # under today's config.
+    session_dir = resolve_experiment_dir(runs_dir, task_id, experiment)
+    settings = load_experiment_settings(session_dir)
+    experiment_id = None
+    if settings is not None:
+        experiment_id = settings["experiment_id"]
+        policy = PolicyConfig.model_validate(settings["policy"])
+        calibration = Calibration.model_validate(settings["calibration"])
+        assertions = assertions_from_settings(settings["assertions"])
 
     calibration = calibration or load_calibration()
     policy = policy or PolicyConfig()
@@ -139,6 +147,7 @@ def build_report_result(
     operator, mutation_log = _mutation_from_audit(session_dir / "mutations.jsonl")
     result = RunResult(
         task_id=task_id,
+        experiment_id=experiment_id,
         operator=operator,
         baseline=baseline_result,
         mutated=mutated_result,
@@ -160,6 +169,7 @@ def run_report(
     runs_dir: Path | None = None,
     task_id: str = "task",
     output_stream: TextIO = sys.stdout,
+    experiment: str | None = None,
 ) -> RunResult:
     """Returns the reconstructed `RunResult` — `cli/app.py` uses it to
     compute docs/SPEC.md §12's verdict-specific exit code via
@@ -171,6 +181,6 @@ def run_report(
     policy = config.policy if config is not None else None
     assertions = assertions_for(config.tasks, task_id) if config is not None else TaskAssertions()
 
-    result = build_report_result(task_id, runs_dir, policy=policy, assertions=assertions)
+    result = build_report_result(task_id, runs_dir, policy=policy, assertions=assertions, experiment=experiment)
     output_stream.write(render_run_result(result))
     return result

@@ -82,25 +82,30 @@ class FingerprintMismatchError(ValueError):
     with an explicit error, never proceed silently."""
 
 
-def diff_environments(a: Environment, b: Environment) -> list[str]:
+def diff_environments(a: Environment, b: Environment, compare_manifest: bool = True) -> list[str]:
     """Returns one human-readable line per differing sub-field; empty if
     a and b are equivalent. Pure and non-raising — the building block
     `require_matching_environments` is built on, and independently useful
     wherever a caller wants the detail without the exception.
+
+    `compare_manifest=False` is for comparing a baseline arm with a mutated
+    arm (docs/PHASES.md R2): the tool manifest is the one field a mutation is
+    SUPPOSED to change, so it is not a mismatch there. The whole-fingerprint
+    fallback is skipped too, since the fingerprint hashes the manifest.
     """
     diffs: list[str] = []
     if a.agent_identity != b.agent_identity:
         diffs.append(f"agent_identity: {a.agent_identity!r} != {b.agent_identity!r}")
     if a.model_name != b.model_name:
         diffs.append(f"model_name: {a.model_name!r} != {b.model_name!r}")
-    if a.tool_manifest_hash != b.tool_manifest_hash:
+    if compare_manifest and a.tool_manifest_hash != b.tool_manifest_hash:
         diffs.append(f"tool_manifest_hash: {a.tool_manifest_hash!r} != {b.tool_manifest_hash!r}")
     for server in sorted(set(a.server_versions) | set(b.server_versions)):
         va, vb = a.server_versions.get(server), b.server_versions.get(server)
         if va != vb:
             diffs.append(f"server {server!r} version: {va!r} != {vb!r}")
 
-    if not diffs and a.fingerprint != b.fingerprint:
+    if compare_manifest and not diffs and a.fingerprint != b.fingerprint:
         # No tracked sub-field differs, yet the fingerprints do — schema
         # drift or a hash collision. Surface plainly rather than silently
         # treating unequal fingerprints as a match just because we can't

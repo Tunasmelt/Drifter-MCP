@@ -1097,6 +1097,10 @@ when*.
     into a single arm without comment, so a "regression" can be an artifact of
     comparing two different environments. Compatibility should be enforced within each
     arm and across arms, permitting only the intended mutation difference.
+    **Fixed (docs/PHASES.md R2):** within an arm, sessions whose environment differs from the
+    arm's most common one are excluded with the differing fields named; across arms, a
+    differing agent, model or server version makes the Behavior verdict UNKNOWN, while the
+    manifest difference the mutation introduces is permitted.
 
     **Also open, and larger than any single defect: the retention contract.** The
     reviewer's sharpest observation is that Drifter currently pays the PRIVACY cost of

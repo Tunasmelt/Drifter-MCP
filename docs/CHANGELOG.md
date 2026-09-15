@@ -6,6 +6,32 @@ not just a diff.
 
 ---
 
+## R2: experiment identity, persisted settings, enforced fingerprints
+
+**Problem.** `run/<task_id>/` was keyed by task id alone. The report, safety scan, mutation
+audit and aggregation each treated every run under one task id as one experiment. The guard
+added after review refused reuse, and `--force` "resolved" it by deleting the earlier
+experiment, even during `--dry-run`, as a failing test showed. Reports rebuilt policy and
+assertions from the current config, and lost both when `--runs-dir` was given without one.
+Environment fingerprints were recorded but never enforced.
+
+**Change.**
+- Every `drifter run` gets `run/<task_id>/<experiment_id>/`, with `experiment.json` written
+  before any agent runs.
+- Reruns never overwrite, merge or delete, and `--force` is a documented no-op.
+- Nothing is created until the run is confirmed.
+- `drifter report` reads `--experiment` or the latest experiment, and rebuilds from the
+  persisted settings; pre-R2 directories still render.
+- `aggregate_baseline_runs` excludes sessions whose environment differs from the arm's most
+  common one.
+- `compute_behavior_effect_size` returns UNKNOWN when the arms' agent, model or server
+  versions differ, and permits the manifest difference.
+
+**Tests, red first.** `tests/evaluate/test_environment_enforcement.py` (7) and a rewritten
+`tests/cli/test_experiment_isolation.py` (8).
+
+---
+
 ## R1: run lifecycle — `SessionEnd`, task attempts, late manifests, unanswered calls
 
 Closes limitation 12 (for adapter-driven runs), limitation 14, and limitation 18's finding 3

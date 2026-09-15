@@ -102,6 +102,10 @@ def _build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
     report_parser.add_argument("--runs-dir", type=Path, default=None, help="Corpus directory to read directly, bypassing drifter.yaml")
     report_parser.add_argument("--task-id", default="task", help="The --task-id a prior `drifter run` was invoked with")
+    report_parser.add_argument(
+        "--experiment", default=None,
+        help="Experiment id under run/<task-id>/ to rebuild (default: the latest)",
+    )
 
     run_parser = subparsers.add_parser("run", help="Baseline + one mutation operator, replay mode (F-35, Gate 3 minimal scope)")
     run_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml (needs an agent: block)")
@@ -120,7 +124,7 @@ def _build_parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--seed", type=int, default=42, help="Mutation seed (reproducible)")
     run_parser.add_argument("--replay-discovered-values", action="store_true", help="R0/limitation 17: replay hands back the argument values this corpus witnessed being used after each call, so a replayed agent can rebuild the arguments it built live (experimental)")
     run_parser.add_argument("--response-fixture", type=Path, default=None, help="Explicit YAML CallToolResult payloads for exact recorded requests (experimental; may contain sensitive test data)")
-    run_parser.add_argument("--force", action="store_true", help="Discard a previous run's sessions for this --task-id instead of refusing (they would otherwise be mixed into this experiment)")
+    run_parser.add_argument("--force", action="store_true", help="No effect since docs/PHASES.md R2: every run gets its own experiment directory, so nothing is ever reused or deleted")
     run_parser.add_argument("--repeats", type=int, default=None, help="Overrides calibration.yaml's baseline.repeats")
     run_parser.add_argument("--timeout", type=float, default=60.0, help="Per-agent-run timeout in seconds")
     run_parser.add_argument(
@@ -245,7 +249,9 @@ def main() -> None:
         from mcp_drifter.cli.report_format import compute_exit_code
 
         try:
-            result = run_report(config_path=args.config, runs_dir=args.runs_dir, task_id=args.task_id)
+            result = run_report(
+                config_path=args.config, runs_dir=args.runs_dir, task_id=args.task_id, experiment=args.experiment
+            )
         except ConfigError as e:
             print(f"drifter report: {e}", file=sys.stderr)
             raise SystemExit(4) from None

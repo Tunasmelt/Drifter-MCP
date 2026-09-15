@@ -132,7 +132,10 @@ from pathlib import Path
 
 from mcp_drifter.record.calibration import Calibration, load_calibration
 from mcp_drifter.record.reader import read_session
-from mcp_drifter.record.schema import SessionEnd, SessionStart, ToolCall
+from collections import Counter
+
+from mcp_drifter.record.fingerprint import diff_environments
+from mcp_drifter.record.schema import Environment, SessionEnd, SessionStart, ToolCall
 
 _NULL_HASH_REASON = "tool_manifest_hash is null"
 _NO_TASK_ATTEMPT_REASON = (
@@ -254,6 +257,13 @@ class BaselineResult:
     # empty list of them" are the same fact here, with no third state to
     # distinguish.
     valid_session_paths: tuple[Path, ...] = ()
+
+    # docs/PHASES.md R2: the environment every valid run in this arm shares --
+    # the arm's most common environment (agent identity, model name, server
+    # versions, manifest hash), ties broken by first appearance. Sessions that
+    # differ from it are excluded with the differing fields named. `None`
+    # exactly when no session survived the checks before this one.
+    reference_environment: Environment | None = None
 
     @property
     def has_data(self) -> bool:
@@ -437,6 +447,15 @@ def _merge_provenance_counts(counts_list: list[dict[str, int]]) -> dict[str, int
     return merged
 
 
+def _environment_signature(environment: Environment) -> tuple:
+    return (
+        environment.agent_identity,
+        environment.model_name,
+        tuple(sorted(environment.server_versions.items())),
+        environment.tool_manifest_hash,
+    )
+
+
 def aggregate_baseline_runs(
     task_id: str,
     session_paths: Sequence[Path],
@@ -468,6 +487,7 @@ def aggregate_baseline_runs(
     valid_tier_counts: list[dict[str, int]] = []
     valid_session_paths: list[Path] = []
     excluded_runs: list[ExcludedRun] = list(pre_excluded)
+    candidates: list[tuple[Path, str, Environment, list, float]] = []
 
     for session_path in session_paths:
         try:
@@ -520,11 +540,40 @@ def aggregate_baseline_runs(
             )
             continue
 
-        valid_paths.append(_tool_path(records))
-        valid_fidelities.append(fidelity)
-        valid_provenance_counts.append(_provenance_counts(records))
-        valid_tier_counts.append(_match_tier_counts(records))
-        valid_session_paths.append(session_path)
+        # The manifest hash may have arrived late (limitation 14); compare on
+        # the hash actually known for this session.
+        environment = session_start.environment.model_copy(update={"tool_manifest_hash": manifest_hash})
+        candidates.append((session_path, session_start.session_id, environment, records, fidelity))
+
+    # docs/PHASES.md R2 (limitation 18, open finding): fingerprints were
+    # recorded but never enforced, so sessions from different agents, models
+    # or experiments aggregated into one arm without comment.
+    reference_environment: Environment | None = None
+    if candidates:
+        signatures = [_environment_signature(env) for _, _, env, _, _ in candidates]
+        counts = Counter(signatures)
+        reference_signature = next(s for s in signatures if counts[s] == max(counts.values()))
+        reference_index = signatures.index(reference_signature)
+        reference_environment = candidates[reference_index][2]
+        reference_session = candidates[reference_index][1]
+        for (session_path, session_id, environment, records, fidelity), signature in zip(candidates, signatures):
+            if signature != reference_signature:
+                excluded_runs.append(
+                    ExcludedRun(
+                        session_id=session_id,
+                        path=session_path,
+                        reason=(
+                            f"environment differs from this arm's reference session {reference_session}: "
+                            + "; ".join(diff_environments(environment, reference_environment))
+                        ),
+                    )
+                )
+                continue
+            valid_paths.append(_tool_path(records))
+            valid_fidelities.append(fidelity)
+            valid_provenance_counts.append(_provenance_counts(records))
+            valid_tier_counts.append(_match_tier_counts(records))
+            valid_session_paths.append(session_path)
 
     if not valid_paths:
         return BaselineResult(
@@ -574,6 +623,7 @@ def aggregate_baseline_runs(
         provenance_breakdown=_merge_provenance_counts(valid_provenance_counts),
         match_tier_breakdown={t: sum(c[t] for c in valid_tier_counts) for t in _MATCH_TIERS},
         valid_session_paths=tuple(valid_session_paths),
+        reference_environment=reference_environment,
     )
 
 

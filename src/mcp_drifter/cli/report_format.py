@@ -67,6 +67,9 @@ class RunResult:
     # for 20" is exactly the question a cost-conscious user asks, and an
     # unexplained short run looks like a crash rather than a saving.
     scheduling_note: str | None = None
+    # docs/PHASES.md R2: which experiment directory this result describes.
+    # None for a pre-R2 run directory, which has no experiment.json.
+    experiment_id: str | None = None
 
 
 _BUDGET_EXCEEDED_REASON_MARKER = "budget exhausted"
@@ -198,6 +201,8 @@ def _provenance_str(breakdown: dict[str, int] | None) -> str:
 def render_run_result(result: RunResult) -> str:
     lines: list[str] = []
     lines.append(f"DRIFTER RUN — {result.task_id}  (mutation: {result.operator})")
+    if result.experiment_id:
+        lines.append(f"experiment {result.experiment_id}")
     lines.append("")
     lines.append(f"BASELINE  {result.baseline.valid_runs}/{result.baseline.total_runs} valid runs")
     lines.append(f"          dominant path: {_path_str(result.baseline.dominant_path)}")

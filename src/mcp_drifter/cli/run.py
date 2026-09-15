@@ -60,7 +60,6 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Sequence
-import shutil
 from pathlib import Path
 from typing import TextIO
 
@@ -76,6 +75,7 @@ from mcp_drifter.evaluate.effect_size import (
     compute_behavior_effect_size,
     path_of_interest_from_sessions,
 )
+from mcp_drifter.cli.experiment import new_experiment_id, write_experiment_settings
 from mcp_drifter.cli.report_format import BEHAVIOR_PATH_FILE
 from mcp_drifter.replay.corpus_facts import build_corpus_facts
 from mcp_drifter.replay.authored_responses import AuthoredResponseError, load_authored_responses
@@ -118,39 +118,6 @@ def _as_corpus_inputs(fixture: Path | Sequence[Path]) -> list[Path]:
 
 
 
-def ensure_clean_session_dir(session_dir: Path, force: bool) -> None:
-    """Refuses to run into a session directory that already holds an
-    experiment, unless `force` is set (which CLEARS it).
-
-    `session_dir` is keyed by task id alone, and four separate consumers
-    then read it as one experiment: `cli/report.py` globs both arms,
-    `evaluate_safety_across_arms` scans the whole tree, `aggregate_baseline_runs`
-    treats the union as one arm, and `mutate/audit.py` opens
-    `mutations.jsonl` with mode "w" -- so a second run overwrites the first
-    run's paper trail while the first run's SESSIONS survive and keep being
-    aggregated. The audit and the sessions then describe different
-    experiments, which is worse than having no audit at all.
-
-    Found by external review; every consequence above was confirmed in the
-    code rather than assumed. The eventual fix is an experiment id binding
-    sessions, mutations, config, assertions and calibration together. This
-    guard makes the SILENT version impossible in the meantime, in the same
-    "reversible over destructive" spirit as `drifter init`'s overwrite
-    protection: nothing is mixed by accident, and nothing is deleted
-    without being asked for.
-    """
-    prior = [p for arm in ("baseline", "mutated") for p in (session_dir / arm).glob("*.jsonl")]
-    if not prior:
-        return
-    if not force:
-        raise ConfigError(
-            f"{session_dir} already holds {len(prior)} session(s) from a previous run of "
-            f"task '{session_dir.name}'. Re-running would mix the two experiments: the report "
-            f"would aggregate both, safety findings from the earlier run would be inherited, and "
-            f"the mutation audit would be overwritten while those older sessions survived. "
-            f"Use a different --task-id to keep both, or --force to discard the previous one."
-        )
-    shutil.rmtree(session_dir)
 
 
 def run_mutation_comparison(
@@ -250,6 +217,29 @@ def run_mutation_comparison(
             f"verdict here would describe a mutation that did not happen. Choose an operator "
             f"that applies to this server's tools."
         )
+
+    # docs/PHASES.md R2: bind this experiment's inputs to its directory before
+    # any agent runs, so a report can rebuild it from what was actually used.
+    write_experiment_settings(
+        session_dir,
+        task_id=task_id,
+        operator=operator,
+        seed=seed,
+        repeats=repeats if repeats is not None else calibration.baseline.repeats,
+        prompt=prompt,
+        server=server_name,
+        agent_command=command,
+        agent_mode=agent_mode,
+        corpus_paths=corpus.session_paths,
+        response_fixture=response_fixture,
+        assertions=assertions or TaskAssertions(),
+        policy=policy or PolicyConfig(),
+        calibration=calibration,
+        adaptive=adaptive,
+        budget=budget,
+        max_wall_time_s=max_wall_time_s,
+        replay_discovered_values=replay_discovered_values,
+    )
 
     # docs/PHASES.md R4: the Behavior verdict's path of interest is chosen from
     # the CORPUS, before either arm runs, and persisted so a rebuilt report uses
@@ -372,6 +362,7 @@ def run_mutation_comparison(
         baseline_task=baseline_task,
         mutated_task=mutated_task,
         scheduling_note=scheduling_note,
+        experiment_id=session_dir.name,
     )
 
 
@@ -437,13 +428,13 @@ def run_run(
 
     if runs_dir is None:
         runs_dir = resolve_runs_dir(config)
-    session_dir = runs_dir / "run" / task_id
-    raw_dir = runs_dir.parent / "raw" / "run" / task_id
-
-    # Checked BEFORE the dry-run branch returns and before any agent is
-    # spawned: a user who would be refused should learn that from
-    # --dry-run too, not after paying for the baseline arm.
-    ensure_clean_session_dir(session_dir, force=force)
+    # docs/PHASES.md R2: every invocation is its own experiment. Nothing under
+    # an earlier experiment is reused, merged or deleted, so `force` no longer
+    # has anything to do; it is accepted for compatibility. Nothing is created
+    # until the run is confirmed, which keeps --dry-run side-effect free.
+    experiment_id = new_experiment_id()
+    session_dir = runs_dir / "run" / task_id / experiment_id
+    raw_dir = runs_dir.parent / "raw" / "run" / task_id / experiment_id
 
     calibration = load_calibration()
     effective_repeats = repeats if repeats is not None else calibration.baseline.repeats
@@ -521,4 +512,5 @@ def run_run(
         response_fixture=response_fixture,
     )
     output_stream.write(render_run_result(result))
+    output_stream.write(f"experiment directory: {session_dir}\n")
     return result
