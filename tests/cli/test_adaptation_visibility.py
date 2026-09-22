@@ -111,3 +111,23 @@ def test_no_adaptation_note_when_the_mutated_arm_matched_the_old_contract():
     assert "mutated  exact 100%" in output
     assert "renamed arguments" not in output
     assert "did not exercise any renamed argument" in output
+
+
+def test_a_semantic_tier_hit_is_flagged_as_exploratory():
+    """docs/PHASES.md R3: semantic matching hashes the multiset of argument
+    VALUES ignoring parameter names -- against any served schema with
+    additionalProperties:false (the enforced default since the
+    parameter_rename fix), it is unreachable by construction, and even where
+    reachable it can bind two schema-valid calls that carry the same values
+    in different semantic roles. A report showing a real semantic hit must
+    say so is exploratory, not present it as an ordinary tier alongside
+    exact/inverse."""
+    output = _render({"exact": 4, "inverse": 0, "semantic": 0}, {"exact": 3, "inverse": 0, "semantic": 1})
+
+    assert "mutated  exact 75% · semantic 25%" in output
+    assert "semantic" in output.lower() and "exploratory" in output.lower()
+
+
+def test_no_semantic_warning_when_no_semantic_hit_occurred():
+    output = _render({"exact": 4, "inverse": 0, "semantic": 0}, {"exact": 4, "inverse": 0, "semantic": 0})
+    assert "exploratory" not in output.lower()

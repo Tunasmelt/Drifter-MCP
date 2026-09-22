@@ -293,6 +293,20 @@ def render_run_result(result: RunResult) -> str:
             "            warning: mutated calls did not exercise any renamed argument; "
             "this verdict does not test the rename"
         )
+    # docs/PHASES.md R3: semantic matches the multiset of argument VALUES,
+    # ignoring parameter names -- unreachable against any served schema with
+    # additionalProperties:false (the enforced default since the
+    # parameter_rename fix), and even where reachable it can bind two
+    # schema-valid calls that carry the same values in different semantic
+    # roles. A real semantic hit is flagged, not presented as an ordinary
+    # tier alongside exact/inverse.
+    baseline_tiers = result.baseline.match_tier_breakdown or {}
+    semantic_hits = baseline_tiers.get("semantic", 0) + mutated_tiers.get("semantic", 0)
+    if semantic_hits:
+        lines.append(
+            f"            {semantic_hits} call(s) resolved via the semantic tier (exploratory, "
+            f"docs/SPEC.md §15): matched on argument VALUES only, ignoring parameter names"
+        )
     if result.scheduling_note:
         for chunk in textwrap.wrap(f"scheduling: {result.scheduling_note}", width=66):
             lines.append(f"            {chunk}")

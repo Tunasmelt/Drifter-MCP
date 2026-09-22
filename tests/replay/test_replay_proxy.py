@@ -315,19 +315,27 @@ def test_replay_error_codes_never_collide_with_any_mcp_types_defined_code():
     """
     import mcp_types as types
 
-    from mcp_drifter.replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE
+    from mcp_drifter.replay.replay_proxy import (
+        REPLAY_FAULT_CODE,
+        REPLAY_INVALID_ARGS_CODE,
+        REPLAY_MISS_CODE,
+        REPLAY_UNKNOWN_TOOL_CODE,
+    )
 
     reserved_codes = {
         getattr(types, name)
         for name in dir(types)
         if name.isupper() and isinstance(getattr(types, name), int) and getattr(types, name) < 0
     }
-    assert REPLAY_MISS_CODE not in reserved_codes
-    assert REPLAY_FAULT_CODE not in reserved_codes
-    # And outside JSON-RPC 2.0's entire reserved band outright (not just
-    # the codes mcp_types happens to define today).
-    assert not (-32768 <= REPLAY_MISS_CODE <= -32000)
-    assert not (-32768 <= REPLAY_FAULT_CODE <= -32000)
+    all_codes = (REPLAY_MISS_CODE, REPLAY_FAULT_CODE, REPLAY_INVALID_ARGS_CODE, REPLAY_UNKNOWN_TOOL_CODE)
+    for code in all_codes:
+        assert code not in reserved_codes
+        # Outside JSON-RPC 2.0's entire reserved band outright (not just
+        # the codes mcp_types happens to define today).
+        assert not (-32768 <= code <= -32000)
+    # And distinct from each other -- four codes meaning four different
+    # things must never collapse to fewer than four values.
+    assert len(set(all_codes)) == len(all_codes)
 
 
 @pytest.mark.anyio
@@ -362,10 +370,15 @@ async def test_recorded_fault_replays_as_a_protocol_error_distinct_from_miss(tmp
 
     store = ReplayStore()
     store.index_session(path)
+    # docs/PHASES.md R3: the served manifest is now checked before lookup
+    # (an unknown NAME is its own distinct error, REPLAY_UNKNOWN_TOOL_CODE) --
+    # "flaky_tool" must be declared here, matching the real fact that it
+    # was, in reality, a served tool at record time (it was called).
+    tools_served = [ToolDescriptor(name="flaky_tool", description="d", input_schema={"type": "object"})]
 
     async with create_client_server_memory_streams() as (client_streams, server_streams):
         async with anyio.create_task_group() as tg:
-            tg.start_soon(run_replay_proxy, *server_streams, store, "srv", [])
+            tg.start_soon(run_replay_proxy, *server_streams, store, "srv", tools_served)
             async with ClientSession(*client_streams) as session:
                 await session.initialize()
                 with pytest.raises(MCPError) as exc_info:

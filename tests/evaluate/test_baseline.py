@@ -803,6 +803,61 @@ def test_provenance_breakdown_is_none_when_no_run_is_valid(tmp_path):
     assert result.provenance_breakdown is None
 
 
+def test_an_exact_lookup_returning_synthesized_content_never_reads_as_real_evidence(tmp_path):
+    """docs/PHASES.md R3, item 1: request-match TIER, response PROVENANCE and
+    execution OUTCOME are three independent facts about one call, and an
+    exact-tier lookup that resolved to SYNTHESIZED content must never
+    surface as ordinary "exact" real evidence.
+
+    Four calls, same tier (exact) and same outcome (a clean, unfaulted hit),
+    but four different provenances -- proving `provenance_breakdown` (what
+    CONFIDENCE shows) and `match_tier_breakdown` (what REQUEST MATCH shows,
+    docs/SPEC.md §15 limitations 21/22) are genuinely independent views, not
+    one derived from the other, and that CONFIDENCE specifically files the
+    non-real ones under their own bucket -- never "exact" -- while
+    match_tier_breakdown correctly still says the REQUEST matched exactly,
+    which is a true, separate fact about all four."""
+    calls = [
+        ("real_hit_1", False, "exact", "real"),  # a genuine live recording
+        ("real_hit_2", False, "exact", "real"),
+        ("hand_authored", False, "exact", "authored_fixture"),  # limitation 20's own case
+        ("injected_tool", False, "exact", "synthetic"),  # tool_addition's placeholder
+        ("fabricated_miss", False, "exact", "synthetic_miss"),  # F-14 answered a miss
+    ]
+    path = _write_mixed_provenance_session(tmp_path, "sess_tier_provenance_outcome", calls)
+    paths = iter([path])
+
+    result = run_baseline("task_tier_provenance_outcome", run_once=lambda: next(paths), repeats=1)
+
+    assert result.has_data is True  # fidelity 3/4 = 0.75 (synthetic excluded from the denominator), above the floor
+
+    # CONFIDENCE: only the two genuinely real calls are "exact." Every
+    # synthesized one is filed under its own honest bucket, never real
+    # evidence -- authored_fixture is NOT "exact" here, though its request
+    # genuinely did resolve at the exact tier (see below).
+    assert result.provenance_breakdown["exact"] == 2
+    assert result.provenance_breakdown["authored_fixture"] == 1
+    assert result.provenance_breakdown["synthetic"] == 1
+    assert result.provenance_breakdown["synthetic_miss"] == 1
+
+    # REQUEST MATCH: a genuinely separate axis. The hand-authored call DID
+    # resolve at the exact tier -- a true, distinct fact about the REQUEST,
+    # independent of where the response CONTENT came from -- so it counts
+    # here even though CONFIDENCE correctly refused to call it "exact."
+    # injected_tool and fabricated_miss are excluded (neither went through
+    # replay_store.lookup: one is a placeholder, the other a fabricated
+    # miss -- there is no tier to report for either).
+    assert result.match_tier_breakdown["exact"] == 3
+
+    # OUTCOME: a third, independent axis again -- every one of these five
+    # calls is a clean, unfaulted hit (is_error is None only because these
+    # calls never went through a real result at all in this hand-built
+    # fixture; the point is `fault` is uniformly False across every tier
+    # and every provenance bucket here, proving outcome doesn't drive
+    # either of the other two).
+    assert all(c.fault is False for c in read_session(path) if isinstance(c, ToolCall))
+
+
 # --- dominant path / variant frequency / natural_variation / spread ------
 
 

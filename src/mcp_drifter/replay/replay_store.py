@@ -38,7 +38,7 @@ from typing import Literal
 
 from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.redact import redact_secrets
-from mcp_drifter.record.schema import ToolCall
+from mcp_drifter.record.schema import SessionStart, ToolCall
 
 MatchTier = Literal["exact", "semantic", "inverse"]
 
@@ -154,15 +154,48 @@ class ReplayStore:
 
     def index_sessions(self, paths: Sequence[Path]) -> None:
         """Indexes every session in `paths` into this one store — DEC-027(b)'s
-        corpus replay (docs/CHANGELOG.md). Nothing here is new behavior:
-        `index_session` was always additive across files (last-writer-wins
-        per key, see its own docstring), and `tests/replay/test_replay_store.
-        py` already covered multi-file merging. This exists so the intent is
-        named at the call site rather than left as a bare loop, and so
-        `replay/corpus.py`'s resolved path list has an obvious destination.
+        corpus replay (docs/CHANGELOG.md).
+
+        docs/PHASES.md R3: `index_session`'s own last-writer-wins docstring
+        claims "the most recent recording is the most representative," but
+        that was only true for repeated keys WITHIN one file (chronological
+        by construction — a session's own records are written in order).
+        Across MULTIPLE files, this method used to just walk `paths` in
+        whatever order the caller handed them — and the one real caller,
+        `replay/corpus.py`'s `resolve_session_paths`, hands them back
+        `sorted(path.glob("*.jsonl"))`: alphabetical by filename (a random
+        session-id hex string), not by recording time. "Most recent wins"
+        was therefore accidental — it meant "whichever file happens to sort
+        last alphabetically," which `replay/corpus.py`'s own separate
+        manifest-selection code already knew to avoid (it explicitly sorts
+        candidate manifests by `started_at` before picking the newest).
+
+        Defined policy, explicit now: every session's real recorded
+        `SessionStart.started_at` is read first, `paths` are indexed in that
+        order, and `index_session`'s per-file last-writer-wins does the rest
+        — so the response that ends up served for a repeated key is the one
+        from whichever RECORDING actually happened last, not whichever
+        FILENAME sorts last. A session with no readable `SessionStart` (a
+        corrupt or non-conforming file) sorts first, deliberately, matching
+        this project's convention that unusable data does not override real
+        data — never that it crashes the corpus build.
         """
-        for path in paths:
-            self.index_session(path)
+        def _started_at(path: Path) -> str:
+            try:
+                first = next(iter(read_session(path)))
+            except Exception:
+                return ""
+            return first.started_at if isinstance(first, SessionStart) else ""
+
+        for path in sorted(paths, key=_started_at):
+            try:
+                self.index_session(path)
+            except Exception:
+                # Matches _started_at's own tolerance above: an unreadable
+                # file sorted first (as the "earliest" possible timestamp)
+                # and now contributes nothing rather than crashing the
+                # whole corpus build over one bad file.
+                continue
 
     def lookup(
         self,

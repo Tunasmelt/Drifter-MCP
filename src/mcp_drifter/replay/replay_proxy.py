@@ -100,6 +100,7 @@ from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 from mcp_drifter.record.proxy import Direction, MessageObserver
 from mcp_drifter.record.reader import read_session
 import jsonschema
+from referencing.exceptions import Unresolvable, Unretrievable
 
 from mcp_drifter.replay.corpus_facts import CorpusFacts, successor_values
 from mcp_drifter.replay.authored_responses import AuthoredResponses
@@ -132,6 +133,18 @@ REPLAY_FAULT_CODE = -31002
 # would let a schema violation look like thin recording coverage, which is
 # the opposite of what it is -- it is the mutation working.
 REPLAY_INVALID_ARGS_CODE = -31003
+# docs/PHASES.md R3: a call to a tool NAME not in the served manifest at all
+# (not "these arguments are wrong for a real tool" -- "no such tool exists
+# here"). Before this, an unknown name fell straight through to
+# replay_store.lookup, which can only ever MISS for it (semantic_key hashes
+# the tool name too, so it can never cross-match a different tool's
+# recording) -- so a real structural error (calling a tool tool_addition or
+# a rename removed) read identically to "this exact call just wasn't
+# recorded," which is a different, more benign fact. A real MCP server
+# rejects an unknown tool name outright; replay now does too, distinctly
+# from REPLAY_INVALID_ARGS_CODE's "this tool exists but the arguments are
+# wrong" and from REPLAY_MISS_CODE's "corpus coverage gap."
+REPLAY_UNKNOWN_TOOL_CODE = -31004
 
 
 def tools_served_from_session(path: Path) -> list[ToolDescriptor]:
@@ -293,6 +306,30 @@ def build_replay_server(
     output_schemas = {t.name: t.output_schema for t in tools_served}
     input_schemas = {t.name: t.input_schema for t in tools_served}
 
+    def _has_external_ref(node: object) -> bool:
+        """docs/PHASES.md R3: "handle `$ref` explicitly rather than by
+        accident." A `$ref` pointing INSIDE the schema document (`#/...`)
+        resolves correctly today with no network involved -- confirmed
+        directly, not assumed. One pointing OUTSIDE it (a bare URL, or any
+        non-`#`-prefixed reference) does not: `jsonschema`'s resolver raises
+        `referencing.exceptions.Unresolvable`/`Unretrievable`, uncaught by
+        the two `except` clauses below before this fix -- an unhandled
+        exception straight out of a served tool's own schema, not a real
+        server, would crash `on_call_tool` entirely. Scanned for explicitly,
+        recursively, before validation even runs, rather than only caught
+        reactively -- so the served schema's shape decides the outcome
+        (skip enforcement, same as a malformed schema), never whether a
+        resolver call happens to reach a network at all.
+        """
+        if isinstance(node, dict):
+            ref = node.get("$ref")
+            if isinstance(ref, str) and not ref.startswith("#"):
+                return True
+            return any(_has_external_ref(v) for v in node.values())
+        if isinstance(node, list):
+            return any(_has_external_ref(v) for v in node)
+        return False
+
     def _schema_violation(tool_name: str, arguments: dict) -> str | None:
         """Returns why `arguments` violate the SERVED schema, or None.
 
@@ -309,18 +346,27 @@ def build_replay_server(
 
         Only enforced where a contract was actually DECLARED -- a schema
         with no `properties` has nothing to check, and inventing strictness
-        there would reject calls a real server accepts.
+        there would reject calls a real server accepts. A `$defs`/local
+        `#/...` `$ref` is resolved and enforced normally (confirmed by
+        `tests/replay/test_schema_enforcement.py`); an external `$ref`
+        disables enforcement for that tool entirely, same as a malformed
+        schema (below) -- this module never makes an outbound network call
+        to resolve one.
         """
         schema = input_schemas.get(tool_name)
-        if not schema or not schema.get("properties"):
+        if not schema or not schema.get("properties") or _has_external_ref(schema):
             return None
         try:
             jsonschema.validate(instance=arguments, schema=schema)
         except jsonschema.ValidationError as exc:
             return exc.message
-        except jsonschema.SchemaError:
-            # A malformed schema in the manifest is the SERVER's problem,
-            # not the agent's -- never fail an agent's call over it.
+        except (jsonschema.SchemaError, Unresolvable, Unretrievable):
+            # A malformed or unresolvable schema in the manifest is the
+            # SERVER's problem, not the agent's -- never fail an agent's
+            # call over it. The two referencing exceptions are a defensive
+            # second layer behind the explicit pre-scan above, for a $ref
+            # shape the scan didn't anticipate (e.g. a bad local pointer) --
+            # never left uncaught, whatever the actual cause.
             return None
         return None
 
@@ -411,6 +457,17 @@ def build_replay_server(
             Direction.AGENT_TO_SERVER,
             JSONRPCRequest(jsonrpc="2.0", id=req_id, method="tools/call", params={"name": params.name, "arguments": arguments}),
         )
+
+        # docs/PHASES.md R3: a name not in the served manifest at all is a
+        # structural error distinct from "these arguments are wrong for a
+        # real tool" (REPLAY_INVALID_ARGS_CODE) and from "this exact call
+        # was never recorded" (REPLAY_MISS_CODE, below) -- checked before
+        # either, since neither of those questions is even meaningful for a
+        # tool that isn't served.
+        if params.name not in input_schemas:
+            message = f"unknown tool: {server_name!r} does not serve a tool named {params.name!r}"
+            _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_UNKNOWN_TOOL_CODE, message=message)))
+            raise MCPError(code=REPLAY_UNKNOWN_TOOL_CODE, message=message)
 
         # F-12: only the slice of inverse_map relevant to THIS tool is
         # passed down -- replay_store.lookup has no mutation-specific

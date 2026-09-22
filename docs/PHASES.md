@@ -1187,22 +1187,60 @@ schema-evolution procedure (red test against a pre-change corpus first).
 
 ### R3 — Replay correctness
 
-- [ ] Separate the three concepts currently entangled: request-match TIER, response
+- [x] Separate the three concepts currently entangled: request-match TIER, response
       PROVENANCE, execution OUTCOME. An exact lookup returning synthesized content must
-      never read as real evidence.
-- [ ] Validate served tool NAMES as well as schemas before lookup — the limitation-18 fix
-      covers arguments only.
-- [ ] Handle `$ref` in served schemas explicitly rather than by accident.
+      never read as real evidence. **Largely already true by the time this was picked
+      up** (`ToolCall.match_tier`/`.result_provenance`/`.fault` are three independent
+      nullable fields; `authored_fixture` has its own provenance bucket, separate from
+      the `exact`/`inverse`/`semantic` tier buckets, since the limitation-20 fix;
+      `match_tier_breakdown` reports tier independently of provenance, since limitations
+      21/22). Pinned rather than re-derived: `tests/evaluate/test_baseline.py`'s
+      `test_an_exact_lookup_returning_synthesized_content_never_reads_as_real_evidence`
+      — a hand-authored call resolves at the exact TIER (REQUEST MATCH) while CONFIDENCE
+      correctly refuses to call it "exact," and a fabricated-miss/injected-tool call's
+      OUTCOME (`fault`) is independent of both.
+- [x] Validate served tool NAMES as well as schemas before lookup — the limitation-18 fix
+      covers arguments only. Done: `REPLAY_UNKNOWN_TOOL_CODE` (-31004), checked before
+      the schema/retired-parameter checks. Before this, a name outside the served
+      manifest fell straight through to `replay_store.lookup`, which can only ever MISS
+      for it (semantic_key hashes the tool name too), so a real structural error read
+      identically to ordinary corpus-coverage thinness. Tests in
+      `tests/replay/test_schema_enforcement.py`.
+- [x] Handle `$ref` in served schemas explicitly rather than by accident. A local
+      `#/$defs/...` `$ref` already resolved correctly with no network call (confirmed
+      directly); an external one raised `referencing.exceptions.Unresolvable`/
+      `Unretrievable`, uncaught by `_schema_violation`'s two `except` clauses — a served
+      tool's OWN schema could crash `on_call_tool` outright. Fixed with an explicit
+      recursive pre-scan (`_has_external_ref`) that disables enforcement for that tool,
+      same as a malformed schema, plus the two exceptions caught defensively as a second
+      layer. Never an attempted network fetch either way. Tests in
+      `tests/replay/test_schema_enforcement.py`.
 - [x] Detect and reject no-op mutations — an operator that changed nothing must not
       produce a comparison at all. `mutate.audit.manifest_changed` compares the full
       serialized served manifest. `drifter run` computes the mutation BEFORE the
       baseline arm and raises `ConfigError` without spending a run; `replay-serve
       --mutate` refuses the same way. Scope: whole-manifest identity only. A mutation
       that changes tools the task never calls still counts as a change.
-- [ ] Replace `index_session`'s last-writer-wins with a defined stateful response policy.
-- [ ] Re-scope value-only semantic matching as exploratory: two schema-valid calls can
+- [x] Replace `index_session`'s last-writer-wins with a defined stateful response policy.
+      Real bug, not just an ambiguity: `index_session`'s own docstring claims "the most
+      recent recording is the most representative," but the one real caller of
+      `index_sessions` (`replay/corpus.py`'s `resolve_session_paths`) hands paths back
+      `sorted(glob(...))` — alphabetical by filename (a random session-id string), not
+      by recording time. "Most recent wins" was therefore whichever file happened to
+      sort last alphabetically, an accident `replay/corpus.py`'s OWN separate
+      manifest-selection code already knew to avoid (it sorts candidate manifests by
+      `started_at`). Fixed: `index_sessions` now reads each session's real
+      `SessionStart.started_at` and indexes in that order; `index_session`'s own
+      within-file last-writer-wins is unchanged (already correct — one session's
+      records are chronological by construction). An unreadable file sorts first and
+      is skipped, never crashing the corpus build or overriding a real recording.
+      Tests in `tests/replay/test_replay_store.py`.
+- [x] Re-scope value-only semantic matching as exploratory: two schema-valid calls can
       carry identical values in different semantic roles, and after the limitation-18 fix
-      the tier is unreachable against strict schemas anyway.
+      the tier is unreachable against strict schemas anyway. The report's REQUEST MATCH
+      line now flags any real semantic hit explicitly as exploratory, rather than
+      presenting it as an ordinary tier alongside exact/inverse. Tests in
+      `tests/cli/test_adaptation_visibility.py`.
 
 ### R4 — The verdict rule
 

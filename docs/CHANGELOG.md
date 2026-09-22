@@ -6,6 +6,56 @@ not just a diff.
 
 ---
 
+## R3: replay correctness — tier/provenance/outcome pinned, unknown-tool errors, explicit $ref handling, timestamp-ordered corpus indexing, semantic flagged exploratory
+
+Five items, one already closed (no-op mutation rejection, `c44ed82`). All five now done.
+
+**Tier/provenance/outcome.** Largely already separated by the time this was picked up:
+`ToolCall.match_tier`/`.result_provenance`/`.fault` are independent nullable fields, and
+the `authored_fixture` provenance bucket (limitation 20) plus `match_tier_breakdown`
+(limitations 21/22) already keep CONFIDENCE and REQUEST MATCH from conflating "the
+request matched" with "the content was real." Closed with a single pinning test rather
+than new code: a hand-authored call resolves at the exact TIER while CONFIDENCE
+correctly refuses to call it "exact," proving the two are genuinely independent views,
+not one derived from the other.
+
+**Unknown tool names.** A call to a name outside the served manifest used to fall
+straight through to `replay_store.lookup`, which can only ever MISS for it (`semantic_key`
+hashes the tool name too, so it can never cross-match a different tool's recording) — so
+a real structural error (a tool a rename removed, or that was never served) read
+identically to ordinary corpus-coverage thinness. `REPLAY_UNKNOWN_TOOL_CODE` (-31004) is
+now checked first, before schema or retired-parameter validation.
+
+**`$ref`, explicit not accidental.** A local `#/$defs/...` reference already resolved
+correctly with no network call — confirmed directly, not assumed. An external one raised
+`referencing.exceptions.Unresolvable`/`Unretrievable`, uncaught by `_schema_violation`'s
+two `except` clauses: a served tool's OWN schema could crash the call handler outright.
+Fixed with an explicit recursive pre-scan that disables enforcement for that tool (same
+treatment as a malformed schema), plus the two exceptions caught defensively as a second
+layer. Never an attempted network fetch either way.
+
+**Corpus indexing order.** `index_session`'s docstring claims "the most recent recording
+is the most representative," but the one real caller of `index_sessions`
+(`replay/corpus.py`'s `resolve_session_paths`) hands paths back sorted alphabetically by
+filename — a random session-id string, not by recording time. "Most recent wins" was
+therefore an accident of glob order, something `replay/corpus.py`'s own separate
+manifest-selection code already knew to avoid (it sorts candidate manifests by
+`started_at`). `index_sessions` now reads each session's real `started_at` and indexes in
+that order; an unreadable file sorts first and is skipped, never crashing the corpus
+build or overriding a real recording.
+
+**Semantic tier, flagged.** The report's REQUEST MATCH line now names any real semantic
+hit as exploratory, rather than presenting it silently alongside exact/inverse.
+
+**Tests, red first.** `tests/replay/test_replay_store.py` (+4), `tests/replay/
+test_schema_enforcement.py` (+5), `tests/replay/test_replay_proxy.py` (updated for the
+new code, +1 existing fault test needed its manifest fixed — it declared no tools at all,
+which the new unknown-tool check correctly caught as unrealistic), `tests/cli/
+test_adaptation_visibility.py` (+2), `tests/evaluate/test_baseline.py` (+1). 74 new/changed
+assertions total; full replay+evaluate+adaptation suite green (321 passed, 1 xfailed).
+
+---
+
 ## R2: experiment identity, persisted settings, enforced fingerprints
 
 **Problem.** `run/<task_id>/` was keyed by task id alone. The report, safety scan, mutation

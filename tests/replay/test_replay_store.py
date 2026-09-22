@@ -207,6 +207,96 @@ def test_last_writer_wins_across_two_separate_files_not_just_within_one(tmp_path
     assert hit.result_shape == {"type": "object", "keys": ["new"]}
 
 
+def _write_session_at(path: Path, session_id: str, started_at: str, tool_calls: list[dict]) -> None:
+    """Same shape as `_write_session`, with a controllable `started_at`."""
+    import json
+
+    lines = [
+        {
+            "schema_version": "0.1", "record_type": "session_start", "session_id": session_id, "seq": 0,
+            "started_at": started_at,
+            "environment": {"agent_identity": None, "model_name": None, "server_versions": {},
+                            "tool_manifest_hash": None, "fingerprint": None},
+            "raw_frame_offset": 0,
+        }
+    ]
+    for i, call in enumerate(tool_calls, start=1):
+        lines.append(
+            {
+                "schema_version": "0.1", "record_type": "tool_call", "session_id": session_id,
+                "seq": i, "timestamp": started_at, "server": call.get("server", "srv"),
+                "tool_name": call["tool_name"], "arguments": call.get("arguments", {}),
+                "result_shape": call.get("result_shape"), "is_error": call.get("is_error"),
+                "duration_ms": 1.0, "fault": call.get("fault", False), "result_provenance": "real",
+                "references": [], "mutation_inverse": None, "raw_frame_offset": i * 100,
+            }
+        )
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+
+
+def test_index_sessions_orders_by_recorded_time_not_by_path_order(tmp_path):
+    """docs/PHASES.md R3: `index_sessions` used to trust whatever order
+    `paths` arrived in -- and its one real caller (`replay/corpus.py`) hands
+    back `sorted(glob(...))`, alphabetical by filename (a random session-id
+    string), not by recording time. Filenames are chosen here to sort in
+    the OPPOSITE order from their `started_at` values, so a test that
+    happened to pass by coincidence (paths already time-ordered) is ruled
+    out: the chronologically EARLIER recording gets the alphabetically
+    LATER filename.
+    """
+    early_but_z_named = tmp_path / "z_early.jsonl"
+    late_but_a_named = tmp_path / "a_late.jsonl"
+    _write_session_at(early_but_z_named, "sess_early", "2026-01-01T00:00:00Z",
+                      [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["old"]}, "is_error": False}])
+    _write_session_at(late_but_a_named, "sess_late", "2026-06-01T00:00:00Z",
+                      [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["new"]}, "is_error": False}])
+
+    store = ReplayStore()
+    # Handed in alphabetical (path-sorted) order, as replay/corpus.py's
+    # resolve_session_paths would -- the OPPOSITE of recording-time order.
+    store.index_sessions(sorted([early_but_z_named, late_but_a_named]))
+
+    hit = store.lookup("srv", "get", {"id": "1"})
+    assert hit.result_shape == {"type": "object", "keys": ["new"]}, (
+        "the chronologically later recording must win, not whichever filename sorts last"
+    )
+
+
+def test_index_sessions_is_stable_regardless_of_input_list_order(tmp_path):
+    """The same two sessions, handed in the other order, must resolve
+    identically -- the POLICY is time-based, not "whichever came last in
+    this particular call.\""""
+    path_early = tmp_path / "early.jsonl"
+    path_late = tmp_path / "late.jsonl"
+    _write_session_at(path_early, "sess_early", "2026-01-01T00:00:00Z",
+                      [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["old"]}, "is_error": False}])
+    _write_session_at(path_late, "sess_late", "2026-06-01T00:00:00Z",
+                      [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["new"]}, "is_error": False}])
+
+    store = ReplayStore()
+    store.index_sessions([path_late, path_early])  # deliberately reversed vs. the test above
+
+    hit = store.lookup("srv", "get", {"id": "1"})
+    assert hit.result_shape == {"type": "object", "keys": ["new"]}
+
+
+def test_index_sessions_tolerates_an_unreadable_session_by_sorting_it_first(tmp_path):
+    """A corrupt/empty file must not crash corpus building, and must not be
+    able to override a real recording -- it sorts as the earliest possible
+    timestamp, so any real session always wins over it."""
+    unreadable = tmp_path / "corrupt.jsonl"
+    unreadable.write_text("not json at all\n", encoding="utf-8")
+    real = tmp_path / "real.jsonl"
+    _write_session_at(real, "sess_real", "2026-01-01T00:00:00Z",
+                      [{"tool_name": "get", "arguments": {"id": "1"}, "result_shape": {"type": "object", "keys": ["v"]}, "is_error": False}])
+
+    store = ReplayStore()
+    store.index_sessions([unreadable, real])  # must not raise
+
+    hit = store.lookup("srv", "get", {"id": "1"})
+    assert hit is not None and hit.result_shape == {"type": "object", "keys": ["v"]}
+
+
 def test_a_protocol_level_fault_call_hits_with_a_null_result_shape(tmp_path):
     """The golden fixture has zero fault=True calls (confirmed directly,
     not assumed) -- a protocol-level fault (a JSON-RPC error response,

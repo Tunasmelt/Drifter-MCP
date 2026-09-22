@@ -172,3 +172,117 @@ async def test_a_tool_with_no_declared_schema_is_not_gated(corpus):
                 tg.cancel_scope.cancel()
 
     assert result.is_error is False
+
+
+# --- docs/PHASES.md R3: unknown tool name -----------------------------------
+
+
+@pytest.mark.anyio
+async def test_calling_a_tool_name_not_in_the_served_manifest_is_a_distinct_error(corpus):
+    """A name outside the served manifest entirely is a structural error --
+    distinct from an existing tool's arguments being wrong
+    (REPLAY_INVALID_ARGS_CODE) and from an exact call never having been
+    recorded (REPLAY_MISS_CODE). Before this, an unknown name fell straight
+    through to replay_store.lookup, which can only MISS for it (semantic_key
+    hashes the tool name too, so it can never cross-match a different
+    tool's recording) -- so a real structural error read identically to
+    "this exact call just was not recorded," a different, more benign fact.
+    """
+    from mcp_drifter.replay.replay_proxy import REPLAY_UNKNOWN_TOOL_CODE
+
+    outcome = await _call(corpus, {"customerId": "C123"})  # sanity: the real tool still works
+    assert "error" not in outcome
+
+    tools_served = [ToolDescriptor(name="get_customer", description="d", input_schema=RENAMED_SCHEMA)]
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_replay_proxy, *server_streams, corpus, SERVER, tools_served)
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                with pytest.raises(MCPError) as exc_info:
+                    await session.call_tool("delete_everything", {})
+            tg.cancel_scope.cancel()
+
+    assert exc_info.value.code == REPLAY_UNKNOWN_TOOL_CODE
+    assert exc_info.value.code not in (REPLAY_INVALID_ARGS_CODE,)
+
+
+@pytest.mark.anyio
+async def test_unknown_tool_name_is_checked_before_argument_validation(corpus):
+    """Ordering: an unknown name with obviously-wrong arguments still reports
+    as unknown-tool, not invalid-arguments -- the question "are these
+    arguments valid" presupposes the tool exists."""
+    from mcp_drifter.replay.replay_proxy import REPLAY_UNKNOWN_TOOL_CODE
+
+    tools_served = [ToolDescriptor(name="get_customer", description="d", input_schema=RENAMED_SCHEMA)]
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_replay_proxy, *server_streams, corpus, SERVER, tools_served)
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                with pytest.raises(MCPError) as exc_info:
+                    await session.call_tool("no_such_tool", {"wrong": "shape", "entirely": 1})
+            tg.cancel_scope.cancel()
+
+    assert exc_info.value.code == REPLAY_UNKNOWN_TOOL_CODE
+
+
+# --- docs/PHASES.md R3: $ref handling, explicit not accidental --------------
+
+
+REF_SCHEMA = {
+    "type": "object",
+    "$defs": {"positive_id": {"type": "string", "pattern": "^C[0-9]+$"}},
+    "properties": {"customerId": {"$ref": "#/$defs/positive_id"}},
+    "required": ["customerId"],
+}
+
+EXTERNAL_REF_SCHEMA = {
+    "type": "object",
+    "properties": {"customerId": {"$ref": "https://example.invalid/schema.json#/definitions/id"}},
+    "required": ["customerId"],
+}
+
+
+async def _call_with_schema(store, schema: dict, arguments: dict) -> dict:
+    tools_served = [ToolDescriptor(name="get_customer", description="d", input_schema=schema)]
+    outcome: dict = {}
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_replay_proxy, *server_streams, store, SERVER, tools_served)
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                try:
+                    outcome["result"] = await session.call_tool("get_customer", arguments)
+                except MCPError as exc:
+                    outcome["error"] = exc
+            tg.cancel_scope.cancel()
+    return outcome
+
+
+@pytest.mark.anyio
+async def test_a_local_ref_schema_is_resolved_and_enforced(corpus):
+    """A `$ref` pointing inside the schema document (`#/$defs/...`) resolves
+    correctly with no network access, and is enforced like any other
+    constraint: a value violating it is rejected."""
+    valid = await _call_with_schema(corpus, REF_SCHEMA, {"customerId": "C123"})
+    assert "error" not in valid, valid.get("error")
+
+    invalid = await _call_with_schema(corpus, REF_SCHEMA, {"customerId": "not-shaped-right"})
+    assert "error" in invalid
+    assert invalid["error"].error.code == REPLAY_INVALID_ARGS_CODE
+
+
+@pytest.mark.anyio
+async def test_an_external_ref_schema_never_crashes_and_never_reaches_the_network(corpus):
+    """docs/PHASES.md R3: before this, an unresolvable external `$ref` raised
+    `referencing.exceptions.Unresolvable`/`Unretrievable` -- uncaught by the
+    two `except` clauses guarding `jsonschema.validate`, so a served tool's
+    OWN schema could crash the call handler outright. Explicit now: scanned
+    for before validation runs, and treated the same as a malformed schema
+    (enforcement skipped for that tool, the call proceeds normally) -- never
+    an attempted network fetch, never an unhandled exception.
+    """
+    outcome = await _call_with_schema(corpus, EXTERNAL_REF_SCHEMA, {"customerId": "C123"})
+    assert "error" not in outcome, outcome.get("error")
+    assert outcome["result"].is_error is False
