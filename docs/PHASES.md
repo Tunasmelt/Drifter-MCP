@@ -1270,8 +1270,23 @@ tasks can pick a path that belongs to a different task; the report shows P so th
       path-A pick, detection is 0.993). The weakness is choosing P from a small corpus of an
       inconsistent agent, not the interval rule. Open follow-up: a larger corpus, or
       reporting when P's corpus majority is weak.
-- [ ] Measure false-alarm, detection-power and inconclusive rates against unchanged
-      agents, deterministic and stochastic, including the 90/10 case.
+- [x] Measure false-alarm, detection-power and inconclusive rates against unchanged
+      agents, deterministic and stochastic, including the 90/10 case. **Live trials,
+      3 real tasks, 2,000 seeded 20-vs-20 A/A splits each, pre-registered before each
+      run** (`C:\Users\user\drifter-r4\PREREGISTRATION.txt`; evidence bundled at
+      `tests/fixtures/experiments/r4_live_trials`, recomputed by
+      `tests/evaluate/test_r4_live_trials_evidence.py`):
+      - orders (44 valid) and econ (46 valid): agent p=1.0 both times, false
+        REGRESSION 0.0%. Bar met, but only in the case least likely to false-alarm.
+      - variance (a new controlled server offering two equally valid tools for the
+        same question, purpose-built to reach the simulation's flagged moderate-
+        consistency region): two attempts, each cut short by the account's usage
+        limit and individually below the 40-run threshold (28 and 27 valid). A
+        **POST-HOC, NOT PRE-REGISTERED** pooling of both (disclosed as such,
+        same server/task/oracle/fixture/seed, split only by the resource limit)
+        reaches 55 valid runs at real p=0.891 — false REGRESSION 0.1%, matching the
+        simulation's own p=0.9 prediction (0.2%). This is the project's only
+        evidence at moderate agent consistency; it is exploratory, not confirmatory.
 - [ ] Only then reintroduce adaptive stopping, on a footing valid under optional
       stopping. F-27's proof is that a fixed-N verdict is preserved; that is a statement
       about agreement with the fixed-N rule, not about that rule's validity. Time-uniform

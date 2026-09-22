@@ -1,0 +1,21 @@
+version: 1
+server: variance
+responses:
+- tool_name: count_widgets
+  arguments: {}
+  result:
+    content: [{type: text, text: '7'}]
+    isError: false
+    structuredContent: {result: 7}
+- tool_name: list_widgets
+  arguments: {}
+  result:
+    content:
+      - {type: text, text: bolt}
+      - {type: text, text: washer}
+      - {type: text, text: nut}
+      - {type: text, text: screw}
+      - {type: text, text: rivet}
+      - {type: text, text: clip}
+      - {type: text, text: pin}
+    isError: false

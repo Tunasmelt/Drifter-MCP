@@ -1,0 +1,21 @@
+{
+  "task": "econ",
+  "pool_runs": 60,
+  "valid_runs": 46,
+  "exclusions": {
+    "run crashed (exit code 1)": 14
+  },
+  "path_of_interest": "econ_index_get_usage_by_country",
+  "path_distribution": {
+    "econ_index_get_usage_by_country": 46
+  },
+  "measured_p_on_path": 1.0,
+  "task_oracle": "PASS 46/46",
+  "split_rates": {
+    "REGRESSION": 0.0,
+    "INCONCLUSIVE": 0.0,
+    "NO_REGRESSION": 1.0,
+    "UNKNOWN": 0.0
+  },
+  "acceptance_false_regression_le_5pct": true
+}

@@ -1,0 +1,125 @@
+R4 live unchanged-agent trials (docs/PHASES.md R4). Written before any run. 2026-09-15.
+
+Drifter commit f70789b (repo venv). Agent: claude-code/2.1.270 through the http adapter.
+
+Question: how often does the R4 Behavior rule (interval on the drop in on-path share,
+margin 0.3, z 1.645, N=20 per arm, path of interest from the corpus, amendment A guard)
+falsely report REGRESSION when NOTHING changed?
+
+Design (A/A, resampled):
+- Two tasks, each replayed OFFLINE from its existing corpus and authored fixture, with the
+  ORIGINAL (unmutated) manifest:
+    T1 orders:  ORDERS_WORKSPACE (task e2; find_order -> get_order; fixture responses.yaml)
+    T2 econ:    ECON_WORKSPACE (task japan-index; fixture responses.yaml)
+- For each task, record a pool of M=60 unmutated runs through Drifter's own run path
+  (make_run_once + run_baseline), timeout 240 s per run.
+- Valid runs = Drifter's own exclusions (R1 lifecycle, R2 environment, coverage floor).
+- 2,000 seeded random splits (seed 20260915) of the valid pool into two disjoint arms of 20.
+  Each split is scored with compute_behavior_effect_size, path of interest from the corpus.
+- If fewer than 40 runs are valid, the task is reported as not measurable (no splits).
+
+Pre-registered acceptance bar (per task): false REGRESSION <= 5% of splits.
+Reported, not gated: INCONCLUSIVE, NO_REGRESSION, UNKNOWN rates; per-run path distribution
+(the measured consistency p); exclusion reasons; task-oracle pass rate.
+
+Stated limitation: splits from one pool share runs, so they are not independent comparisons;
+the rate is an estimate of the rule's behaviour on this pool, not a sampling-exact rate.
+The measured p is also compared with the committed simulation's rate at that p.
+
+A result that misses the bar is reported as a miss, not re-run until it passes.
+
+AMENDMENT, written 2026-09-16 after attempt 1 and before attempt 2 finished:
+Attempt 1 ran orders then econ back to back. The Claude account hit its usage session
+limit during the orders pool: runs 45-60 printed "You've hit your session limit" and
+exited 1; Drifter recorded them as crashed and excluded them (44/60 valid remained, above
+the 40 needed). Every econ run also hit the limit (0/60 valid, not measurable).
+Orders attempt 1 stands as recorded: 44 valid, p=1.0, false REGRESSION 0.000 (bar met).
+Econ attempt 1 produced no result at all, for a reason outside the rule under test, so it
+is re-recorded once (attempt 2, same design, M=60). Attempt 1's pool is kept as
+econ_attempt1_session_limit/. This is not a re-run of a result that missed the bar:
+attempt 1 had no result. If attempt 2 also hits the limit, it is reported as not measurable.
+
+===============================================================================
+T3 STOCHASTIC-PATH TRIAL — pre-registered 2026-09-20, before any corpus or run.
+===============================================================================
+
+Motivation: orders and econ both came back p=1.0 (agent always took the same
+path), so they only tested the rule where it is least likely to false-alarm.
+The simulation's own flagged weak spot was moderate consistency (p~0.7), where
+occasional path variation is genuine agent behavior, not noise, and the rule
+has to tell the two apart. Neither live task exercised that region. This is
+not a re-run of orders/econ; it targets the untested region directly.
+
+Server: VARIANCE_WORKSPACE\variance_server.py (new, controlled,
+synthetic). Two read-only tools answer the same question two ways:
+  list_widgets() -> 7 named items (agent can count them itself)
+  count_widgets() -> 7 directly
+Neither tool description favors one over the other. Task prompt places no
+hint about which to call; the oracle checks only the answer, not which tool
+was used (deliberately no `calls` assertion, so path choice is not steered by
+the harness).
+
+Task: t3, prompt "Using ONLY the variance MCP tools (do not use any other
+tools), how many widgets are currently in stock? Report just the number."
+Oracle: answer_matches (?i)\b(?:7|seven)\b.
+
+This is a genuine unknown, not engineered to hit p=0.7: the real agent's split
+between list_widgets and count_widgets is whatever it is. If it comes back
+p=1.0 again (agent has one strong preference), that is itself a finding —
+report it as such, do not retry with a different task designed to force
+variance, which would be p-hacking the very thing under test.
+
+Procedure, identical to orders/econ: record a corpus via `drifter observe`
+(>=2 live sessions), author responses.yaml from real captured tool outputs,
+record a pool of M=60 unmutated runs through Drifter's own run path, apply
+the same R1/R2 exclusions, run 2,000 seeded splits (seed 20260915) at N=20,
+path of interest from the corpus. Same acceptance bar: false REGRESSION <=5%.
+Additionally reported here: false REGRESSION conditional on the corpus
+majority path share being below 0.9 (the region most like the simulation's
+p=0.7 cell) if enough splits land there; otherwise noted as not reached.
+
+If the account's usage limit is hit again, apply the same rule as before: keep
+the partial pool, do not delete it, and re-record once if the result is
+unmeasurable; a partial pool that already clears 40 valid runs stands as
+recorded.
+
+ADDENDUM, written 2026-09-20 after the initial 4-session corpus, before authoring
+the fixture or running the pool:
+All 4 initial observe sessions called count_widgets; list_widgets was never
+recorded. The authored-fixture loader requires an exact real recorded request to
+bind to, so list_widgets could not be given a fixture entry from that corpus,
+and a pool run that happened to call it would simply miss. One additional observe
+session was recorded with an EXPLICIT instruction to call list_widgets, solely so
+both tools have a real recording to author a fixture against -- this session is
+corpus-only (for fixture completeness) and is NOT one of the 60 pool runs, and it
+does not bias which tool the pool's unprompted runs choose.
+
+T3 AMENDMENT, written 2026-09-20 after attempt 1 (before attempt 2 finished):
+Attempt 1 hit the account's usage limit again: 32/60 runs crashed, leaving 28 valid
+-- below the 40 needed for a split analysis, so it is unmeasurable per the stated
+rule. It is kept, not deleted, as variance/pool_attempt1_session_limit (+ raw,
+analysis_attempt1.json, pool_summary_attempt1.json). It IS informative on its own
+terms, reported alongside attempt 2: of 28 valid runs, 25 called count_widgets
+alone and 3 called count_widgets then list_widgets -- p=0.893, the first real
+stochastic signal across all three tasks (orders and econ were both p=1.0).
+Re-recording once, per the pre-registered rule for a session-limit-caused
+unmeasurable result.
+
+T3 AMENDMENT 2, written 2026-09-23 after attempt 2 (both attempts complete):
+Attempt 2 also hit the usage limit: 33/60 crashed, 27 valid, p=0.889 (24/27 count_widgets
+alone, 3/27 count_widgets>list_widgets) -- almost identical to attempt 1's 0.893. Per the
+pre-registered rule ("re-record once"), no third attempt is run; a further re-record would
+not be pre-registered and risks becoming exactly the kind of retry-until-satisfied practice
+this file exists to rule out.
+
+Both attempts individually stay below the 40-valid-run threshold and are reported as
+unmeasurable on their own, exactly as pre-registered.
+
+POST-HOC, NOT PRE-REGISTERED: attempts 1 and 2 used the identical server, task, prompt,
+oracle, fixture and seed, differing only in which calendar session recorded them (both hit
+the same external resource limit, unrelated to the rule under test). Their valid runs are
+pooled (28 + 27 = 55) into a supplementary analysis, disclosed here as exploratory rather
+than confirmatory, and run through the same 2,000-split procedure at N=20. This is the
+project's only stochastic-path evidence and merits reporting on that basis, but it did not
+go through the same pre-commitment as the confirmatory design and is labeled accordingly
+in every place it is reported.

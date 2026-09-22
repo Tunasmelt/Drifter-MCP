@@ -1,0 +1,21 @@
+{
+  "task": "orders",
+  "pool_runs": 60,
+  "valid_runs": 44,
+  "exclusions": {
+    "run crashed (exit code 1)": 16
+  },
+  "path_of_interest": "find_order > get_order",
+  "path_distribution": {
+    "find_order > get_order": 44
+  },
+  "measured_p_on_path": 1.0,
+  "task_oracle": "PASS 44/44",
+  "split_rates": {
+    "REGRESSION": 0.0,
+    "INCONCLUSIVE": 0.0,
+    "NO_REGRESSION": 1.0,
+    "UNKNOWN": 0.0
+  },
+  "acceptance_false_regression_le_5pct": true
+}

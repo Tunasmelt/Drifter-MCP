@@ -1,0 +1,1 @@
+The most recent order for acme is **ord-7f3a91**, and its total is **$1,240**. I got this using only the orders tools: `find_order` returned the order ID and `get_order` returned the total.

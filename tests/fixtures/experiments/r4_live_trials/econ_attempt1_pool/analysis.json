@@ -1,0 +1,13 @@
+{
+  "task": "econ",
+  "pool_runs": 60,
+  "valid_runs": 0,
+  "exclusions": {
+    "run crashed (exit code 1)": 60
+  },
+  "path_of_interest": "econ_index_get_usage_by_country",
+  "path_distribution": {},
+  "measured_p_on_path": null,
+  "task_oracle": "UNKNOWN 0/0",
+  "splits": "not measurable: 0 valid runs < 40"
+}

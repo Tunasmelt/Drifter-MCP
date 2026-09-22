@@ -1,0 +1,16 @@
+{
+  "task": "variance",
+  "pool_runs": 60,
+  "valid_runs": 27,
+  "exclusions": {
+    "run crashed (exit code 1)": 33
+  },
+  "path_of_interest": "count_widgets",
+  "path_distribution": {
+    "count_widgets": 24,
+    "count_widgets > list_widgets": 3
+  },
+  "measured_p_on_path": 0.8888888888888888,
+  "task_oracle": "PASS 27/27",
+  "splits": "not measurable: 27 valid runs < 40"
+}

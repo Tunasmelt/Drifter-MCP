@@ -1,0 +1,1 @@
+Acme's most recent order is **ord-7f3a91**, and its total is **$1,240**. I used only the orders MCP tools: one call to find the order and one to get its total.

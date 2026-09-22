@@ -1,0 +1,24 @@
+{
+  "label": "POST-HOC, NOT PRE-REGISTERED -- pooled T3 attempts 1+2, exploratory",
+  "attempt_1_pool": 60,
+  "attempt_2_pool": 60,
+  "pooled_total_runs": 120,
+  "pooled_valid_runs": 55,
+  "exclusions": {
+    "run crashed (exit code 1)": 65
+  },
+  "path_of_interest": "count_widgets",
+  "path_distribution": {
+    "count_widgets": 49,
+    "count_widgets > list_widgets": 6
+  },
+  "measured_p_on_path": 0.8909090909090909,
+  "task_oracle": "PASS 55/55",
+  "split_rates": {
+    "REGRESSION": 0.001,
+    "INCONCLUSIVE": 0.1005,
+    "NO_REGRESSION": 0.8985,
+    "UNKNOWN": 0.0
+  },
+  "acceptance_false_regression_le_5pct": true
+}

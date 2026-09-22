@@ -1,0 +1,16 @@
+version: 1
+servers:
+- name: variance
+  command: ['REPO/.venv/Scripts/python.exe', 'VARIANCE_WORKSPACE/variance_server.py']
+record:
+  dir: .drifter/runs
+  redact: shape
+agent:
+  mode: http
+  env_var: DRIFTER_PROXY_URL
+  command: ['python', 'VARIANCE_WORKSPACE/agent_wrapper.py', '{task.prompt}']
+tasks:
+- id: t3
+  prompt: Using ONLY the variance MCP tools (do not use any other tools), how many widgets are currently in stock? Report just the number.
+  assert:
+    answer_matches: '(?i)\b(?:7|seven)\b'

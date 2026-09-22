@@ -1,0 +1,13 @@
+version: 1
+server: orders
+responses:
+- tool_name: find_order
+  arguments: {customer: acme}
+  result:
+    content: [{type: text, text: ord-7f3a91}]
+    isError: false
+- tool_name: get_order
+  arguments: {order_id: ord-7f3a91}
+  result:
+    content: [{type: text, text: 'order ord-7f3a91 total: 1240 dollars'}]
+    isError: false

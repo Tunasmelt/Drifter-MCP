@@ -1,0 +1,17 @@
+version: 1
+servers:
+- name: orders
+  command: ['REPO/.venv/Scripts/python.exe', 'ORDERS_WORKSPACE/orders_server.py']
+record:
+  dir: .drifter/runs
+  redact: shape
+agent:
+  mode: http
+  env_var: DRIFTER_PROXY_URL
+  command: ['python', 'ORDERS_WORKSPACE/agent_wrapper.py', '{task.prompt}']
+tasks:
+- id: e2
+  prompt: Using ONLY the orders MCP tools (do not use any other tools), find the most recent order for the customer acme and report its total in dollars.
+  assert:
+    calls: [find_order, get_order]
+    answer_matches: '(?i)\b1,?240\b'

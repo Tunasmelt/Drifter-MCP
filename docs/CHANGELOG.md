@@ -144,6 +144,57 @@ measure the real false-alarm rate rather than a simulated one.
 
 ---
 
+## R4 live unchanged-agent trials: three tasks, pre-registered, bar met -- including in the region the simulation flagged
+
+All three tasks were pre-registered in `C:\Users\user\drifter-r4\PREREGISTRATION.txt`
+before any corpus or pool run, with amendments recorded there in place as each result
+came in, never as a silent retry. Evidence is bundled at
+`tests/fixtures/experiments/r4_live_trials` (517 files, raw frames excluded, fault
+codes extracted) and recomputed by `tests/evaluate/test_r4_live_trials_evidence.py`
+(11 tests, checked red by tampering three claims before restoring them).
+
+**Design.** Each task: 60 unmutated live runs through Drifter's own `make_run_once` +
+`run_baseline`, R1/R2 exclusions applied, then 2,000 seeded 20-vs-20 A/A splits scored
+by the real `compute_behavior_effect_size`. Bar: false REGRESSION <= 5%.
+
+**orders and econ.** Both came back agent p=1.0 -- the agent took the one sane path
+every time. Both accounts hit the platform's usage limit partway through (orders:
+44/60 valid; econ attempt 1: 0/60, re-recorded once per the pre-registered rule;
+attempt 2: 46/60 valid). False REGRESSION was 0.0% in both. The bar is met, but this
+only tests the rule where it is least likely to false-alarm -- p=1.0 is the simulation's
+own easiest cell.
+
+**variance: purpose-built to reach the untested region.** A new controlled server,
+`variance_server.py`, offers `list_widgets()` and `count_widgets()` as two equally
+valid, equally discoverable answers to one question, with neither tool description
+favoring either. The task prompt names neither tool and the oracle checks only the
+answer. Pre-registered explicitly as a genuine unknown: "if it comes back p=1.0 again,
+report it as such, do not retry with a different task designed to force variance,
+which would be p-hacking the very thing under test."
+
+The initial 4-session corpus was 4/4 `count_widgets`; one additional session, marked
+corpus-only and excluded from the 60-run pool, was recorded with an explicit
+instruction to call `list_widgets`, solely so the fixture could answer either tool
+(otherwise a pool run choosing it would simply miss).
+
+Both 60-run pool attempts hit the same usage limit (32 and 33 crashed) and landed
+below the 40-run split threshold individually (28 and 27 valid), each at p about
+0.89 -- the first real stochastic signal across all three tasks. Per the pre-registered
+rule, a result cut short by the platform limit is re-recorded once; a further,
+un-pre-registered third attempt was explicitly avoided as retry-until-satisfied
+practice.
+
+**Post-hoc, disclosed as such.** Because both attempts used the identical server,
+task, prompt, oracle, fixture and seed, differing only in which session recorded
+them, their valid runs were pooled (55 total) in an analysis recorded in
+`PREREGISTRATION.txt` as exploratory, not confirmatory, before it was run. Real
+p=0.891; false REGRESSION 0.1%, matching the simulation's own p=0.9 prediction
+(0.2%) closely. This is the only live evidence in the project at moderate agent
+consistency, and it is reported with that caveat everywhere it appears -- the docs,
+the manifest, and the test module docstring.
+
+---
+
 ## Fixture authoring and maintenance: `drifter fixture capture` / `check`
 
 Every experiment through limitation 23 used response fixtures written by hand or by a

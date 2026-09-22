@@ -1,0 +1,12 @@
+Japan's **Anthropic Usage Index is 1.91** (period ending 2026-05-01).
+
+The index is Japan's share of Claude usage divided by its share of the working-age population. A value of 1.0 means usage matches population size, so at 1.91 Japan uses Claude about 91% more than its population alone would predict. That puts it **32nd of 121** countries.
+
+I only queried the econ index MCP server (`econ_index_get_usage_by_country` with `JPN`). The one other call was the tool loader, which I needed before I could use that tool.
+
+Source and methodology: https://www.anthropic.com/economic-index
+
+You could also ask:
+- How does usage vary across Japan's regions?
+- Which job categories show up most in Japan's Claude usage?
+- How does Japan compare with South Korea?

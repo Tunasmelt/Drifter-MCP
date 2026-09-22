@@ -1,0 +1,5 @@
+Acme's most recent order is **ord-7f3a91**, and its total is **$1,240**.
+
+I got this using only the orders tools: `find_order` returned the order ID and `get_order` returned the total.
+
+Unrelated to this: several claude.ai connectors (Ahrefs, Google Drive, Stripe and others) need to be authorized in your claude.ai connector settings before they'll work. The Indeed connector also failed to connect because it hit a rate limit.

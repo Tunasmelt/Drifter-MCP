@@ -1,0 +1,14 @@
+Japan's **Anthropic Usage Index is 1.91** (data period: May 2026).
+
+This index is a country's share of Claude usage divided by its share of the working-age population. A score of 1.0 is the global average, so Japan uses Claude about 91% more than its population size alone would predict. That puts Japan **32nd of the 121 ranked countries**.
+
+Compared with the global average:
+- **Work, personal and coursework split:** work 47% (global 43%), personal 47% (global 40%), coursework 6% (global 16%).
+- **Augmentation vs. automation:** augmentation (Claude helping with a task) is 53% (global 51%). Automation (Claude doing the task) is 47% (global 49%).
+
+I only used the econ index tool. Source and methodology: https://www.anthropic.com/economic-index
+
+Possible follow-ups:
+- How does usage vary across regions within Japan?
+- Compare Japan with South Korea
+- Which job categories are most common in Japan's Claude usage?

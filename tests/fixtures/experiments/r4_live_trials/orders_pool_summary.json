@@ -1,0 +1,35 @@
+{
+  "task": "orders",
+  "task_id": "e2",
+  "server": "orders",
+  "repeats": 60,
+  "corpus": [
+    "ORDERS_WORKSPACE\\.drifter\\runs\\5cba3f15a7db4ca1a8fbca7e2bbc7363.jsonl",
+    "ORDERS_WORKSPACE\\.drifter\\runs\\7a44fdbf314f4eeea379cce0859bb0bc.jsonl"
+  ],
+  "assertions": "TaskAssertions(calls=('find_order', 'get_order'), calls_before=(), never_calls=(), result_has_keys={}, no_errors=False, answer_matches='(?i)\\\\b1,?240\\\\b')",
+  "total_runs": 60,
+  "valid_runs": 44,
+  "variant_frequencies": {
+    "find_order > get_order": 44
+  },
+  "excluded": [
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)",
+    "run crashed (exit code 1)"
+  ],
+  "elapsed_s": 1741.1
+}
