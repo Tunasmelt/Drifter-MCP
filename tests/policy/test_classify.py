@@ -55,9 +55,19 @@ def test_not_read_only_and_destructive_classifies_as_destructive():
     assert classify_tool(tool) == Classification(risk="destructive", source="mcp_annotation")
 
 
-def test_not_read_only_not_destructive_and_idempotent_is_reversible_write():
+def test_idempotent_hint_does_not_imply_reversible_write():
+    """docs/PHASES.md R5: idempotence and reversibility are different
+    properties -- `idempotentHint: true` means calling the tool twice with
+    the same arguments has the same effect as calling it once (MCP's own
+    definition), not that the effect can be undone. `set_password(new)` is
+    idempotent (call it twice, same end state) but NOT reversible (the old
+    password is gone). Nothing in the MCP annotation set actually signals
+    reversibility, so this tier must never manufacture "reversible_write"
+    out of idempotence -- the safe, honest answer for a non-destructive
+    write with no reversibility signal is `irreversible_write`, same as
+    when idempotentHint is absent entirely."""
     tool = _tool("set_flag", annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True})
-    assert classify_tool(tool) == Classification(risk="reversible_write", source="mcp_annotation")
+    assert classify_tool(tool) == Classification(risk="irreversible_write", source="mcp_annotation")
 
 
 def test_not_read_only_not_destructive_and_not_idempotent_is_irreversible_write():

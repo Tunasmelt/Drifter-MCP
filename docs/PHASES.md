@@ -1365,7 +1365,24 @@ tasks can pick a path that belongs to a different task; the report shows P so th
       the tool again (e.g. stuck in its own compute) is not torn down.
       Same limitation as before this fix, just narrower in scope (it now
       only applies between calls, not between whole repeats).
-- [ ] Correct the idempotence-implies-reversibility assumption in the safety model.
+- [x] Correct the idempotence-implies-reversibility assumption in the safety model.
+      `policy/classify.py`'s tier 1 (MCP annotations) had `idempotentHint: true` ->
+      `"reversible_write"`, `idempotentHint` absent/`false` -> `"irreversible_write"`.
+      Wrong: idempotence (MCP's own definition — calling twice with the same
+      arguments has the same effect as calling once) says nothing about whether an
+      effect can be UNDONE. `set_password(new)` is idempotent but not reversible —
+      the old password is simply gone. No MCP annotation actually signals
+      reversibility. Fixed by never producing `"reversible_write"` from this tier: a
+      non-destructive write with `destructiveHint: false` now always resolves to
+      `"irreversible_write"` regardless of `idempotentHint`, the same safe answer as
+      when the hint is absent — matching the taxonomy's own "unsafe by default"
+      philosophy (docs/SPEC.md §10) rather than inventing a reversibility signal that
+      doesn't exist. Tier 2 (name heuristics, e.g. `update_`/`set_`/`patch_` ->
+      `"reversible_write"`) is untouched — that tier's classification never claimed
+      to be derived from idempotence in the first place. Caught with a red-test-first
+      fix per CLAUDE.md's procedure: replaced the test asserting the old (wrong)
+      behavior with one asserting the corrected behavior, confirmed it failed against
+      the unmodified classifier, then fixed `classify.py`.
 - [ ] Report unknown safety classifications explicitly rather than silently.
 - [ ] Fix working-directory/relative-path handling, HTTP configuration, and add strict
       config validation.

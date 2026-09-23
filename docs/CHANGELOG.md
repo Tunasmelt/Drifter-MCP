@@ -6,6 +6,32 @@ not just a diff.
 
 ---
 
+## R5: safety model — idempotence no longer implies reversibility
+
+`policy/classify.py`'s MCP-annotation tier mapped `idempotentHint: true` to
+`"reversible_write"` (and its absence/`false` to `"irreversible_write"`). This
+conflated two different properties. Idempotence, per MCP's own definition, means
+calling a tool twice with the same arguments produces the same effect as calling it
+once — nothing about whether that effect can be undone. `set_password(new_password)`
+is a clean counterexample: idempotent (call it twice, same end state), but not
+reversible (the previous password isn't recoverable). No MCP annotation actually
+carries a reversibility signal.
+
+Fixed so this tier never manufactures `"reversible_write"` from idempotence: a
+non-destructive write (`destructiveHint: false`) with no other signal now always
+resolves to `"irreversible_write"`, matching what already happens when
+`idempotentHint` is simply absent — the same safe default the taxonomy already
+prescribes for "no confident signal" (docs/SPEC.md §10). Name-heuristic tier 2 (e.g.
+`update_`/`set_`/`patch_` prefixes → `"reversible_write"`) is unaffected; it was never
+derived from idempotence.
+
+Found and fixed per CLAUDE.md's required procedure for this kind of correction: the
+existing test asserting the old (wrong) mapping was replaced with one asserting the
+corrected mapping, confirmed red against the unmodified classifier, then the fix was
+made.
+
+---
+
 ## R5: enforce budgets DURING execution, not just between repeats
 
 `BudgetTracker` previously only counted a repeat's spent calls after `run_once`

@@ -98,9 +98,18 @@ def _classify_from_annotations(tool: ToolDescriptor) -> Classification | None:
         if destructive is True:
             return Classification(risk="destructive", source="mcp_annotation")
         if destructive is False:
-            idempotent = annotations.get("idempotentHint")
-            risk = "reversible_write" if idempotent is True else "irreversible_write"
-            return Classification(risk=risk, source="mcp_annotation")
+            # docs/PHASES.md R5, corrected bug: idempotence and reversibility
+            # are different properties. `idempotentHint: true` (MCP's own
+            # definition) means calling the tool twice with the same
+            # arguments has the same effect as calling it once -- it says
+            # nothing about whether that effect can be UNDONE.
+            # `set_password(new)` is idempotent but not reversible; the old
+            # password is simply gone. No MCP annotation actually signals
+            # reversibility, so this tier must never manufacture
+            # "reversible_write" out of idempotence -- a non-destructive
+            # write with no reversibility signal is `irreversible_write`,
+            # the same safe answer as when idempotentHint is absent.
+            return Classification(risk="irreversible_write", source="mcp_annotation")
         # destructiveHint absent: read_only is explicitly False but nothing
         # says whether it's destructive -- genuinely ambiguous, not a case
         # to guess at using the MCP SDK's own client-facing default value.
