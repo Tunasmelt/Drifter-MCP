@@ -10,16 +10,51 @@ one thing this project can actually count from recorded sessions — not a
 literal model-call counter, which would require visibility Drifter
 structurally does not have.
 
-Enforcement shape, stated precisely because it's a real, checked limitation,
-not silently glossed over: budget/wall-time is checked BEFORE each repeat
-starts, never mid-run. A real agent subprocess, once spawned, is never
-preemptively killed partway through for exceeding a budget — that would
-need this module to reach into `cli/subprocess_adapter.py`'s live process
-management, real, separate design work not attempted here. The repeat that
-crosses the threshold still completes and its calls count toward the total;
-every repeat AFTER that is skipped before it's ever spawned. This is the
-honest, buildable approximation of "aborts cleanly, stops mid-execution" —
-stops starting NEW work, not stops IN-FLIGHT work.
+Enforcement shape, updated under docs/PHASES.md R5 (the original text below is
+kept because the distinction it draws still matters, just not where the line
+used to fall):
+
+Originally, budget/wall-time was checked BEFORE each repeat starts only,
+never mid-run — a hanging or looping agent inside one repeat could make an
+unbounded number of tool calls (replay answers with no real latency, so
+`--budget 10` was no defense at all against one repeat making thousands of
+calls within its `timeout_s` window). Found while working R5's "enforce
+budgets DURING execution, including hanging and invalid calls" item, and
+confirmed a real gap: `_count_tool_calls` only ran AFTER a repeat's session
+file existed, so nothing inside a repeat's own tool-call loop ever consulted
+the budget at all.
+
+Fixed: `BudgetTracker` is now optionally threaded all the way down to
+`replay/replay_proxy.py`'s `on_call_tool` (the same trailing-optional-
+parameter pattern `corpus_facts`/`authored_responses` already use), which
+calls `record_call()` — a live, immediate increment, checked against the
+limit BEFORE every single tool call is answered, not just before every
+repeat starts. Once exhausted mid-repeat, every FURTHER call in that SAME
+repeat is rejected near-instantly (`REPLAY_BUDGET_EXCEEDED_CODE`, a
+distinct, recorded fault) rather than served — so a hanging/looping agent
+cannot keep spending real budget once the limit is hit, even mid-repeat.
+
+What is still NOT attempted, deliberately, same as before: the agent
+subprocess itself is never preemptively killed the instant budget is
+exhausted — closing the connection mid-call from inside a request handler
+risks leaving an in-flight response undelivered, real separate design work.
+The already-hung process keeps running until it gives up on its own or its
+own `timeout_s` elapses (unchanged, proven-correct machinery from R1); it
+simply cannot do any more REAL work — every further call costs nothing and
+teaches it nothing — once the shared budget is spent. This is the honest,
+buildable meaning of "aborts cleanly, stops mid-execution": stops doing
+useful work immediately, stops spawning NEW repeats immediately, without a
+forced process kill this turn either.
+
+Because counting is now live (via `record_call()`, called once per real
+tool-call attempt from inside the proxy — including a call the proxy
+REJECTS, matching `_count_tool_calls`'s own established "invalid calls
+count too" behavior), the previous post-hoc `record(path)` — which re-read
+a whole finished session file to count its `ToolCall` records after the
+fact — is redundant when `budget` was actually threaded through, and is
+kept only as the correct count for a caller that has NOT wired live
+tracking (a legitimate case: not every `run_once` caller passes the tracker
+into the proxy).
 
 `BudgetExceededError` is raised from a wrapped `run_once` callable
 (`budget_limited`) — `evaluate.baseline.run_baseline`'s existing loop
@@ -101,18 +136,47 @@ class BudgetTracker:
     def record(self, session_path: Path) -> None:
         self.spent_tool_calls += _count_tool_calls(session_path)
 
+    def record_call(self) -> None:
+        """docs/PHASES.md R5: live, immediate accounting for ONE real
+        tool-call ATTEMPT, called from inside `replay/replay_proxy.py`'s
+        `on_call_tool` — not `replay/`-imported directly (see that module's
+        own note on why: it must not import from `policy/`, which is
+        downstream of it in this project's module order); `cli/run.py`
+        passes this bound method down as a plain callable instead, the same
+        shape `inverse_map`/`corpus_facts` are already threaded in.
 
-def budget_limited(run_once: Callable[[], Path], tracker: BudgetTracker) -> Callable[[], Path]:
+        Counts an attempt whether it resolves as a HIT, a MISS, a schema
+        rejection, or a budget rejection itself — matching `record()`'s own
+        `_count_tool_calls`, which counts every recorded `ToolCall`
+        (including faulted ones) with no exceptions. The two must agree:
+        whichever one a given caller actually uses (see `budget_limited`'s
+        `count_after`), the resulting `spent_tool_calls` means the same
+        thing either way.
+        """
+        self.spent_tool_calls += 1
+
+
+def budget_limited(run_once: Callable[[], Path], tracker: BudgetTracker, count_after: bool = True) -> Callable[[], Path]:
     """Wraps a `run_once: Callable[[], Path]` (e.g. `cli.subprocess_adapter.
     make_run_once`'s return value) so `evaluate.baseline.run_baseline`'s
     existing repeat loop stops starting new agent subprocesses once
     `tracker`'s budget is spent — no changes to `run_baseline` itself.
+
+    `count_after=False` (docs/PHASES.md R5): when the SAME `tracker` was also
+    threaded into `run_once` itself (via `tracker.exceeded`/`tracker.record_call`
+    passed down to the replay proxy, enforcing the budget DURING execution,
+    not just between repeats), counting is already live and correct by the
+    time `run_once()` returns — re-counting here from the finished session
+    file would double the total. `count_after=True` (the default) preserves
+    the original, simpler behavior for any caller that has NOT wired live
+    tracking through the proxy.
     """
 
     def wrapped() -> Path:
         tracker.check()
         path = run_once()
-        tracker.record(path)
+        if count_after:
+            tracker.record(path)
         return path
 
     return wrapped

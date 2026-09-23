@@ -267,8 +267,15 @@ def run_mutation_comparison(
             env_var=agent_env_var,
             corpus_facts=facts,
             authored_responses=authored,
+            # docs/PHASES.md R5: enforces the budget DURING execution too, not
+            # just between repeats -- see policy/budget.py's own updated
+            # module docstring. `count_after=False` below because these two
+            # bound methods now count live, from inside the proxy.
+            budget_exceeded=tracker.exceeded,
+            budget_record=tracker.record_call,
         ),
         tracker,
+        count_after=False,
     )
     baseline_result = run_baseline(task_id, baseline_run_once, repeats=repeats, calibration=calibration)
 
@@ -310,8 +317,11 @@ def run_mutation_comparison(
             inverse_map=inverse_map,
             corpus_facts=facts,
             authored_responses=authored,
+            budget_exceeded=tracker.exceeded,
+            budget_record=tracker.record_call,
         ),
         tracker,
+        count_after=False,
     )
     mutated_task_id = f"{task_id}__mutated_{operator}"
     effective_repeats = repeats if repeats is not None else calibration.baseline.repeats

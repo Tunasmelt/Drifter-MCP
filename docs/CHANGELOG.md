@@ -6,6 +6,44 @@ not just a diff.
 
 ---
 
+## R5: enforce budgets DURING execution, not just between repeats
+
+`BudgetTracker` previously only counted a repeat's spent calls after `run_once`
+returned (`policy/budget.py`'s `budget_limited`), so a hanging or looping repeat could
+spend calls with nothing checking the budget until the whole repeat finished. Fixed by
+having `replay/replay_proxy.py`'s `on_call_tool` check the budget itself, live, as the
+first thing it does on every `tools/call` — before schema/lookup work — and reject with
+a new `REPLAY_BUDGET_EXCEEDED_CODE = -31005` (distinct from, and outside the reserved
+band shared with, the other four replay error codes) instead of serving the call.
+
+Because `replay/` sits upstream of `policy/` in this project's strict module dependency
+order (`record/` → `replay/` → `mutate/` → `evaluate/` → `mine/` → `policy/` → `cli/`,
+CLAUDE.md) and must never import from it, the proxy takes two plain callables
+(`budget_exceeded: Callable[[], bool]`, `budget_record: Callable[[], None]`) instead of
+a `BudgetTracker` reference — the same pattern already used for `corpus_facts`/
+`authored_responses`/`inverse_map`. `cli/run.py` is where `BudgetTracker` and the proxy
+actually meet, so it binds `tracker.exceeded`/`tracker.record_call` and threads them
+through `make_run_once` → `run_agent_subprocess`/`run_agent_subprocess_http` →
+`run_replay_proxy`/`serve_replay_over_http`. `budget_limited`'s pre-existing post-hoc
+`tracker.record(path)` call would double-count once live tracking is wired in, so it
+now takes `count_after: bool = True` (default preserves all prior behavior/tests
+unchanged), and `cli/run.py` passes `count_after=False` at both the baseline and
+mutated arm call sites.
+
+Proven with a real in-process proxy integration test, not just a passing happy path:
+`test_a_call_beyond_the_live_budget_is_rejected_mid_run_not_served`
+(`tests/replay/test_replay_proxy.py`) drives a real `ClientSession` against
+`run_replay_proxy` with a budget of one call — the first `tools/call` is served
+normally, the second is rejected with `REPLAY_BUDGET_EXCEEDED_CODE`, and the rejection
+itself is confirmed not to also count as a spent call.
+
+Deliberately still out of scope, same as before this fix, just narrower in where it
+applies: forcibly killing the agent subprocess the instant its budget is exhausted. The
+agent's *next* tool call is rejected; a subprocess that never calls again (stuck in its
+own compute, or done and just slow to exit) is not torn down.
+
+---
+
 ## R3: replay correctness — tier/provenance/outcome pinned, unknown-tool errors, explicit $ref handling, timestamp-ordered corpus indexing, semantic flagged exploratory
 
 Five items, one already closed (no-op mutation rejection, `c44ed82`). All five now done.

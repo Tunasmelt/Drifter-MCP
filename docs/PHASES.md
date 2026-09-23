@@ -1333,7 +1333,38 @@ tasks can pick a path that belongs to a different task; the report shows P so th
 
 ### R5 — Operational boundaries and onboarding
 
-- [ ] Enforce budgets DURING execution, including hanging and invalid calls.
+- [x] Enforce budgets DURING execution, including hanging and invalid calls.
+      Previously `BudgetTracker` only counted a repeat's calls AFTER
+      `run_once` returned (`policy/budget.py`'s `budget_limited`) — a
+      hanging or looping repeat could burn calls without limit, since
+      nothing checked the budget until the whole repeat finished (or timed
+      out). Since `replay/` sits upstream of `policy/` in this project's
+      module dependency order (CLAUDE.md) and must never import from it,
+      the fix threads two plain callables — `budget_exceeded: Callable[[],
+      bool]`, `budget_record: Callable[[], None]` — from `cli/run.py`
+      (where `BudgetTracker` and the proxy actually meet) down through
+      `make_run_once` → `run_agent_subprocess`/`run_agent_subprocess_http`
+      → `run_replay_proxy`/`serve_replay_over_http` → `on_call_tool`, which
+      now checks `budget_exceeded()` as the FIRST thing it does on every
+      `tools/call`, before any schema/lookup work, and rejects with the new
+      `REPLAY_BUDGET_EXCEEDED_CODE = -31005` (outside the reserved JSON-RPC
+      band, confirmed distinct from all four other replay codes) rather
+      than serving the call. `BudgetTracker.record_call()` is the live
+      counterpart bound in; `budget_limited`'s existing post-hoc
+      `tracker.record(path)` would otherwise double-count once live
+      tracking is wired, so it now takes `count_after: bool = True` and
+      `cli/run.py` passes `count_after=False` at both call sites (baseline
+      and mutated arms). Proven with a real in-process proxy integration
+      test (`test_a_call_beyond_the_live_budget_is_rejected_mid_run_not_served`,
+      `tests/replay/test_replay_proxy.py`) — a call within budget is served
+      normally, the next call is rejected mid-repeat with
+      `REPLAY_BUDGET_EXCEEDED_CODE`, and the rejection itself doesn't
+      double-count. What this deliberately still does NOT do: forcibly
+      kill the agent subprocess the instant its budget is exhausted — the
+      agent's *next* call is rejected, but a subprocess that never calls
+      the tool again (e.g. stuck in its own compute) is not torn down.
+      Same limitation as before this fix, just narrower in scope (it now
+      only applies between calls, not between whole repeats).
 - [ ] Correct the idempotence-implies-reversibility assumption in the safety model.
 - [ ] Report unknown safety classifications explicitly rather than silently.
 - [ ] Fix working-directory/relative-path handling, HTTP configuration, and add strict

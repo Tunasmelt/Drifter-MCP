@@ -26,7 +26,13 @@ from mcp.shared.memory import create_client_server_memory_streams
 
 from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.schema import ToolDescriptor, ToolCall
-from mcp_drifter.replay.replay_proxy import REPLAY_FAULT_CODE, REPLAY_MISS_CODE, run_replay_proxy, tools_served_from_session
+from mcp_drifter.replay.replay_proxy import (
+    REPLAY_BUDGET_EXCEEDED_CODE,
+    REPLAY_FAULT_CODE,
+    REPLAY_MISS_CODE,
+    run_replay_proxy,
+    tools_served_from_session,
+)
 from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore, replay_key
 
 GOLDEN_FIXTURE = Path(__file__).parent.parent / "fixtures" / "golden_v0.1.jsonl"
@@ -316,6 +322,7 @@ def test_replay_error_codes_never_collide_with_any_mcp_types_defined_code():
     import mcp_types as types
 
     from mcp_drifter.replay.replay_proxy import (
+        REPLAY_BUDGET_EXCEEDED_CODE,
         REPLAY_FAULT_CODE,
         REPLAY_INVALID_ARGS_CODE,
         REPLAY_MISS_CODE,
@@ -327,14 +334,20 @@ def test_replay_error_codes_never_collide_with_any_mcp_types_defined_code():
         for name in dir(types)
         if name.isupper() and isinstance(getattr(types, name), int) and getattr(types, name) < 0
     }
-    all_codes = (REPLAY_MISS_CODE, REPLAY_FAULT_CODE, REPLAY_INVALID_ARGS_CODE, REPLAY_UNKNOWN_TOOL_CODE)
+    all_codes = (
+        REPLAY_MISS_CODE,
+        REPLAY_FAULT_CODE,
+        REPLAY_INVALID_ARGS_CODE,
+        REPLAY_UNKNOWN_TOOL_CODE,
+        REPLAY_BUDGET_EXCEEDED_CODE,
+    )
     for code in all_codes:
         assert code not in reserved_codes
         # Outside JSON-RPC 2.0's entire reserved band outright (not just
         # the codes mcp_types happens to define today).
         assert not (-32768 <= code <= -32000)
-    # And distinct from each other -- four codes meaning four different
-    # things must never collapse to fewer than four values.
+    # And distinct from each other -- five codes meaning five different
+    # things must never collapse to fewer than five values.
     assert len(set(all_codes)) == len(all_codes)
 
 
@@ -385,6 +398,80 @@ async def test_recorded_fault_replays_as_a_protocol_error_distinct_from_miss(tmp
                     await session.call_tool("flaky_tool", {})
                 assert exc_info.value.code == REPLAY_FAULT_CODE
                 assert exc_info.value.code != REPLAY_MISS_CODE
+            tg.cancel_scope.cancel()
+
+
+@pytest.mark.anyio
+async def test_a_call_beyond_the_live_budget_is_rejected_mid_run_not_served(tmp_path):
+    """docs/PHASES.md R5: budget enforcement must happen DURING execution,
+    not just between repeats -- a mutated arm that starts hanging or
+    looping mid-repeat must still be cut off after its Nth call, not
+    after the whole repeat completes. `budget_exceeded`/`budget_record`
+    are plain callables (see REPLAY_BUDGET_EXCEEDED_CODE's own docstring
+    for why `replay/` can't import `policy.BudgetTracker` directly) --
+    this test fakes them with a simple counter to prove the wiring
+    inside `on_call_tool` itself, independent of `BudgetTracker`'s own
+    unit tests.
+    """
+    import json
+
+    session_id = "budget_sess"
+    lines = [
+        {
+            "schema_version": "0.1", "record_type": "session_start", "session_id": session_id, "seq": 0,
+            "started_at": "2026-08-25T00:00:00Z",
+            "environment": {"agent_identity": None, "model_name": None, "server_versions": {},
+                             "tool_manifest_hash": "h", "fingerprint": "f"},
+            "raw_frame_offset": 0,
+        },
+        {
+            "schema_version": "0.1", "record_type": "tool_call", "session_id": session_id, "seq": 1,
+            "timestamp": "2026-08-25T00:00:01Z", "server": "srv", "tool_name": "cheap_tool",
+            "arguments": {}, "result_shape": None, "is_error": False, "duration_ms": 1.0, "fault": False,
+            "result_provenance": "real", "references": [], "mutation_inverse": None, "raw_frame_offset": 100,
+        },
+    ]
+    path = tmp_path / "budget.jsonl"
+    path.write_text("\n".join(json.dumps(line) for line in lines) + "\n", encoding="utf-8")
+
+    store = ReplayStore()
+    store.index_session(path)
+    tools_served = [ToolDescriptor(name="cheap_tool", description="d", input_schema={"type": "object"})]
+
+    calls_made = 0
+
+    def budget_record() -> None:
+        nonlocal calls_made
+        calls_made += 1
+
+    def budget_exceeded() -> bool:
+        return calls_made >= 1
+
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(
+                functools.partial(
+                    run_replay_proxy,
+                    *server_streams,
+                    store,
+                    "srv",
+                    tools_served,
+                    budget_exceeded=budget_exceeded,
+                    budget_record=budget_record,
+                )
+            )
+            async with ClientSession(*client_streams) as session:
+                await session.initialize()
+                # First call: budget not yet exceeded -- served normally.
+                await session.call_tool("cheap_tool", {})
+                assert calls_made == 1
+                # Second call: budget_exceeded() now reports True -- rejected
+                # BEFORE any lookup, not served from the recording.
+                with pytest.raises(MCPError) as exc_info:
+                    await session.call_tool("cheap_tool", {})
+                assert exc_info.value.code == REPLAY_BUDGET_EXCEEDED_CODE
+                # Rejection must not itself count as a spent call.
+                assert calls_made == 1
             tg.cancel_scope.cancel()
 
 

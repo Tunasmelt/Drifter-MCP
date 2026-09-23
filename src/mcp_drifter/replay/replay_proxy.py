@@ -88,6 +88,7 @@ breakdown for replay-served runs is fidelity-computation territory
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from itertools import count
 from pathlib import Path
 
@@ -133,6 +134,18 @@ REPLAY_FAULT_CODE = -31002
 # would let a schema violation look like thin recording coverage, which is
 # the opposite of what it is -- it is the mutation working.
 REPLAY_INVALID_ARGS_CODE = -31003
+# docs/PHASES.md R5: the shared BudgetTracker (policy/budget.py) says no
+# further tool calls should be answered THIS run. Distinct from every other
+# code: this is not about the CALL at all (a real server would happily
+# accept it) -- it's Drifter's own harness declining to spend more real
+# cost. `replay/` must not import `policy.budget.BudgetExceededError`
+# (policy/ sits downstream of replay/ in this project's module order,
+# matching replay_store.py's own note on the same constraint) -- the
+# budget interface crossing into this module is two plain callables
+# instead (`budget_exceeded`/`budget_record`, below), the same
+# "generic-shaped parameter, no policy-specific import" pattern
+# `inverse_map` already uses for mutate.parameter_rename.
+REPLAY_BUDGET_EXCEEDED_CODE = -31005
 # docs/PHASES.md R3: a call to a tool NAME not in the served manifest at all
 # (not "these arguments are wrong for a real tool" -- "no such tool exists
 # here"). Before this, an unknown name fell straight through to
@@ -291,6 +304,8 @@ def build_replay_server(
     synthesize_on_miss: bool = False,
     corpus_facts: CorpusFacts | None = None,
     authored_responses: AuthoredResponses | None = None,
+    budget_exceeded: Callable[[], bool] | None = None,
+    budget_record: Callable[[], None] | None = None,
 ) -> Server:
     """Builds the `mcp.server.lowlevel.Server` app that answers a session
     entirely from `replay_store`/`tools_served` — extracted out of
@@ -458,6 +473,23 @@ def build_replay_server(
             JSONRPCRequest(jsonrpc="2.0", id=req_id, method="tools/call", params={"name": params.name, "arguments": arguments}),
         )
 
+        # docs/PHASES.md R5: checked FIRST, before any other question about
+        # this call -- a harness-level circuit breaker, not a fact about
+        # the call itself (see REPLAY_BUDGET_EXCEEDED_CODE's own comment
+        # above). Once exhausted, every FURTHER call THIS run is rejected
+        # near-instantly rather than served -- closing the real gap the
+        # between-repeats-only check left open: a hanging or looping agent
+        # inside one repeat previously had no budget enforcement at all
+        # until the NEXT repeat's boundary, and replay answers with no real
+        # latency, so `--budget 10` was no defense against one repeat
+        # making thousands of calls within its own timeout window.
+        if budget_exceeded is not None and budget_exceeded():
+            message = f"budget exhausted: no further tool calls will be answered this run for {server_name}.{params.name}"
+            _emit(Direction.SERVER_TO_AGENT, JSONRPCError(jsonrpc="2.0", id=req_id, error=ErrorData(code=REPLAY_BUDGET_EXCEEDED_CODE, message=message)))
+            raise MCPError(code=REPLAY_BUDGET_EXCEEDED_CODE, message=message)
+        if budget_record is not None:
+            budget_record()
+
         # docs/PHASES.md R3: a name not in the served manifest at all is a
         # structural error distinct from "these arguments are wrong for a
         # real tool" (REPLAY_INVALID_ARGS_CODE) and from "this exact call
@@ -551,6 +583,8 @@ async def run_replay_proxy(
     synthesize_on_miss: bool = False,
     corpus_facts: CorpusFacts | None = None,
     authored_responses: AuthoredResponses | None = None,
+    budget_exceeded: Callable[[], bool] | None = None,
+    budget_record: Callable[[], None] | None = None,
 ) -> None:
     """Serves one MCP session over `read_stream`/`write_stream` entirely
     from `replay_store` and `tools_served`. Stream-parameterized (matching
@@ -619,5 +653,8 @@ async def run_replay_proxy(
     same app across many connections instead of one `server.run()` per
     stream pair.
     """
-    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, synthesize_on_miss, corpus_facts, authored_responses)
+    server = build_replay_server(
+        replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map,
+        synthesize_on_miss, corpus_facts, authored_responses, budget_exceeded, budget_record,
+    )
     await server.run(read_stream, write_stream, server.create_initialization_options())

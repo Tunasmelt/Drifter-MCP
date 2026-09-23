@@ -94,7 +94,7 @@ Four scope decisions, stated explicitly rather than discovered mid-review:
 from __future__ import annotations
 
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 import anyio
@@ -130,6 +130,8 @@ def make_run_once(
     inverse_map: dict[str, dict[str, str]] | None = None,
     corpus_facts: CorpusFacts | None = None,
     authored_responses: AuthoredResponses | None = None,
+    budget_exceeded: Callable[[], bool] | None = None,
+    budget_record: Callable[[], None] | None = None,
 ):
     """Binds `run_agent_subprocess`'s (or, for `agent_mode="http"`,
     `run_agent_subprocess_http`'s — F-38) fixed parameters once and
@@ -212,6 +214,8 @@ def make_run_once(
                 inverse_map,
                 corpus_facts,
                 authored_responses,
+                budget_exceeded,
+                budget_record,
             )
         return anyio.run(
             run_agent_subprocess,
@@ -228,6 +232,8 @@ def make_run_once(
             inverse_map,
             corpus_facts,
             authored_responses,
+            budget_exceeded,
+            budget_record,
         )
 
     return run_once
@@ -287,6 +293,8 @@ async def run_agent_subprocess(
     inverse_map: dict[str, dict[str, str]] | None = None,
     corpus_facts: CorpusFacts | None = None,
     authored_responses: AuthoredResponses | None = None,
+    budget_exceeded: Callable[[], bool] | None = None,
+    budget_record: Callable[[], None] | None = None,
 ) -> Path:
     """Spawns `command` (an already-resolved argv — templating and
     config-loading are the caller's job, see module docstring point 1),
@@ -331,6 +339,8 @@ async def run_agent_subprocess(
                 False,
                 corpus_facts,
                 authored_responses,
+                budget_exceeded,
+                budget_record,
             )
 
             with anyio.move_on_after(timeout_s) as wait_scope:
@@ -402,6 +412,8 @@ async def run_agent_subprocess_http(
     inverse_map: dict[str, dict[str, str]] | None = None,
     corpus_facts: CorpusFacts | None = None,
     authored_responses: AuthoredResponses | None = None,
+    budget_exceeded: Callable[[], bool] | None = None,
+    budget_record: Callable[[], None] | None = None,
 ) -> Path:
     """The `mode: http` sibling of `run_agent_subprocess` (F-38, docs/SPEC.md
     §5.1): instead of wiring the spawned agent's own stdin/stdout to an
@@ -428,7 +440,7 @@ async def run_agent_subprocess_http(
 
     async with serve_replay_over_http(
         replay_store, server_name, tools_served, recorder.observe, synthetic_tool_names, inverse_map,
-        corpus_facts, authored_responses,
+        corpus_facts, authored_responses, budget_exceeded=budget_exceeded, budget_record=budget_record,
     ) as url:
         # Found empirically, not assumed: passing env=None straight
         # through to anyio.open_process (as run_agent_subprocess's own

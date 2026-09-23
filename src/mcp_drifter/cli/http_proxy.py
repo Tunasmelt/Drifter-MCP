@@ -39,7 +39,7 @@ spawned agent's environment, with no polling or race.
 from __future__ import annotations
 
 import socket
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 
 import anyio
@@ -112,6 +112,8 @@ async def serve_replay_over_http(
     corpus_facts: CorpusFacts | None = None,
     authored_responses: AuthoredResponses | None = None,
     host: str = "127.0.0.1",
+    budget_exceeded: Callable[[], bool] | None = None,
+    budget_record: Callable[[], None] | None = None,
 ) -> AsyncIterator[str]:
     """Serves a replay session over real Streamable HTTP for the
     lifetime of this context manager, yielding the real, loopback-bound
@@ -158,7 +160,10 @@ async def serve_replay_over_http(
     AppStatus.disable_automatic_graceful_drain()
     AppStatus.should_exit = False
 
-    server = build_replay_server(replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map, False, corpus_facts, authored_responses)
+    server = build_replay_server(
+        replay_store, server_name, tools_served, on_message, synthetic_tool_names, inverse_map,
+        False, corpus_facts, authored_responses, budget_exceeded, budget_record,
+    )
     security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True,
         allowed_hosts=[f"{host}:*"],
