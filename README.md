@@ -18,8 +18,8 @@ offers **experimental** structural mutation and offline replay of the tool inter
 > That is one task, one operator, 4 runs per arm, and it shows capability preservation
 > being measured correctly — not yet that a real breaking change is detected.
 
-Console command: `drifter`. Install with `uv tool install mcp-drifter` — see
-[Install](#install).
+Console command: `drifter`. Not yet published to PyPI — see [Install](#install) for the
+current, source-based install.
 
 ## The problem
 
@@ -36,13 +36,14 @@ agent actually does with it, then reruns the same tasks against a deliberately
 mutated version of that server's interface — a reworded tool description, an added
 tool — replayed from your recordings, at zero marginal cost per replayed call.
 
-That is the goal, and the evidence so far is mixed. In a real run against Claude Code,
-replay let the agent reach the right file on every attempt while its request-match
-coverage scored 0.88 — and not one attempt answered the task, because the file's
-contents are not replayed. Drifter now reports that honestly (a baseline that cannot
-perform the task is flagged as inadequate, and an authored `answer_matches` oracle
-turns a wrong answer into TASK FAIL), but it means a clean behavioral verdict is not
-yet evidence that your agent still works.
+The evidence so far is genuine but partial. In a real run against Claude Code, replay
+let the agent reach the right file on every attempt while its request-match coverage
+scored 0.88 — yet no attempt answered the task, because tool contents aren't replayed
+by default. Drifter reports that honestly rather than papering over it: a baseline that
+can't perform the task is flagged as inadequate, and an authored `answer_matches`
+oracle turns a wrong answer into TASK FAIL. A clean behavioral verdict is not yet, on
+its own, evidence that your agent still works — see [Status](#status) for what is and
+isn't independently validated today.
 
 ## How it works
 
@@ -77,56 +78,79 @@ agent ──MCP──▶ drifter (replayed, mutated)        (drifter replay-serv
 
 ## Status
 
-Pre-v1, under active gated development (see [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/PHASES.md)).
-Gates 0–3 are closed:
+**Alpha, v1 feature-complete.** Every gate in the build plan is closed, including the
+release gate — a fresh install of the built package, outside this repository, running
+the full `init → doctor → observe → prepare fixture → baseline replay → mutation →
+report` workflow against three agents (an unchanged client, a deliberately unadapted
+one, and a real Claude Code session that reads a changed schema and recovers). Full
+history in [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/PHASES.md); not yet published to PyPI (see
+[Install](#install)).
 
-- **Record & replay** (`drifter observe`, exact-key replay, redaction, trajectory
-  segmentation) — built and tested.
-- **Baseline analysis & re-scoring** (`drifter score`) — re-analyzes already-recorded
-  data with zero new agent execution and zero API calls.
+- **Record & replay** (`drifter observe`, tiered replay resolution, redaction,
+  trajectory segmentation) — built and tested.
+- **Baseline analysis & re-scoring** (`drifter score`, `drifter coverage`) —
+  re-analyzes already-recorded data with zero new agent execution and zero API calls,
+  including a projected-coverage estimate you can check before spending anything.
 - **Mutation** (`description_update`, `tool_addition`, `parameter_rename`) — built,
   safety-reviewed (red-test-first against prompt-injection-shaped output), tested
   against a real agent.
 - **Orchestration** (`drifter run`) — baseline + one mutation operator + behavioral
-  comparison, run against a real dogfood pairing (Claude Code + a real filesystem MCP
-  server).
+  comparison, with a per-call budget enforced during execution (not just between
+  repeats) and a blast-radius preview required before any real agent process spawns.
 - **Setup** (`drifter init`) — scans `.mcp.json`/`.cursor/mcp.json`/Claude Desktop's
   config for existing stdio MCP servers and writes a starter `drifter.yaml`, so you
   don't have to hand-write your server list.
-- **Three verdict axes, one of them experimental** — Behavior (effect size vs.
-  baseline; **experimental**, see the scope note above), Task (opt-in assertions you
-  author, including an `answer_matches` outcome oracle on the agent's final answer),
-  Safety (evaluated on every run, never gated by the others).
-- **Cost controls** — blast-radius preview, budget/wall-time ceilings, projected
-  replay coverage before you spend, and adaptive scheduling that stops once the
-  verdict is provably settled.
+- **Three verdict axes, one of them experimental** — Behavior (a pre-registered
+  interval rule vs. a corpus-derived baseline path; **experimental**, see the scope
+  note above), Task (opt-in assertions you author, including an `answer_matches`
+  outcome oracle on the agent's final answer), Safety (evaluated on every run, never
+  gated by the others, and explicit about calls it couldn't classify rather than
+  silently passing them through).
+- **Cost controls** — blast-radius preview, budget/wall-time ceilings enforced live,
+  projected replay coverage before you spend, and adaptive scheduling that stops once
+  the verdict is provably settled.
+- **Tested across the matrix that matters** — both MCP protocol eras, both transports
+  (stdio and HTTP), and Python 3.11–3.13.
 
-Mutation mining/approval (`mine/`) is not built yet — see
+Mutation mining/approval (`mine/`) is out of scope for v1 — see
 [`docs/FEATURES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/FEATURES.md) for the complete per-feature breakdown and
 [`docs/SPEC.md` §15](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md) for known limitations, stated plainly, including
-two found only by testing against a real agent rather than a scripted stand-in.
+several found only by testing against a real agent rather than a scripted stand-in.
 
 ## Install
+
+**Not yet published to PyPI.** Install from a checkout for now:
+
+```
+git clone https://github.com/Tunasmelt/Drifter-MCP
+cd Drifter-MCP
+uv sync
+uv run drifter --help
+```
+
+Once a release is published, the standard install will be:
 
 ```
 uv tool install mcp-drifter    # or: pip install mcp-drifter
 drifter --help
 ```
 
-Then generate a starter config and calibration file in the directory you want to
-work in:
+Either way, generate a starter config and calibration file in the directory you want
+to work in:
 
 ```
 drifter init
 ```
 
 > **This is an alpha release.** The recording, replay, scoring and safety paths are
-> exercised end to end and independently validated. Behavioral regression detection
-> against a real (non-scripted) agent is *not* proven — see
+> exercised end to end and independently validated, including a full release-gate run
+> against a real headless Claude Code agent. Detecting a genuine regression via a real
+> (non-scripted) agent — as opposed to preserving capability, which the release gate
+> did prove — is *not yet* separately validated; see
 > [limitation 16](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md) and the "What is and isn't validated" section above.
 > Expect the interface to change.
 
-To work on Drifter itself, install from a checkout instead:
+To work on Drifter itself:
 
 ```
 git clone https://github.com/Tunasmelt/Drifter-MCP
@@ -200,15 +224,13 @@ agent:
   command: ["python", "agent_wrapper.py", "{task.prompt}"]
 ```
 
-If `agent_wrapper.py` launches Claude Code specifically, give the `claude -p` call an
-explicit `cwd` outside any directory with its own `CLAUDE.md`/auto-memory setup (e.g. the
-wrapper's own directory). Confirmed empirically, not assumed, during the release-gate exit
-test: without this, a session whose working directory happens to sit under such a project
-picks up that project's context and treats the task prompt as a continuation of an
-unrelated conversation — asking clarifying questions instead of just calling the tool —
-rather than as an isolated task. `--bare` looks like the fix but isn't: it also disables
-OAuth/keychain auth, so on an install authenticated via OAuth rather than
-`ANTHROPIC_API_KEY` it fails every run with "Not logged in."
+If `agent_wrapper.py` launches Claude Code specifically, pass the `claude -p` call an
+explicit `cwd` outside any directory with its own `CLAUDE.md` or auto-memory setup (the
+wrapper's own directory works well). Without it, a session whose working directory sits
+under such a project picks up that project's unrelated context instead of treating the
+prompt as an isolated task. `--bare` is not a substitute: it also disables OAuth/keychain
+auth, so an install authenticated via OAuth (rather than `ANTHROPIC_API_KEY`) fails every
+run with "Not logged in."
 
 Then:
 
