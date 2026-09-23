@@ -46,7 +46,10 @@ dependencies = [
     # traceback reach the user. Already present transitively via `mcp`
     # (confirmed via `uv pip list`), declared explicitly for the same reason
     # uvicorn/sse-starlette are above.
-    "httpx2>=2.10",
+    # >=2.12: 2.10.0 carries three known vulnerabilities (PYSEC-2026-3846/3848/3849),
+    # caught by CI's pip-audit step, not by hand -- 2.12.0 is the first release fixing
+    # all three at once (2.11.0 only closes 3849/3848).
+    "httpx2>=2.12",
 ]
 
 [project.urls]
