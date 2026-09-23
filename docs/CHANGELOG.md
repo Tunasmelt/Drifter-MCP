@@ -6,6 +6,27 @@ not just a diff.
 
 ---
 
+## Published: mcp-drifter 0.1.0 is on PyPI
+
+The four items the previous entry left for the user are done, in order. CI's dependency
+audit failed on the first push and was the one real obstacle: `httpx2` 2.10.0 (what
+`>=2.10` was resolving to) carries three known vulnerabilities (PYSEC-2026-3846, 3848,
+3849). Floor raised to `>=2.12`, the first release fixing all three; re-locked, audit clean,
+suite still 821 passed. (The 13 commits from this work had also never been pushed, which is
+why `Publish` didn't appear under Actions at first.)
+
+Then Trusted Publishing on both indexes, the two protected GitHub environments, a TestPyPI
+stage via `workflow_dispatch`, a fresh-venv install from TestPyPI, and finally a GitHub
+Release that ran `publish-pypi` behind the `pypi` reviewer gate, with attestations:
+https://pypi.org/project/mcp-drifter/. A clean-venv install from production PyPI resolves
+`mcp-drifter==0.1.0`, the `drifter` entry point runs, and `drifter init` in an empty
+directory fails actionably with exit code 4. README's Install section now leads with
+`uv tool install mcp-drifter`; its "not yet published" wording is gone. Token revocation is
+recorded as the user's confirmation, not an observation — it is a PyPI account action with
+no unattended check.
+
+---
+
 ## Publishing: Trusted Publishing workflow, build/install verified, three items left for the user
 
 docs/PHASES.md's Publishing checklist, worked as far as an agent responsibly can without

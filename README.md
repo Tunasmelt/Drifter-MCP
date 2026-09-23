@@ -18,8 +18,8 @@ offers **experimental** structural mutation and offline replay of the tool inter
 > That is one task, one operator, 4 runs per arm, and it shows capability preservation
 > being measured correctly — not yet that a real breaking change is detected.
 
-Console command: `drifter`. Not yet published to PyPI — see [Install](#install) for the
-current, source-based install.
+Console command: `drifter`. Install with `uv tool install mcp-drifter` — see
+[Install](#install).
 
 ## The problem
 
@@ -83,8 +83,8 @@ release gate — a fresh install of the built package, outside this repository, 
 the full `init → doctor → observe → prepare fixture → baseline replay → mutation →
 report` workflow against three agents (an unchanged client, a deliberately unadapted
 one, and a real Claude Code session that reads a changed schema and recovers). Full
-history in [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/PHASES.md); not yet published to PyPI (see
-[Install](#install)).
+history in [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/PHASES.md). Published to
+[PyPI](https://pypi.org/project/mcp-drifter/) as `mcp-drifter` 0.1.0.
 
 - **Record & replay** (`drifter observe`, tiered replay resolution, redaction,
   trajectory segmentation) — built and tested.
@@ -119,24 +119,15 @@ several found only by testing against a real agent rather than a scripted stand-
 
 ## Install
 
-**Not yet published to PyPI.** Install from a checkout for now:
-
-```
-git clone https://github.com/Tunasmelt/Drifter-MCP
-cd Drifter-MCP
-uv sync
-uv run drifter --help
-```
-
-Once a release is published, the standard install will be:
+Requires Python 3.11 or newer.
 
 ```
 uv tool install mcp-drifter    # or: pip install mcp-drifter
 drifter --help
 ```
 
-Either way, generate a starter config and calibration file in the directory you want
-to work in:
+Then generate a starter config and calibration file in the directory you want to work
+in:
 
 ```
 drifter init

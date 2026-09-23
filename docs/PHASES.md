@@ -1592,10 +1592,11 @@ Verified 2026-09-09: PyPI holds only the `0.0.1` placeholder; this checkout decl
 placeholder (which is why the earlier `0.1.0a1` proposal was rejected — pip ignores
 pre-releases by default).
 
-- [ ] **Confirm the previously-exposed API token is revoked.** Blocked on the user: this
-      is a PyPI account action (pypi.org → Account settings → API tokens) with no
-      unattended equivalent — an agent should never hold or check PyPI credentials on the
-      user's behalf. Needs explicit confirmation before any production publish below.
+- [x] **Confirm the previously-exposed API token is revoked.** Reported done by the
+      user (2026-09-23) before the TestPyPI stage. Not independently verifiable from
+      here — a PyPI account action, and an agent should never hold or check PyPI
+      credentials on the user's behalf — so this line records the user's confirmation,
+      not an observation.
 - [x] **Configure Trusted Publishing (PyPI OIDC) with a protected GitHub release
       environment.** `.github/workflows/publish.yml` added: `build` job (build, `twine
       check`, install-and-smoke-test the actual artifact — not the editable checkout),
@@ -1628,16 +1629,26 @@ pre-releases by default).
       the narrower "does it even install and start" check, now also automated in CI via
       `publish.yml`'s `build` job so it runs on every future publish attempt, not just
       this one.
-- [ ] **Stage on TestPyPI and run the full fresh-user flow against it.** Blocked on the
-      user: needs the TestPyPI Trusted Publisher registration above in place first, then
-      `workflow_dispatch`-triggering `publish.yml` (or an equivalent manual `twine
-      upload --repository testpypi`) is a real, externally-visible action a user should
-      trigger deliberately, not something to run unattended the first time.
-- [ ] **Publish the SAME tested artifacts, with attestations.** Blocked on the user for
-      the same reason, at higher stakes — an irreversible production release. Requires
-      explicit go-ahead per this project's own standing instruction on publish actions.
-- [ ] **Install from production PyPI and repeat the smoke test.** Depends on the item
-      directly above having happened.
+- [x] **Stage on TestPyPI and run the full fresh-user flow against it.** Trusted
+      Publishers registered on both indexes and the `pypi`/`testpypi` GitHub environments
+      created by the user; `publish.yml` triggered via `workflow_dispatch` at `b6d4d43`
+      (Actions run: `build` 16s, `publish-testpypi` 22s, `publish-pypi` correctly skipped
+      for a manual trigger). Then, from a clean venv outside the checkout: `uv pip install
+      --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/
+      mcp-drifter` resolved `mcp-drifter==0.1.0` (a version only TestPyPI had — PyPI held
+      just the `0.0.1` placeholder) with all 31 dependencies; installed metadata showed
+      `httpx2>=2.12`, i.e. the post-fix build; the `drifter` console script ran; and
+      `drifter init` in an empty directory failed actionably with exit code 4 rather than
+      crashing.
+- [x] **Publish the SAME tested artifacts, with attestations.** Published to production
+      PyPI by the user via a GitHub Release, through `publish.yml`'s `publish-pypi` job
+      (behind the `pypi` environment's required-reviewer approval) with
+      `attestations: true`: https://pypi.org/project/mcp-drifter/.
+- [x] **Install from production PyPI and repeat the smoke test.** From a clean venv,
+      `uv pip install --no-cache mcp-drifter` resolved `mcp-drifter==0.1.0` with
+      `httpx2==2.13.1`; installed metadata showed `httpx2>=2.12`; the `drifter` entry
+      point ran; `drifter init` in an empty directory exited 4 with its actionable
+      message. README's Install section now leads with `uv tool install mcp-drifter`.
 
 ## v1.5
 
