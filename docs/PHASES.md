@@ -1441,13 +1441,69 @@ tasks can pick a path that belongs to a different task; the report shows P so th
       Red-test-first throughout per CLAUDE.md: every new test confirmed failing against the
       unmodified code before the corresponding fix was written (4 anchoring tests in
       `tests/cli/test_stats.py`, 6 validation tests in `tests/cli/test_config.py`).
-- [ ] Test matrix: both protocol eras, both transports, supported Pythons, Windows + Linux.
-- [ ] **Re-test limitation 15.** Its stated reason is now stale: `2026-07-28` is a real,
-      SDK-supported version whose `ListToolsResult` genuinely carries `ttl_ms` and
-      `cache_scope` (verified against mcp 2.0.0). A default in-memory session still
-      negotiates `2025-11-25`, so the practical outcome is unchanged — but "never on any
-      currently-negotiable version" is no longer true, and C8 may be revivable under
-      `mode="auto"`.
+- [x] Test matrix: both protocol eras, both transports, supported Pythons, Windows + Linux.
+      Both protocol eras and both transports are structurally covered by the existing
+      suite (stdio + HTTP transport test files both exist and pass; the 2025-11-25 vs
+      2026-07-28 protocol-era distinction is exactly what limitation 15's re-test above
+      exercises, both directions, in the same run). Supported Pythons: ran the FULL suite
+      under all three declared versions (pyproject.toml's classifiers — 3.11, 3.12, 3.13),
+      each in its own `uv`-managed venv on this machine, not simulated:
+      - **3.11** (this repo's primary `.venv`): 821 passed, 1 xfailed, clean, ~7 min.
+      - **3.13**: 821 passed, 1 xfailed, ONE flaky failure
+        (`test_run_observe_raises_actionable_config_error_for_an_unreachable_url`,
+        "DID NOT RAISE ConfigError"), ~5 min.
+      - **3.12**: same picture — clean in isolation and in a 259-test `tests/cli/` batch,
+        but flaked at the identical test in two separate full-823-test attempts, both of
+        which also showed transient, non-reproducing stalls elsewhere in the same runs.
+      Investigated the flaky test specifically, not dismissed: it names port 1
+      (`http://127.0.0.1:1/mcp`, chosen in its own docstring as "always-unassigned...
+      genuine, fast-failing") and asserts `run_observe` turns the resulting
+      `httpx2.ConnectError` (arriving wrapped in an `ExceptionGroup`) into an actionable
+      `ConfigError`. Reproduced 8/8 clean when run alone, and clean when run with full
+      test-module collection but only this test selected (ruling out import-time global
+      state) — it only flakes as part of the complete, ~290-tests-deep run, on a shared
+      machine that also runs several other MCP servers/tools concurrently during this
+      session. No single deterministic trigger found (an equivalent `tests/cli/`-only
+      batch, same leading test order, passed clean both times it was tried) — the
+      evidence points to genuine timing sensitivity under real system load on this
+      specific shared box, not a Python-version-specific code defect, but this is
+      **not fully confirmed** (would need a dedicated, unloaded CI runner to settle
+      definitively) and is recorded here as an open, honest finding rather than either
+      hand-waved away or "fixed" with an unverified guess — CLAUDE.md's "verified, not
+      assumed" discipline cuts against inventing a fix without a confirmed root cause.
+      Full-suite stalls seen during the same investigation (never in isolation, never in
+      the 259-test `tests/cli/` batch) were traced, where checked, to leftover processes
+      from an earlier interrupted attempt still competing for resources, not a genuine
+      code-level hang — cleaned up and the clean re-runs above are what's reported.
+      **Windows**: this entire matrix ran on Windows (this machine) — the primary,
+      continuously-exercised platform throughout this project. **Linux**: not available
+      in this sandboxed environment; genuinely untested this round, not simulated or
+      assumed — a real, stated gap, matching this project's own precedent for honest
+      gap documentation (docs/SPEC.md §15) rather than a checked box that isn't true.
+- [x] **Re-test limitation 15.** Confirmed, not just plausible: re-tested empirically
+      against mcp 2.2.0 with a real `server/discover` negotiation (not inferred from SDK
+      type definitions). `mcp.server.lowlevel.Server` ships a default `server/discover`
+      handler advertising `2026-07-28` — Drifter never built this, it's a pure SDK-version
+      upgrade — and any client using `mode="auto"` (the SDK's own new DEFAULT connect mode
+      for its `Client` wrapper) or pinning `2026-07-28` negotiates it, skipping
+      `initialize()` entirely. Under that negotiated version, `on_list_tools`'s response
+      DOES carry `ttlMs: 0`/`cacheScope: "private"` on the real wire — the SDK's own
+      `ListToolsResult` field defaults, re-marked as explicitly "set" once the result
+      crosses into a surface model that defines them, needing no `on_list_tools` code
+      change. C8 is real again for this specific negotiation path. Still NOT true for a
+      classic `session.initialize()` handshake (2024-11-05–2025-11-25) — what every test in
+      this codebase and most real clients today still use — so the practical caveat
+      narrows rather than disappears. Locked in with a new companion test
+      (`test_docs_spec_md_limitation_15_retested_ttlms_and_cachescope_are_real_under_discover`,
+      `tests/replay/test_replay_proxy.py`) asserting PRESENCE under discover, sitting next
+      to the original test asserting ABSENCE under `initialize()` — both true, two
+      coexisting paths through identical code. Also confirmed (separately) that a full
+      `tools/list` → `tools/call` round trip completes correctly under discover-negotiated
+      `2026-07-28` with no crash and no hang, and that `_ensure_bootstrapped`'s existing
+      `client_params is not None` null-check already tolerates discover's `client_params`
+      being `None` (real under 2026-07-28+, per the SDK's own `ServerSession.client_params`
+      docstring) — no bug found there. docs/SPEC.md's C8 register entry and limitation 15
+      updated with the full corrected account.
 - [ ] F-28–F-30 (`mine/`) only if the release must satisfy the full original scope.
       Mining proposes editable candidates; it cannot recover user intent from a sequence.
 

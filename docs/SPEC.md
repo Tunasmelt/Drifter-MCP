@@ -79,7 +79,7 @@ Everything citable in docs/marketing must trace to this table. Nothing else is c
 | C5 | Worst operators: tool addition −0.96, tool integration −0.90, description update −0.81 | VERIFIED |
 | C6 | ECS = mean − std of task-fulfillment scores | VERIFIED |
 | C7 | 2026-07-28: stateless core, handshake/sessions removed, _meta carries version | VERIFIED — MCP blog |
-| C8 | ttlMs/cacheScope honored by SDK client-side response cache | **RETRACTED** — was VERIFIED against the SDK's type definitions, which was the wrong evidence. §15 limitation 15 root-caused it through the SDK's real dispatch chain: these fields exist ONLY on the draft `_v2026_07_28` surface model and are silently stripped (`extra="ignore"`) on every currently-negotiable protocol version. Confirmed by real wire capture, not inference. **Not citable.** The real, current invalidation mechanism is `notifications/tools/list_changed`, which addresses a different threat |
+| C8 | ttlMs/cacheScope honored by SDK client-side response cache | **PARTIALLY REINSTATED (docs/PHASES.md R5 re-test)** — was RETRACTED after §15 limitation 15 found these fields stripped (`extra="ignore"`) on every protocol version negotiable at the time. Re-tested against the currently installed SDK (mcp 2.2.0): `2026-07-28` is no longer draft-only — it's a real, dispatchable "modern" era with its own `server/discover` probe-and-adopt handshake, and a connection that negotiates it (confirmed by real wire capture) DOES carry `ttlMs`/`cacheScope` on every `tools/list` response, unmodified, mutated arm or baseline. Still **not** true for a handshake-era connection (2024-11-05 through 2025-11-25, what an explicit `session.initialize()` call — every test in this codebase, and most real clients today — negotiates), where these fields still don't exist on the surface model and are still silently stripped. Both facts hold at once; citable only for a 2026-07-28-negotiated connection, which is a real but currently-minority case. See §15 limitation 15's updated text |
 | C9 | Python SDK v2 serves both protocol revisions from one endpoint, default-on | VERIFIED |
 | C10 | TypeScript v2 serves both revisions via one config flag (`legacy:'stateless'`) | VERIFIED |
 | C11 | Python SDK v2 ships OTel middleware by default, no-op without exporter | VERIFIED |
@@ -779,6 +779,38 @@ when*.
     in by `tests/replay/test_replay_proxy.py`'s
     `test_tools_list_response_has_no_ttlms_or_cachescope_a_confirmed_gap`, which
     asserts their absence on the real wire rather than forcing the test green.
+
+    **Re-tested, docs/PHASES.md R5** (2026-09-23, against mcp 2.2.0): this entry's
+    own stated reason for the gap — "never on any currently-negotiable version" —
+    is no longer accurate, and the correction is real, not cosmetic. `2026-07-28`
+    has left draft status and is now a real, dispatchable "modern" protocol era
+    with its own `server/discover` probe-and-adopt handshake, distinct from the
+    classic `initialize()` handshake. `mcp.server.lowlevel.Server` (what
+    `build_replay_server` is built directly on) ships a DEFAULT `server/discover`
+    handler — Drifter never wrote or opted into this, it is purely an SDK-version
+    upgrade — that unconditionally advertises `2026-07-28` as supported. Any
+    client using `mode="auto"` (confirmed: this is the SDK's own new DEFAULT
+    connect mode for its `mcp.client.client.Client` wrapper) or explicitly pinning
+    `2026-07-28` negotiates that version via `discover()`, skipping `initialize()`
+    entirely. Verified empirically (a real wire capture through a real discover
+    negotiation, not inferred): under that negotiated version, `on_list_tools`'s
+    `ListToolsResult` response DOES carry `ttlMs: 0`/`cacheScope: "private"` on the
+    wire, unmodified from the SDK's own field defaults — no code change was needed
+    in `on_list_tools` for this to be true, since the server's own result-dispatch
+    round-trip re-marks even defaulted fields as explicitly "set" once they cross
+    into a surface model that defines them. Locked in by a new companion test,
+    `test_docs_spec_md_limitation_15_retested_ttlms_and_cachescope_are_real_under_discover`,
+    which negotiates via `session.discover()` and asserts PRESENCE, sitting directly
+    next to the original test asserting ABSENCE under a classic `initialize()`
+    handshake — both are true, and describe two different, coexisting negotiation
+    paths a real client can take through the identical replay-proxy code. The
+    practical caveat is narrower than it used to be, not gone: every test in this
+    codebase, and any client that still calls `session.initialize()` explicitly
+    (the common pattern today), negotiates a handshake-era version (2024-11-05
+    through 2025-11-25) where the fields still don't exist and are still silently
+    stripped — this remains the majority real-world case, so C8 stays uncitable as
+    a general guarantee, only as one specific to `mode="auto"`/2026-07-28
+    connections. See the corrected C8 register entry above.
 16. `drifter run`'s exact-match replay essentially never matches a real, unscripted
     agent's actual call pattern, and the report this produces gives no visible signal
     to a cold reader that its verdict rests on mostly-excluded, mostly-failed runs.

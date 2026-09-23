@@ -268,6 +268,88 @@ async def test_tools_list_response_has_no_ttlms_or_cachescope_a_confirmed_gap():
     assert '"cacheScope"' not in wire_json, wire_json
 
 
+async def _tap_tools_list_response_json_under_discover(store: ReplayStore, tools_served) -> tuple[str, str | None]:
+    """Same tap as `_tap_tools_list_response_json`, but negotiates via
+    `session.discover()` (the real `server/discover` probe-and-adopt
+    mechanism, `mcp.client._probe.negotiate_auto`'s underlying primitive)
+    instead of the classic `initialize()` handshake. Returns the raw
+    tools/list response JSON alongside the version actually negotiated, so
+    a caller can tell "this ran under the modern era" from the result
+    itself rather than assuming it.
+    """
+    async with create_client_server_memory_streams() as (client_streams, server_streams):
+        client_read, client_write = client_streams
+        send, recv = anyio.create_memory_object_stream(0)
+        raw_log: list[str] = []
+
+        async def _tap():
+            async with client_read:
+                async for msg in client_read:
+                    if not isinstance(msg, Exception):
+                        raw_log.append(msg.message.model_dump_json(by_alias=True, exclude_unset=True))
+                    await send.send(msg)
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(run_replay_proxy, *server_streams, store, GOLDEN_SERVER, tools_served)
+            tg.start_soon(_tap)
+            async with ClientSession(recv, client_write) as session:
+                await session.discover()
+                negotiated = session.protocol_version
+                await session.list_tools()
+            tg.cancel_scope.cancel()
+
+    # "tools":[ (the array) distinguishes the tools/list response from the
+    # discover response, which also carries ttlMs/cacheScope of its own.
+    return next(line for line in raw_log if '"tools":[' in line), negotiated
+
+
+@pytest.mark.anyio
+async def test_docs_spec_md_limitation_15_retested_ttlms_and_cachescope_are_real_under_discover():
+    """docs/PHASES.md R5's re-test of limitation 15/C8, done empirically
+    (a real wire capture through a real `server/discover` negotiation, not
+    inferred from the SDK's type definitions) rather than assumed stale
+    from the note that first flagged it as worth re-checking.
+
+    The finding is genuinely different from the "confirmed gap" test right
+    above: `mcp.server.lowlevel.Server` (what `build_replay_server` is
+    built on) ships a DEFAULT `server/discover` handler — Drifter never
+    wrote or opted into it — that advertises `2026-07-28` as a supported
+    modern version. Any client using `mode="auto"` (the new DEFAULT
+    connect mode for the SDK's own `mcp.client.client.Client` wrapper, per
+    its own docstring) or explicitly pinning `2026-07-28` negotiates that
+    version via `discover()`+`adopt()`, entirely skipping `initialize()`.
+    Under that negotiated version, `on_list_tools`'s `ListToolsResult`
+    response IS re-validated against `mcp_types._v2026_07_28.
+    ListToolsResult`, which defines `ttl_ms`/`cache_scope` as real fields
+    -- and (confirmed here, not assumed) the server's own result-dispatch
+    round-trip re-marks even DEFAULTED fields as explicitly "set" once
+    they cross into a surface model that defines them, so `on_list_tools`
+    needs no code change at all: `ttlMs: 0`/`cacheScope: "private"` (the
+    `ListToolsResult` model's own defaults) already reach the wire,
+    verbatim, for any 2026-07-28-negotiated session -- baseline OR mutated
+    arm, since both go through this identical handler.
+
+    What is still unchanged, and still the practical caveat (docs/SPEC.md
+    §15): a connection that calls `initialize()` explicitly -- which is
+    what EVERY test in this codebase and the older, still-common
+    `ClientSession` usage pattern does, and what a legacy-mode client
+    always does -- negotiates a handshake-era version (2024-11-05 through
+    2025-11-25) where these fields still don't exist and are silently
+    stripped, exactly as `test_tools_list_response_has_no_ttlms_or_cachescope_
+    a_confirmed_gap` right above still correctly locks in. Both tests are
+    true; they describe two different, coexisting negotiation paths a real
+    client can take through the SAME replay proxy code.
+    """
+    store = ReplayStore()
+    store.index_session(GOLDEN_FIXTURE)
+    tools_served = tools_served_from_session(GOLDEN_FIXTURE)
+
+    wire_json, negotiated = await _tap_tools_list_response_json_under_discover(store, tools_served)
+    assert negotiated == "2026-07-28"
+    assert '"ttlMs":0' in wire_json, wire_json
+    assert '"cacheScope":"private"' in wire_json, wire_json
+
+
 # --- F-20: mutated calls structurally cannot forward live -------------------
 
 

@@ -56,6 +56,67 @@ made.
 
 ---
 
+## R5: test matrix across supported Pythons, Windows — one flaky test found, not silently dismissed
+
+docs/PHASES.md R5's test-matrix item, actually run, not assumed: the full suite under all
+three declared Python versions (pyproject.toml — 3.11, 3.12, 3.13), each in its own
+`uv`-managed venv on this machine. 3.11 (the primary `.venv`) ran clean: 821 passed, 1
+xfailed. 3.12 and 3.13 both surfaced one flaky failure —
+`test_run_observe_raises_actionable_config_error_for_an_unreachable_url` — but only
+inside a complete, ~290-tests-deep run; it passed 8/8 standalone, passed with full test
+collection but a single-test selection (ruling out import-time global state), and passed
+clean in a 259-test `tests/cli/`-only batch with the identical leading test order. No
+deterministic trigger isolated. The evidence points to genuine timing sensitivity under
+real system load on this shared, multi-tenant development machine (several other MCP
+servers/tools were running concurrently throughout this session) rather than a
+Python-version-specific code defect — but that conclusion is not fully confirmed, and is
+recorded honestly as open rather than "fixed" with an unverified guess, per CLAUDE.md's
+"verified, not assumed" discipline: no code change was made to `run_observe` or this test
+without a confirmed root cause.
+
+Both protocol eras and both transports are already structurally covered by the existing
+suite (stdio/HTTP transport files both pass; 2025-11-25 vs 2026-07-28 is exactly what the
+limitation-15 re-test above exercises in both directions). Windows is this project's
+primary, continuously-exercised platform. Linux was genuinely not available in this
+sandboxed environment this round — stated as a real gap, not simulated or assumed,
+matching docs/SPEC.md §15's own precedent for honest gap documentation.
+
+---
+
+## R5: limitation 15 re-tested — C8 is real again under `mode="auto"`
+
+docs/SPEC.md §15 limitation 15 (and the RETRACTED C8 register entry) said `ttlMs`/
+`cache_scope` exist only on a draft, not-yet-real `2026-07-28` protocol version and are
+silently stripped on every version any real client speaks. Re-tested empirically against
+the currently installed SDK (mcp 2.2.0), per docs/PHASES.md R5's own flagged staleness:
+`2026-07-28` is no longer draft-only. `mcp.server.lowlevel.Server` — what
+`build_replay_server` is built directly on — ships a default `server/discover` handler
+(Drifter never wrote this; pure SDK-version upgrade) advertising `2026-07-28` as
+supported, and any client using `mode="auto"` (confirmed: the SDK's own new default
+connect mode for its `Client` wrapper) or pinning `2026-07-28` negotiates it via
+`discover()`, skipping `initialize()` entirely.
+
+A real wire capture through this discover path (not inferred) shows `on_list_tools`'s
+response DOES carry `ttlMs: 0`/`cacheScope: "private"` — the `ListToolsResult` model's
+own field defaults, re-marked "set" by the server's result-dispatch round-trip once they
+cross into a surface model that defines them. No code change to `on_list_tools` was
+needed; the guarantee was already true by SDK default, just never tested. Locked in with
+a new companion test asserting presence under discover, next to the existing test
+asserting absence under a classic `initialize()` handshake — both correct, describing two
+coexisting negotiation paths through identical replay-proxy code. Also confirmed
+separately: a full `tools/list`→`tools/call` round trip completes with no crash or hang
+under discover-negotiated `2026-07-28`, and `_ensure_bootstrapped`'s existing
+`client_params is not None` guard already tolerates `client_params` being `None` (real
+under 2026-07-28+) with no bug found.
+
+The practical caveat narrows, not disappears: every test in this codebase, and any client
+still calling `session.initialize()` explicitly (the common pattern today), negotiates a
+handshake-era version where the fields still don't exist and are still stripped — C8
+stays uncitable as a general guarantee, citable only for `mode="auto"`/2026-07-28
+connections specifically.
+
+---
+
 ## R5: working-directory/relative-path handling, HTTP config, strict validation
 
 Three bounded fixes under one PHASES.md checklist item.
