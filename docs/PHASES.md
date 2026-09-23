@@ -1507,7 +1507,7 @@ tasks can pick a path that belongs to a different task; the report shows P so th
 - [ ] F-28–F-30 (`mine/`) only if the release must satisfy the full original scope.
       Mining proposes editable candidates; it cannot recover user intent from a sequence.
 
-### The release gate
+### The release gate — PASSED (2026-09-23)
 
 A fresh user, installing the built wheel OUTSIDE the repository, completes:
 
@@ -1518,6 +1518,72 @@ replay. Three agents, three required outcomes: the unchanged agent completes it;
 deliberately unadapted agent fails FOR THE EXPECTED REASON; an adapting agent recovers.
 Replay must work with the upstream server unavailable, and rebuilding the report must
 reproduce the original results exactly.
+
+**Run for real, not simulated.** `uv build` produced a real wheel
+(`dist/mcp_drifter-0.1.0-py3-none-any.whl`), installed into a fresh `uv`-managed venv at
+`C:\Users\user\drifter-release-gate\.venv`, entirely outside this checkout — every command
+below ran through that installed package, invoked as `python -m mcp_drifter.cli`, from a
+separate workspace directory with its own `.mcp.json`/`drifter.yaml`/`calibration.yaml`
+(the last two written by a real `drifter init` run against that `.mcp.json`, not
+hand-authored). Server: `tests/fixtures/orders_server.py` (`find_order`/`get_order`,
+purpose-built for R0.5's own blockers — an order id nobody can guess, so the fixture
+cannot pass under content-empty replay). Full command sequence exercised for real: `init`
+→ `doctor` (config parses, connectivity OK, both tools classified) → `observe` (one real
+session recorded via a live stdio client) → `fixture capture` (2 entries captured from the
+live server against the recorded corpus) → `run` (baseline replay + `parameter_rename`
+mutation) → `report` (rebuild from disk).
+
+**Three agents, three outcomes, all observed:**
+1. *Unchanged agent completes it* — `orders_old_contract_client.py` (mechanically bound to
+   the old `order_id` contract, no LLM) against the UNMUTATED manifest: baseline 3/3 valid
+   runs, TASK PASS.
+2. *Deliberately unadapted agent fails for the expected reason* — the same client against
+   the `parameter_rename`-mutated manifest: mutated 0/3 valid runs, TASK FAIL, every
+   `get_order` call rejected with `REPLAY_INVALID_ARGS_CODE` (-31003) — the served schema
+   now requires `orderId`, and this client never reads it.
+3. *An adapting agent recovers* — a REAL headless Claude Code session (`claude -p`, not a
+   scripted stand-in), driven through `agent.mode: http` + a small `agent_wrapper.py`
+   (writing a `--mcp-config` pointing at `$DRIFTER_PROXY_URL`, matching the README's own
+   documented pattern) against the SAME `parameter_rename` mutation: mutated 3/3 valid
+   runs, TASK PASS, every `get_order` call correctly using the renamed `orderId` argument
+   and resolving at the `inverse` match tier (not luck — the agent read the served schema
+   and adapted). Baseline was 2/3 valid (one real-LLM session excluded for fidelity 0.00,
+   an occasional cold-start confusion before the cwd-isolation fix below was applied) but
+   BEHAVIOR correctly reports UNKNOWN rather than a false verdict on the resulting
+   below-`min_valid_runs` evidence — DEC-027's minimum-evidence gate working exactly as
+   designed, not a defect.
+
+**Replay-without-upstream, proven not assumed.** `tests/fixtures/orders_server.py` was
+physically renamed away from disk for the full duration of BOTH the scripted-client run and
+the real-Claude-Code run — `drifter run`'s baseline and mutated arms completed successfully
+with the file structurally unable to be spawned, the strongest available proof this
+checkout's own non-negotiable ("mutation testing never forwards a live call under a mutated
+schema," CLAUDE.md) actually holds for a full real-agent run, not just unit-level.
+
+**Report rebuild, proven not assumed.** `drifter report --task-id <id>` against both
+experiment directories reproduced every verdict line (BASELINE/MUTATED counts, BEHAVIOR,
+TASK, SAFETY, CONFIDENCE, REQUEST MATCH, exclusions, mutation log) identically to the live
+run's own output.
+
+**One real, previously-undocumented finding — a documentation gap, not a Drifter defect.**
+The real-agent leg initially failed every run with `claude -p` asking clarifying questions
+("your session context," "an earlier debugging thread") instead of calling the tool.
+Root-caused, not guessed: `agent_wrapper.py`'s spawned `claude -p` inherited its working
+directory from wherever `drifter run` was invoked, and when that happens to be a directory
+under a project with its own `CLAUDE.md`/auto-memory (this repo checkout, in this
+investigation), Claude Code loads THAT project's context and treats the task prompt as a
+continuation of an unrelated conversation rather than an isolated task. `--bare` looks like
+the fix but isn't — confirmed empirically, not assumed: it also disables OAuth/keychain
+auth ("Not logged in · Please run /login" on an OAuth-authenticated install, since `--bare`
+restricts auth to `ANTHROPIC_API_KEY`/`apiKeyHelper` only). The real fix is an explicit
+`cwd` for the spawned `claude -p` process, pointed outside any such project — README's
+`agent.mode: http` example now documents this. Several other suspected leads chased during
+this investigation (an uncaught Windows IOCP accept exception, `curl.exe` hanging against a
+bare test server) turned out to be artifacts of ad-hoc probe scripts blocking their own
+event loop with a synchronous `subprocess.run()` call, or passing a directory where
+`ReplayStore.index_sessions` expects pre-expanded file paths — both confirmed as scripting
+mistakes in the investigation's own throwaway diagnostics, not Drifter code, once isolated
+against a real `run_mutation_comparison`/`anyio.run_process` call.
 
 ### Publishing
 

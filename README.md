@@ -200,6 +200,16 @@ agent:
   command: ["python", "agent_wrapper.py", "{task.prompt}"]
 ```
 
+If `agent_wrapper.py` launches Claude Code specifically, give the `claude -p` call an
+explicit `cwd` outside any directory with its own `CLAUDE.md`/auto-memory setup (e.g. the
+wrapper's own directory). Confirmed empirically, not assumed, during the release-gate exit
+test: without this, a session whose working directory happens to sit under such a project
+picks up that project's context and treats the task prompt as a continuation of an
+unrelated conversation — asking clarifying questions instead of just calling the tool —
+rather than as an isolated task. `--bare` looks like the fix but isn't: it also disables
+OAuth/keychain auth, so on an install authenticated via OAuth rather than
+`ANTHROPIC_API_KEY` it fails every run with "Not logged in."
+
 Then:
 
 ```

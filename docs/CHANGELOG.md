@@ -6,6 +6,48 @@ not just a diff.
 
 ---
 
+## The release gate: passed, for real, with a real wheel and a real agent
+
+docs/PHASES.md's release gate — a fresh user, installing the built wheel OUTSIDE the
+repository, completing `init → doctor → observe → prepare fixture → baseline replay →
+mutation → report` — was run for real, not simulated: `uv build` produced
+`dist/mcp_drifter-0.1.0-py3-none-any.whl`, installed into a fresh venv entirely outside
+this checkout, exercised from a separate workspace with its own `.mcp.json`/`drifter.yaml`
+(the latter written by a real `drifter init`, not hand-authored) against
+`tests/fixtures/orders_server.py` — purpose-built, from R0.5, so the task cannot pass under
+content-empty replay.
+
+All three required agent outcomes observed: an unadapted scripted client
+(`orders_old_contract_client.py`) completes cleanly at baseline (3/3 PASS) and fails for
+the expected reason under `parameter_rename` mutation (0/3, every `get_order` rejected with
+-31003); a REAL headless Claude Code session (`claude -p`, `agent.mode: http`, not a
+scripted stand-in) recovers under the identical mutation, 3/3 mutated runs PASS, each
+`get_order` call correctly using the renamed `orderId` argument and resolving at the
+`inverse` tier — genuine adaptation, confirmed from the served-schema read, not luck.
+Replay-without-upstream was proven, not assumed: `orders_server.py` was physically moved
+off disk for the full duration of both runs. Report rebuild was proven, not assumed:
+`drifter report` reproduced every verdict line identically for both experiments.
+
+One real, previously-undocumented finding along the way: the real-agent leg initially
+failed every run with `claude -p` asking clarifying questions instead of calling the tool.
+Root cause, confirmed empirically: the spawned `claude -p` process inherited its working
+directory from wherever `drifter run` was invoked, and a cwd under a project with its own
+`CLAUDE.md`/auto-memory makes Claude Code load THAT project's context, treating the task
+prompt as a conversation continuation rather than an isolated task. `--bare` looks like the
+fix but isn't — it also disables OAuth/keychain auth, breaking every run on an
+OAuth-authenticated install ("Not logged in"). The real fix is an explicit `cwd` for the
+spawned process, outside any such project; README's `agent.mode: http` example now
+documents this. Two other suspected leads (an uncaught Windows IOCP accept exception,
+`curl.exe` hanging against a bare test server) were run to ground and confirmed as
+artifacts of the investigation's own throwaway probe scripts — a synchronous
+`subprocess.run()` blocking its own event loop, and a directory passed where
+`ReplayStore.index_sessions` expects pre-expanded file paths — not Drifter defects, once
+isolated against the real `run_mutation_comparison`/`anyio.run_process` code paths.
+
+See docs/PHASES.md's release-gate section for the full command-by-command account.
+
+---
+
 ## R5: safety model — unknown classifications reported, not silently dropped
 
 docs/SPEC.md §10's taxonomy defines `"unknown"` as "unsafe by default, never mutated,
