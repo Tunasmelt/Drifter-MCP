@@ -437,7 +437,7 @@ def run_run(
         raise ConfigError("drifter run needs --server: the server name the fixture session was recorded against.")
 
     if runs_dir is None:
-        runs_dir = resolve_runs_dir(config)
+        runs_dir = resolve_runs_dir(config, config_path)
     # docs/PHASES.md R2: every invocation is its own experiment. Nothing under
     # an earlier experiment is reused, merged or deleted, so `force` no longer
     # has anything to do; it is accepted for compatibility. Nothing is created

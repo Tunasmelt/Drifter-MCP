@@ -1407,8 +1407,40 @@ tasks can pick a path that belongs to a different task; the report shows P so th
       genuinely safety-clean — updated to confidently-classifiable names
       (`"get_a"`/`"get_b"`) so those fixtures are actually clean under the
       corrected behavior, not accidentally exercising the new finding.
-- [ ] Fix working-directory/relative-path handling, HTTP configuration, and add strict
-      config validation.
+- [x] Fix working-directory/relative-path handling, HTTP configuration, and add strict
+      config validation. Three bounded fixes:
+      1. **Working-directory/relative-path handling.** `cli/stats.py`'s `resolve_runs_dir`
+         (the single resolver `run`/`report`/`doctor`/`score`/`coverage` all share) resolved
+         a relative `record.dir`/`DRIFTER_RUNS_DIR` against the process's CURRENT WORKING
+         DIRECTORY, not against drifter.yaml's own location — so `drifter report --config
+         /project/drifter.yaml` run from a different cwd (a wrapper script, a different
+         terminal tab, a CI job with its own working directory) silently read/wrote a
+         DIFFERENT, empty-looking `.drifter/runs` next to wherever the process happened to
+         launch from. Fixed with a new `anchor_relative_to_config` helper — an absolute
+         path passes through unchanged; a relative one resolves against `config_path`'s
+         parent directory (defaulting to `Path("drifter.yaml")`'s parent, i.e. cwd, matching
+         `load_config`'s own default exactly, so every caller that never passes `--config`
+         keeps behaving identically). `cli/observe.py` had its own SEPARATE, duplicate
+         copy of this same env-var-precedence logic for `runs_dir`/`raw_dir` — rather than
+         patching two copies that could drift again later, it now calls
+         `resolve_runs_dir`/`anchor_relative_to_config` directly, so there is exactly one
+         implementation of "how a runs directory gets resolved" in the codebase.
+      2. **HTTP configuration.** `ServerConfig.url` (F-39) was checked only for non-emptiness
+         — a value missing its scheme entirely (a typo dropping `https://`) or using a
+         non-HTTP scheme (`ftp://…`) passed validation and only failed deep inside the real
+         MCP HTTP client, with no message pointing back at drifter.yaml. Now rejected at
+         config-load time with an actionable message naming the exact bad value.
+      3. **Strict config validation**, three real "silently unreachable" footguns closed:
+         `DrifterConfig.version` must be `1` (the only shape this loader understands — a
+         different value is a typo or a future format, not something to silently
+         misinterpret under version 1's own rules); duplicate `servers:` names are rejected
+         (`cli/observe.py`'s `select_server` returns the FIRST name match, so a duplicate
+         silently made the second entry unreachable via `--server`, with nothing pointing
+         at the cause); duplicate `tasks:` ids are rejected for the identical reason
+         (`find_task` returns the first id match too).
+      Red-test-first throughout per CLAUDE.md: every new test confirmed failing against the
+      unmodified code before the corresponding fix was written (4 anchoring tests in
+      `tests/cli/test_stats.py`, 6 validation tests in `tests/cli/test_config.py`).
 - [ ] Test matrix: both protocol eras, both transports, supported Pythons, Windows + Linux.
 - [ ] **Re-test limitation 15.** Its stated reason is now stale: `2026-07-28` is a real,
       SDK-supported version whose `ListToolsResult` genuinely carries `ttl_ms` and

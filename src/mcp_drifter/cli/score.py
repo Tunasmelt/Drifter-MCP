@@ -114,7 +114,7 @@ def run_score(
     """
     if runs_dir is None:
         config: DrifterConfig | None = load_config(config_path)
-        runs_dir = resolve_runs_dir(config)
+        runs_dir = resolve_runs_dir(config, config_path)
 
     calibration = calibration or load_calibration()
     session_paths = sorted(runs_dir.glob("*.jsonl")) if runs_dir.exists() else []

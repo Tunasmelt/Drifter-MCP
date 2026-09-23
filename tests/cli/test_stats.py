@@ -18,7 +18,8 @@ from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.shared.message import SessionMessage
 from mcp_types import ErrorData, JSONRPCError, JSONRPCRequest, JSONRPCResponse
 
-from mcp_drifter.cli.stats import collect_stats, render_stats, run_stats
+from mcp_drifter.cli.config import load_config
+from mcp_drifter.cli.stats import collect_stats, render_stats, resolve_runs_dir, run_stats
 from mcp_drifter.record.proxy import Direction
 from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.redact import is_redaction_marker
@@ -498,6 +499,87 @@ def test_run_stats_server_filter_excludes_other_servers(tmp_path):
     stats = collect_stats(runs_dir, server_filter="not-fake")
     assert stats.per_tool == {}
     assert stats.known_tools == set()
+
+
+# --- resolve_runs_dir: relative paths anchor to drifter.yaml, not cwd ----
+
+
+def _write_config(path: Path, record_dir: str | None = None) -> Path:
+    lines = ["version: 1", "servers:", "  - name: fake", "    command: ['python']"]
+    if record_dir is not None:
+        lines += ["record:", f"  dir: {record_dir}"]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_resolve_runs_dir_anchors_a_relative_record_dir_to_the_config_files_directory(tmp_path, monkeypatch):
+    """docs/PHASES.md R5: a relative `record.dir` must resolve relative to
+    where drifter.yaml itself lives, not the process's current working
+    directory -- otherwise `drifter report --config /project/drifter.yaml`
+    run from a different cwd (a wrapper script, a different terminal tab, a
+    CI job with its own working directory) silently reads/writes the WRONG
+    directory instead of the project's real one, which is exactly the "runs
+    somewhere else every time" failure this item names.
+    """
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    config_path = _write_config(project_dir / "drifter.yaml", record_dir="myruns")
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    config = load_config(config_path)
+    runs_dir = resolve_runs_dir(config, config_path)
+
+    assert runs_dir == project_dir / "myruns"
+    # And NOT resolved against the (different) process cwd.
+    assert runs_dir != elsewhere / "myruns"
+
+
+def test_resolve_runs_dir_leaves_an_absolute_record_dir_untouched(tmp_path, monkeypatch):
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    absolute_runs = tmp_path / "elsewhere_entirely" / "runs"
+    config_path = _write_config(project_dir / "drifter.yaml", record_dir=str(absolute_runs))
+
+    monkeypatch.chdir(tmp_path)
+    config = load_config(config_path)
+    runs_dir = resolve_runs_dir(config, config_path)
+
+    assert runs_dir == absolute_runs
+
+
+def test_resolve_runs_dir_env_override_is_also_anchored_to_the_config_files_directory(tmp_path, monkeypatch):
+    """DRIFTER_RUNS_DIR wins over `record.dir` (existing precedence), but a
+    RELATIVE value given through the env var must anchor the same way a
+    relative `record.dir` does -- the fix is about relative-path handling in
+    general, not specific to which field the value came from."""
+    project_dir = tmp_path / "project"
+    project_dir.mkdir()
+    config_path = _write_config(project_dir / "drifter.yaml")
+
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    monkeypatch.setenv("DRIFTER_RUNS_DIR", "env_runs")
+
+    config = load_config(config_path)
+    runs_dir = resolve_runs_dir(config, config_path)
+
+    assert runs_dir == project_dir / "env_runs"
+
+
+def test_resolve_runs_dir_with_no_config_path_anchors_to_cwd_matching_load_configs_own_default(tmp_path, monkeypatch):
+    """`config_path=None` mirrors `load_config`'s own default
+    (`Path("drifter.yaml")`, i.e. the cwd) -- unchanged behavior for every
+    caller that never passed an explicit --config."""
+    monkeypatch.chdir(tmp_path)
+    config = load_config(_write_config(tmp_path / "drifter.yaml", record_dir="myruns"))
+
+    runs_dir = resolve_runs_dir(config, None)
+
+    assert runs_dir == tmp_path / "myruns"
 
 
 # --- integration: real subprocess, real `drifter observe` corpus ---------

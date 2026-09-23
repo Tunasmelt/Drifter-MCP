@@ -289,12 +289,14 @@ def run_doctor(config_path: Path | None = None, output_stream: TextIO = sys.stdo
         output_stream.write(f"{marker} {agent_check.name}: {agent_check.detail}\n")
         all_ok = all_ok and agent_check.ok
 
-    _report_replay_coverage(config, calibration, output_stream)
+    _report_replay_coverage(config, calibration, output_stream, config_path)
 
     return all_ok
 
 
-def _report_replay_coverage(config: DrifterConfig, calibration: Calibration, output_stream: TextIO) -> None:
+def _report_replay_coverage(
+    config: DrifterConfig, calibration: Calibration, output_stream: TextIO, config_path: Path | None = None
+) -> None:
     """DEC-027(c): projected replay coverage per configured server, from the
     recorded corpus alone (docs/CHANGELOG.md).
 
@@ -311,7 +313,7 @@ def _report_replay_coverage(config: DrifterConfig, calibration: Calibration, out
     "is my setup ready?" should be able to learn their corpus can't support
     a verdict without constructing a run to find out.
     """
-    runs_dir = resolve_runs_dir(config)
+    runs_dir = resolve_runs_dir(config, config_path)
     if not runs_dir.exists():
         output_stream.write(f"[INFO] replay corpus: nothing recorded yet at {runs_dir} — run `drifter observe` first\n")
         return

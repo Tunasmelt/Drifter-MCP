@@ -36,6 +36,7 @@ import anyio
 import httpx2
 
 from mcp_drifter.cli.config import ConfigError, DrifterConfig, ServerConfig, load_config, server_target
+from mcp_drifter.cli.stats import anchor_relative_to_config, resolve_runs_dir
 from mcp_drifter.record.proxy import Direction, run_passthrough_proxy
 from mcp_drifter.record.writer import SessionRecorder
 
@@ -191,11 +192,18 @@ def run_observe(
 
     # DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR take precedence over drifter.yaml
     # when set — same env vars, same precedence, as record/__main__.py.
-    runs_dir = Path(os.environ.get("DRIFTER_RUNS_DIR", config.record.dir))
-    # Sibling directories under .drifter/ (docs/SPEC.md architecture diagram) by
-    # default, computed from the (possibly overridden) runs_dir; itself
-    # still overridable independently via DRIFTER_RAW_DIR.
-    raw_dir = Path(os.environ.get("DRIFTER_RAW_DIR", str(runs_dir.parent / "raw")))
+    # docs/PHASES.md R5: both anchor a relative result to drifter.yaml's own
+    # directory, not the process's cwd — see cli/stats.py's
+    # anchor_relative_to_config for why, and cli/stats.py's resolve_runs_dir
+    # for the single source of truth this now shares rather than
+    # re-deriving the same env-var-precedence logic independently.
+    runs_dir = resolve_runs_dir(config, config_path)
+    # Sibling directory under .drifter/ (docs/SPEC.md architecture diagram) by
+    # default, computed from the (possibly overridden, already-anchored)
+    # runs_dir; itself still overridable independently via DRIFTER_RAW_DIR.
+    raw_dir = anchor_relative_to_config(
+        Path(os.environ.get("DRIFTER_RAW_DIR", str(runs_dir.parent / "raw"))), config_path
+    )
 
     recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=server.name)
     status = LiveStatus(status_stream)

@@ -177,7 +177,7 @@ def run_report(
     config: DrifterConfig | None = None
     if runs_dir is None:
         config = load_config(config_path)
-        runs_dir = resolve_runs_dir(config)
+        runs_dir = resolve_runs_dir(config, config_path)
     policy = config.policy if config is not None else None
     assertions = assertions_for(config.tasks, task_id) if config is not None else TaskAssertions()
 

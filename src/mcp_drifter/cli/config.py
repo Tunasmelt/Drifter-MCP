@@ -76,6 +76,24 @@ class ServerConfig(BaseModel):
             raise ValueError("server url must not be empty")
         return v
 
+    @field_validator("url")
+    @classmethod
+    def _url_has_http_scheme(cls, v: str | None) -> str | None:
+        # docs/PHASES.md R5: `url` is documented as "a real, network-reachable
+        # Streamable HTTP endpoint" (this module's docstring, docs/SPEC.md
+        # §5.1/§11) -- a scheme-less value (a typo dropping `https://`) or a
+        # non-HTTP scheme previously passed the "just not empty" check above
+        # and only failed deep inside the real MCP HTTP client, with no
+        # actionable message pointing back at drifter.yaml. Checked as its
+        # own validator (not folded into `_url_not_empty`) so the empty-string
+        # case keeps its own, more specific message.
+        if v is not None and v.strip() and not (v.startswith("http://") or v.startswith("https://")):
+            raise ValueError(
+                f"server url {v!r} must start with http:// or https:// -- a real, "
+                "network-reachable Streamable HTTP endpoint (docs/SPEC.md §5.1/§11)"
+            )
+        return v
+
     @model_validator(mode="after")
     def _exactly_one_of_command_or_url(self) -> "ServerConfig":
         if (self.command is None) == (self.url is None):
@@ -290,11 +308,52 @@ class DrifterConfig(BaseModel):
     # None, matching RecordConfig's own precedent rather than AgentConfig's.
     policy: PolicyConfig = PolicyConfig()
 
+    @field_validator("version")
+    @classmethod
+    def _version_is_supported(cls, v: int) -> int:
+        # docs/PHASES.md R5: `version: 1` is the only shape this loader
+        # actually understands. A config declaring a different version is
+        # either a typo or a future format this checkout can't read --
+        # either way, silently loading it under version 1's own rules would
+        # MISINTERPRET it (wrong field meanings, not just missing fields),
+        # not degrade gracefully the way `extra="allow"` does for merely
+        # unknown keys.
+        if v != 1:
+            raise ValueError(f"drifter.yaml declares version {v}, but this build only understands version 1")
+        return v
+
     @field_validator("servers")
     @classmethod
     def _at_least_one_server(cls, v: list[ServerConfig]) -> list[ServerConfig]:
         if not v:
             raise ValueError("drifter.yaml must declare at least one server under `servers:`")
+        return v
+
+    @field_validator("servers")
+    @classmethod
+    def _server_names_are_unique(cls, v: list[ServerConfig]) -> list[ServerConfig]:
+        # docs/PHASES.md R5: cli/observe.py's select_server looks a server up
+        # by name and returns the FIRST match -- a duplicate name would
+        # silently make the second entry unreachable via --server, with
+        # nothing pointing at the actual cause.
+        seen: set[str] = set()
+        for server in v:
+            if server.name in seen:
+                raise ValueError(f"duplicate server name {server.name!r} in `servers:` -- names must be unique")
+            seen.add(server.name)
+        return v
+
+    @field_validator("tasks")
+    @classmethod
+    def _task_ids_are_unique(cls, v: list[TaskConfig]) -> list[TaskConfig]:
+        # Same shape as _server_names_are_unique above: find_task returns
+        # the FIRST id match, so a duplicate silently makes the second
+        # task's assertions unreachable via --task-id.
+        seen: set[str] = set()
+        for task in v:
+            if task.id in seen:
+                raise ValueError(f"duplicate task id {task.id!r} in `tasks:` -- ids must be unique")
+            seen.add(task.id)
         return v
 
 

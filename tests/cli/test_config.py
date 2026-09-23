@@ -159,6 +159,57 @@ def test_server_with_empty_url_raises_config_error(tmp_path):
         load_config(_write(tmp_path, text))
 
 
+def test_server_url_without_an_http_scheme_raises_a_config_error(tmp_path):
+    """docs/PHASES.md R5: `url` is documented (this module's own docstring,
+    docs/SPEC.md §5.1/§11) as "a real, network-reachable Streamable HTTP
+    endpoint" -- a value missing the scheme entirely (a typo like
+    `mcp.example.com/mcp`, forgetting `https://`) previously passed the old
+    "just not empty" check and only failed deep inside the real MCP HTTP
+    client, with no actionable message pointing back at drifter.yaml."""
+    text = "version: 1\nservers:\n  - name: bad\n    url: mcp.example.com/mcp\n"
+    with pytest.raises(ConfigError, match="http"):
+        load_config(_write(tmp_path, text))
+
+
+def test_server_url_with_a_non_http_scheme_raises_a_config_error(tmp_path):
+    text = "version: 1\nservers:\n  - name: bad\n    url: ftp://mcp.example.com/mcp\n"
+    with pytest.raises(ConfigError, match="http"):
+        load_config(_write(tmp_path, text))
+
+
+def test_server_url_with_https_scheme_is_accepted(tmp_path):
+    text = "version: 1\nservers:\n  - name: ok\n    url: https://mcp.example.com/mcp\n"
+    config = load_config(_write(tmp_path, text))
+    assert config.servers[0].url == "https://mcp.example.com/mcp"
+
+
+def test_duplicate_server_names_raise_a_config_error(tmp_path):
+    """docs/PHASES.md R5: `cli/observe.py`'s `select_server` looks a server
+    up by name and returns the FIRST match -- two entries sharing a name
+    would silently make the second one unreachable by `--server`, with no
+    error anywhere pointing at the actual cause. Caught here, at load time,
+    with an actionable message, rather than surfacing later as "my second
+    server never gets used" with no obvious reason why."""
+    text = (
+        "version: 1\nservers:\n"
+        "  - name: dup\n    command: ['a']\n"
+        "  - name: dup\n    command: ['b']\n"
+    )
+    with pytest.raises(ConfigError, match="dup"):
+        load_config(_write(tmp_path, text))
+
+
+def test_unsupported_version_raises_a_config_error(tmp_path):
+    """`version: 1` is the only shape this loader actually understands
+    (docs/SPEC.md §11) -- a config declaring a different version is either a
+    typo or a future format this checkout can't read; either way, loading
+    it silently under version 1's rules would misinterpret it, not degrade
+    gracefully."""
+    text = "version: 2\nservers:\n  - name: s\n    command: ['echo']\n"
+    with pytest.raises(ConfigError, match="version"):
+        load_config(_write(tmp_path, text))
+
+
 def test_server_target_returns_stdio_params_for_a_command_entry():
     server = ServerConfig(name="local", command=["npx", "-y", "@mcp/server"])
     target = server_target(server)
@@ -250,6 +301,22 @@ def test_an_unmatched_task_id_is_a_bare_label_not_an_error(tmp_path):
 
     assert find_task(config.tasks, "unknown") is None
     assert assertions_for(config.tasks, "unknown").empty is True
+
+
+def test_duplicate_task_ids_raise_a_config_error(tmp_path):
+    """docs/PHASES.md R5: `find_task` returns the FIRST id match -- two
+    authored tasks sharing an `id` would make the second one's assertions
+    silently unreachable via `--task-id`, exactly the same unreachable-
+    second-entry shape as duplicate server names above, just on `tasks:`
+    instead of `servers:`."""
+    path = tmp_path / "drifter.yaml"
+    path.write_text(
+        "version: 1\nservers:\n  - name: s\n    command: ['echo']\n"
+        "tasks:\n  - id: dup\n    prompt: a\n  - id: dup\n    prompt: b\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="dup"):
+        load_config(path)
 
 
 def test_result_contains_is_rejected_loudly_not_silently_ignored(tmp_path):

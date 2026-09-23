@@ -59,7 +59,7 @@ def run_coverage(
         config = load_config(config_path)
 
     if runs_dir is None:
-        runs_dir = resolve_runs_dir(config)
+        runs_dir = resolve_runs_dir(config, config_path)
 
     if server is None:
         if config is None or not config.servers:

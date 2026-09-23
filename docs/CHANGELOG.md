@@ -56,6 +56,42 @@ made.
 
 ---
 
+## R5: working-directory/relative-path handling, HTTP config, strict validation
+
+Three bounded fixes under one PHASES.md checklist item.
+
+**Working-directory/relative-path handling.** `cli/stats.py`'s `resolve_runs_dir` — the
+resolver every one of `run`/`report`/`doctor`/`score`/`coverage` shares — resolved a
+relative `record.dir`/`DRIFTER_RUNS_DIR` against the process's current working directory,
+not against drifter.yaml's own location. `drifter report --config /project/drifter.yaml`
+run from a different cwd (a wrapper script, another terminal tab, a CI job with its own
+working directory) silently read/wrote a different, empty-looking runs directory instead
+of the project's real one. Fixed with a new `anchor_relative_to_config` helper: absolute
+paths pass through unchanged; relative ones anchor to `config_path`'s parent, defaulting
+to `Path("drifter.yaml")`'s parent (i.e. cwd) so every caller that never passes
+`--config` behaves exactly as before. `cli/observe.py` carried its own separate,
+duplicate copy of the same env-var-precedence logic — rather than patching both, it now
+calls the shared resolver directly, so there's one implementation, not two that can
+drift apart again later.
+
+**HTTP configuration.** `ServerConfig.url` (F-39) only checked non-emptiness. A
+scheme-less value or a non-HTTP scheme (`ftp://…`) passed validation and only failed
+deep inside the real MCP HTTP client, with nothing pointing back at drifter.yaml. Now
+rejected at load time with the actual bad value named in the message.
+
+**Strict config validation.** Three "silently unreachable" footguns closed:
+`DrifterConfig.version` must be `1` (a different value is a typo or an unreadable future
+format, not something to silently misinterpret); duplicate `servers:` names are rejected
+(`select_server` returns the first name match, so a duplicate made the second entry
+unreachable via `--server` with no indication why); duplicate `tasks:` ids are rejected
+for the same reason (`find_task` returns the first id match too).
+
+Red-test-first per CLAUDE.md throughout: 4 anchoring tests (`tests/cli/test_stats.py`)
+and 6 validation tests (`tests/cli/test_config.py`), each confirmed failing against the
+unmodified code before its fix was written.
+
+---
+
 ## R5: enforce budgets DURING execution, not just between repeats
 
 `BudgetTracker` previously only counted a repeat's spent calls after `run_once`

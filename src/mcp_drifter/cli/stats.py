@@ -309,11 +309,43 @@ def render_stats(stats: CorpusStats) -> str:
     return "\n".join(lines) + "\n"
 
 
-def resolve_runs_dir(config: DrifterConfig | None) -> Path:
+def anchor_relative_to_config(path: Path, config_path: Path | None) -> Path:
+    """docs/PHASES.md R5: resolves a RELATIVE path against the directory
+    CONTAINING drifter.yaml, not the process's current working directory --
+    returns an absolute `path` unchanged (it already names one specific
+    location regardless of anchor). `config_path=None` mirrors
+    `load_config`'s own default (`Path("drifter.yaml")`, i.e. the cwd), so
+    a caller that never passes an explicit --config keeps behaving exactly
+    as before.
+
+    Shared by `resolve_runs_dir` (record.dir / DRIFTER_RUNS_DIR) and
+    `cli/observe.py`'s own raw_dir override (DRIFTER_RAW_DIR) -- both are
+    "a directory path that came from config or an env var and must not
+    silently depend on launch-time cwd," the same underlying problem, not
+    two separate ones.
+    """
+    if path.is_absolute():
+        return path
+    anchor = (config_path or Path("drifter.yaml")).resolve().parent
+    return anchor / path
+
+
+def resolve_runs_dir(config: DrifterConfig | None, config_path: Path | None = None) -> Path:
     """Same DRIFTER_RUNS_DIR precedence as cli/observe.py's run_observe:
-    env var wins over drifter.yaml's record.dir when set."""
+    env var wins over drifter.yaml's record.dir when set.
+
+    docs/PHASES.md R5: the result is anchored via `anchor_relative_to_config`
+    when relative -- see that function's own docstring for why. Before this,
+    `drifter report --config /project/drifter.yaml` run from a different cwd
+    silently read/wrote a `.drifter/runs` next to wherever the process
+    happened to be launched from, not next to the project's own config --
+    every command in a wrapper script, a different terminal tab, or a CI job
+    with its own working directory could each see a DIFFERENT, empty-looking
+    runs directory instead of the real one.
+    """
     default = config.record.dir if config is not None else ".drifter/runs"
-    return Path(os.environ.get("DRIFTER_RUNS_DIR", default))
+    runs_dir = Path(os.environ.get("DRIFTER_RUNS_DIR", default))
+    return anchor_relative_to_config(runs_dir, config_path)
 
 
 def run_stats(
@@ -324,6 +356,6 @@ def run_stats(
 ) -> None:
     if runs_dir is None:
         config = load_config(config_path)
-        runs_dir = resolve_runs_dir(config)
+        runs_dir = resolve_runs_dir(config, config_path)
     stats = collect_stats(runs_dir, server_filter=server_name)
     output_stream.write(render_stats(stats))
