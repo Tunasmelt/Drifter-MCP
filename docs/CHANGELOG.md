@@ -6,6 +6,41 @@ not just a diff.
 
 ---
 
+## Publishing: Trusted Publishing workflow, build/install verified, three items left for the user
+
+docs/PHASES.md's Publishing checklist, worked as far as an agent responsibly can without
+PyPI account access or authority to trigger an external, hard-to-reverse publish.
+
+**Added `.github/workflows/publish.yml`**: a `build` job (build wheel+sdist, `twine
+check`, install the actual built artifact into a clean venv and smoke-test it — not the
+editable checkout, so CI catches a packaging mistake a dev-environment run would miss),
+then `publish-testpypi` (`workflow_dispatch`) and `publish-pypi` (on a published GitHub
+release) jobs. Both publish jobs use `permissions: id-token: write` and
+`pypa/gh-action-pypi-publish@release/v1` — PyPI's OIDC Trusted Publishing, so no API
+token is stored anywhere in this repo or its secrets. Two prerequisites this workflow
+cannot satisfy itself, both PyPI-account or GitHub-repo-settings actions requiring the
+user: registering this repo+workflow+environment as a Trusted Publisher on pypi.org and
+test.pypi.org, and creating the two protected `pypi`/`testpypi` GitHub environments with
+required reviewers on `pypi`.
+
+**Verified for real, from the actual current HEAD (`dd568d8`)**: `uv build` produced
+`mcp_drifter-0.1.0-py3-none-any.whl` and `.tar.gz`; `twine check dist/*` passed both.
+Installed the wheel into a clean, disposable venv (no dev deps, no editable install) and
+confirmed the runtime dependency set resolves and both entry points work — `python -m
+mcp_drifter.cli --help` and the installed `drifter` console script directly — plus a real
+`drifter init` against an empty directory, which correctly reported no MCP client config
+found with an actionable message and exit code 4, not a crash.
+
+**Left undone, deliberately, not an oversight**: revoking the previously-exposed API
+token, the PyPI/TestPyPI Trusted Publisher registrations, staging on TestPyPI, and the
+production PyPI publish itself. All four are either PyPI account actions with no
+unattended equivalent, or externally-visible, hard-to-reverse publish actions this
+project's own standing instruction requires explicit user go-ahead for — not something an
+agent should trigger on a first pass regardless of how much of the surrounding checklist
+is otherwise ready.
+
+---
+
 ## The release gate: passed, for real, with a real wheel and a real agent
 
 docs/PHASES.md's release gate — a fresh user, installing the built wheel OUTSIDE the

@@ -1592,15 +1592,52 @@ Verified 2026-09-09: PyPI holds only the `0.0.1` placeholder; this checkout decl
 placeholder (which is why the earlier `0.1.0a1` proposal was rejected — pip ignores
 pre-releases by default).
 
-- [ ] Confirm the previously-exposed API token is revoked.
-- [ ] Configure Trusted Publishing (PyPI OIDC) with a protected GitHub release
-      environment: job-level `permissions: id-token: write`, `environment: pypi`, and
-      `pypa/gh-action-pypi-publish@release/v1`. No long-lived token is retained.
-- [ ] Build wheel and sdist from the reviewed commit; validate both.
-- [ ] Install the built distributions and exercise the runtime dependencies.
-- [ ] Stage on TestPyPI and run the full fresh-user flow against it.
-- [ ] Publish the SAME tested artifacts, with attestations.
-- [ ] Install from production PyPI and repeat the smoke test.
+- [ ] **Confirm the previously-exposed API token is revoked.** Blocked on the user: this
+      is a PyPI account action (pypi.org → Account settings → API tokens) with no
+      unattended equivalent — an agent should never hold or check PyPI credentials on the
+      user's behalf. Needs explicit confirmation before any production publish below.
+- [x] **Configure Trusted Publishing (PyPI OIDC) with a protected GitHub release
+      environment.** `.github/workflows/publish.yml` added: `build` job (build, `twine
+      check`, install-and-smoke-test the actual artifact — not the editable checkout),
+      then `publish-testpypi` (on `workflow_dispatch`) and `publish-pypi` (on a published
+      GitHub release) jobs, each with `permissions: id-token: write`, its own
+      `environment:` (`testpypi`/`pypi`), and `pypa/gh-action-pypi-publish@release/v1`. No
+      long-lived token anywhere in the repo or its secrets. Two things this workflow
+      genuinely cannot do unattended, both stated in its own header comment and both
+      requiring the user: (1) registering this repo+workflow+environment as a Trusted
+      Publisher on pypi.org and test.pypi.org — a PyPI-account action, the OIDC
+      equivalent of the token-revocation item above; (2) creating the two protected
+      GitHub environments (`pypi`, `testpypi`) under repo Settings → Environments, with
+      required reviewers on `pypi` at minimum, so a production publish always needs a
+      human approval click even though the trigger is a published release.
+- [x] **Build wheel and sdist from the reviewed commit; validate both.** Built from
+      `dd568d8` (this checkout's actual HEAD, not a hypothetical) via `uv build`:
+      `dist/mcp_drifter-0.1.0-py3-none-any.whl` + `.tar.gz`. `twine check dist/*`: PASSED
+      for both.
+- [x] **Install the built distributions and exercise the runtime dependencies.** Installed
+      the wheel into a clean, disposable venv (no dev dependencies, no editable install)
+      and confirmed the runtime dependency set resolves cleanly; ran `python -m
+      mcp_drifter.cli --help` (works) and the installed `drifter` console-script entry
+      point directly (works, byte-identical `--help` output — confirms `pyproject.toml`'s
+      entry-point declaration is correct, not just the module path). Also ran a real
+      `drifter init` against an empty directory: correctly reported no known MCP client
+      config found with an actionable message and exit code 4 (docs/SPEC.md §12), rather
+      than crashing — a genuinely fresh user's first command behaves as designed. This is
+      in addition to, not instead of, the full release-gate run above, which already
+      exercised the wheel end to end against a real task and a real agent; this item is
+      the narrower "does it even install and start" check, now also automated in CI via
+      `publish.yml`'s `build` job so it runs on every future publish attempt, not just
+      this one.
+- [ ] **Stage on TestPyPI and run the full fresh-user flow against it.** Blocked on the
+      user: needs the TestPyPI Trusted Publisher registration above in place first, then
+      `workflow_dispatch`-triggering `publish.yml` (or an equivalent manual `twine
+      upload --repository testpypi`) is a real, externally-visible action a user should
+      trigger deliberately, not something to run unattended the first time.
+- [ ] **Publish the SAME tested artifacts, with attestations.** Blocked on the user for
+      the same reason, at higher stakes — an irreversible production release. Requires
+      explicit go-ahead per this project's own standing instruction on publish actions.
+- [ ] **Install from production PyPI and repeat the smoke test.** Depends on the item
+      directly above having happened.
 
 ## v1.5
 

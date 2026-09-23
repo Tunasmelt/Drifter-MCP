@@ -1,0 +1,106 @@
+name: Publish
+
+# docs/PHASES.md "Publishing" checklist item: Trusted Publishing (PyPI OIDC),
+# no long-lived API token stored anywhere in this repo or its secrets.
+#
+# Two ways in:
+# - workflow_dispatch: stage a build on TestPyPI on demand (the "Stage on
+#   TestPyPI and run the full fresh-user flow against it" checklist item).
+# - release (published): build once and publish the SAME artifacts to
+#   production PyPI, with attestations.
+#
+# Requires PyPI-side setup this workflow cannot do for you (pypi.org, not
+# repo config): add this repo/workflow as a Trusted Publisher for the
+# `mcp-drifter` project, once for the `pypi` environment
+# (https://pypi.org/manage/project/mcp-drifter/settings/publishing/) and
+# once for `testpypi` on https://test.pypi.org's equivalent page (a
+# separate account/project registration there). Until both are registered,
+# the corresponding job below will fail at the publish step with an
+# authentication error -- that's PyPI/TestPyPI refusing an unrecognized
+# publisher, not a bug in this workflow.
+#
+# Also requires two protected GitHub environments (repo Settings ->
+# Environments): `pypi` and `testpypi`. Add required reviewers on `pypi`
+# at minimum, so a production publish always needs a human approval click
+# even though the trigger (a published GitHub release) is otherwise
+# automatic.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.11
+
+      - name: Build wheel and sdist
+        run: uv build
+
+      - name: Validate distributions
+        run: uv run --with twine twine check dist/*
+
+      - name: Install the built wheel and exercise it
+        # Smoke test against the ARTIFACT that will actually be published,
+        # not the editable checkout -- matches docs/PHASES.md's own
+        # "install the built distributions and exercise the runtime
+        # dependencies" item, run in CI on every build, not only by hand.
+        run: |
+          uv venv /tmp/smoke-test-venv
+          uv pip install --python /tmp/smoke-test-venv/bin/python dist/*.whl
+          /tmp/smoke-test-venv/bin/python -m mcp_drifter.cli --help
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish-testpypi:
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/mcp-drifter
+    permissions:
+      id-token: write  # OIDC token for Trusted Publishing -- no API token stored anywhere
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    if: github.event_name == 'release' && github.event.action == 'published'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/mcp-drifter
+    permissions:
+      id-token: write  # OIDC token for Trusted Publishing -- no API token stored anywhere
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          attestations: true
