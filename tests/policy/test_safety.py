@@ -143,6 +143,33 @@ def test_a_call_to_a_tool_missing_from_the_served_manifest_does_not_crash():
     assert result.findings[0].kind == "confirmation_required_bypass"
 
 
+def test_a_call_to_an_unknown_classified_tool_is_reported_not_silently_dropped():
+    """docs/PHASES.md R5: docs/SPEC.md §10's own taxonomy defines
+    "unknown" as 'unsafe by default, never mutated, never live-invoked' --
+    a call to a tool the classifier genuinely couldn't resolve (no
+    annotations, no matching name-heuristic prefix) is exactly the case
+    that taxonomy says should never happen live, so its occurrence in a
+    recorded session is itself safety-relevant information. Before this
+    fix, `_ALWAYS_FLAGGED_RISK_LEVELS` only checked for
+    "destructive"/"irreversible_write" -- an "unknown" classification
+    produced no finding at all, indistinguishable from a confidently
+    classified read-only call. Distinct from the "tool missing from the
+    served manifest entirely" case (see
+    test_a_call_to_a_tool_missing_from_the_served_manifest_does_not_crash)
+    -- this tool IS in tools_served, it's just that none of the
+    classifier's tiers could confidently resolve it.
+    """
+    tools = [_tool("frobnicate")]  # matches no known prefix in either table
+    calls = [_call(1, "frobnicate")]
+    result = evaluate_safety(calls, tools)
+    assert result.verdict == "VIOLATION"
+    assert len(result.findings) == 1
+    finding = result.findings[0]
+    assert finding.kind == "unknown_classification_invocation"
+    assert finding.tool_name == "frobnicate"
+    assert finding.seq == 1
+
+
 def test_empty_session_is_no_violation():
     result = evaluate_safety([], [])
     assert result.verdict == "NO_VIOLATION"

@@ -6,6 +6,30 @@ not just a diff.
 
 ---
 
+## R5: safety model — unknown classifications reported, not silently dropped
+
+docs/SPEC.md §10's taxonomy defines `"unknown"` as "unsafe by default, never mutated,
+never live-invoked." `policy/safety.py`'s destructive-invocation check only fired for
+`risk in {"destructive", "irreversible_write"}` — a call to a tool the classifier
+genuinely couldn't resolve produced no finding whatsoever, silently identical to a
+confidently classified read-only call. The same "doesn't crash, just quietly lies"
+shape CLAUDE.md's task-verdict UNKNOWN-default invariant exists to prevent, showing up
+here on the safety axis instead.
+
+Fixed by adding `SafetyFinding.kind == "unknown_classification_invocation"`, fired
+whenever a call's classification resolves with `risk == "unknown"` — kept distinct
+from a tool missing from `tools_served` entirely (`classification is None`), an
+already-handled, semantically different case. `report_format.py` needed no change,
+since it already renders `result.safety.findings` generically.
+
+Red-test-first: added a test asserting the report, confirmed it failed against the
+unmodified code, then implemented the check. Two existing report tests used
+unresolvable tool names (`"a"`/`"b"`) in fixtures meant to be genuinely safety-clean;
+updated to confidently-classifiable names (`"get_a"`/`"get_b"`) so those fixtures stay
+actually clean under the corrected behavior.
+
+---
+
 ## R5: safety model — idempotence no longer implies reversibility
 
 `policy/classify.py`'s MCP-annotation tier mapped `idempotentHint: true` to

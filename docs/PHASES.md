@@ -1383,7 +1383,30 @@ tasks can pick a path that belongs to a different task; the report shows P so th
       fix per CLAUDE.md's procedure: replaced the test asserting the old (wrong)
       behavior with one asserting the corrected behavior, confirmed it failed against
       the unmodified classifier, then fixed `classify.py`.
-- [ ] Report unknown safety classifications explicitly rather than silently.
+- [x] Report unknown safety classifications explicitly rather than silently.
+      docs/SPEC.md §10's own taxonomy defines `"unknown"` as "unsafe by default,
+      never mutated, never live-invoked" — but `policy/safety.py`'s
+      `_ALWAYS_FLAGGED_RISK_LEVELS` only checked for `"destructive"`/
+      `"irreversible_write"`, so a call to a tool the classifier genuinely
+      couldn't resolve produced NO finding at all — silently indistinguishable
+      from a confidently classified read-only call, exactly the "quietly lies"
+      failure shape CLAUDE.md's UNKNOWN-verdict invariant warns against, just in
+      the safety axis instead of the task-verdict one. Fixed by adding a new
+      `SafetyFinding.kind == "unknown_classification_invocation"`, fired whenever
+      a call resolves against a classification with `risk == "unknown"` — kept
+      distinct from the pre-existing "tool missing from `tools_served` entirely"
+      case (`classification is None`), which is a different, already-handled
+      situation (see `test_a_call_to_a_tool_missing_from_the_served_manifest_does_not_crash`).
+      `cli/report_format.py`'s renderer needed no change — it already iterates
+      `result.safety.findings` generically via `finding.detail`. Red-test-first
+      per CLAUDE.md: added a test asserting the tool call is reported, confirmed
+      it failed against the unmodified code, then implemented the check. Two
+      pre-existing report tests (`test_build_report_result_reconstructs_a_clean_no_regression_report`,
+      `test_render_run_result_output_matches_what_a_real_drifter_run_would_show`)
+      used unresolvable tool names (`"a"`/`"b"`) in fixtures meant to be
+      genuinely safety-clean — updated to confidently-classifiable names
+      (`"get_a"`/`"get_b"`) so those fixtures are actually clean under the
+      corrected behavior, not accidentally exercising the new finding.
 - [ ] Fix working-directory/relative-path handling, HTTP configuration, and add strict
       config validation.
 - [ ] Test matrix: both protocol eras, both transports, supported Pythons, Windows + Linux.

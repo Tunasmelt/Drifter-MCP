@@ -107,9 +107,12 @@ def test_build_report_result_reconstructs_a_clean_no_regression_report(tmp_path)
     session_dir = tmp_path / "run" / "my_task"
     # 20 per arm: docs/PHASES.md R4's interval rule cannot establish NO_REGRESSION
     # from 3 runs (the interval is wider than the 0.3 margin).
+    # docs/PHASES.md R5: tool names must resolve confidently (not "unknown")
+    # for this "clean" fixture to actually be clean -- an unresolved
+    # classification is itself now a reported safety finding.
     for i in range(20):
-        _write_session(session_dir / "baseline", f"b{i}", ["a", "b"])
-        _write_session(session_dir / "mutated", f"m{i}", ["a", "b"])
+        _write_session(session_dir / "baseline", f"b{i}", ["get_a", "get_b"])
+        _write_session(session_dir / "mutated", f"m{i}", ["get_a", "get_b"])
 
     result = build_report_result("my_task", tmp_path)
 
@@ -158,9 +161,12 @@ def test_render_run_result_output_matches_what_a_real_drifter_run_would_show(tmp
     like."
     """
     session_dir = tmp_path / "run" / "shape_task"
+    # docs/PHASES.md R5: a confidently-classified tool name, not "a" -- an
+    # unresolved classification is now itself a reported safety finding,
+    # and this test's fixture must actually be clean to assert NO VIOLATION.
     for i in range(20):  # R4: 20 per arm, the calibrated default
-        _write_session(session_dir / "baseline", f"b{i}", ["a"])
-        _write_session(session_dir / "mutated", f"m{i}", ["a"])
+        _write_session(session_dir / "baseline", f"b{i}", ["get_a"])
+        _write_session(session_dir / "mutated", f"m{i}", ["get_a"])
 
     result = build_report_result("shape_task", tmp_path)
     output = render_run_result(result)

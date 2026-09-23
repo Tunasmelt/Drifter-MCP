@@ -79,7 +79,7 @@ class SafetyFinding:
     point directly at the exact call in the session, not just name a tool
     in the abstract."""
 
-    kind: Literal["destructive_invocation", "confirmation_required_bypass"]
+    kind: Literal["destructive_invocation", "confirmation_required_bypass", "unknown_classification_invocation"]
     tool_name: str
     seq: int
     detail: str
@@ -121,6 +121,25 @@ def evaluate_safety(
                     tool_name=call.tool_name,
                     seq=call.seq,
                     detail=f"{call.tool_name!r} classified {classification.risk!r} ({classification.source})",
+                )
+            )
+        # docs/PHASES.md R5: docs/SPEC.md §10's own taxonomy defines "unknown"
+        # as "unsafe by default, never mutated, never live-invoked" -- a call
+        # to a tool the classifier genuinely couldn't resolve is exactly the
+        # case that definition says should never happen, so it must be
+        # reported, not silently indistinguishable from a confidently
+        # classified read-only call. Only fires when the tool WAS present in
+        # tools_served but unresolved by every tier (classification is not
+        # None) -- a tool missing from the manifest entirely is a different,
+        # already-handled case (see this function's own docstring / the
+        # dedicated "missing from manifest" test).
+        if classification is not None and classification.risk == "unknown":
+            findings.append(
+                SafetyFinding(
+                    kind="unknown_classification_invocation",
+                    tool_name=call.tool_name,
+                    seq=call.seq,
+                    detail=f"{call.tool_name!r} classified 'unknown' ({classification.source}) and was invoked",
                 )
             )
         if call.tool_name in confirmation_set:
