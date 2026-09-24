@@ -14,7 +14,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class EffectSize(BaseModel):
@@ -126,18 +126,37 @@ class Mine(BaseModel):
     # Fewest trajectories a workflow must appear in to be proposed. An
     # ABSOLUTE count, not a fraction: a fraction of a 5-trajectory corpus is
     # noise, and 2 is the smallest number at which "recurs" means anything.
-    min_support: int = 2
+    #
+    # All five must be at least 1: found by audit that `min_support: -3` and
+    # `max_length: 0` were accepted, the latter silently mining nothing and then
+    # blaming the corpus.
+    min_support: int = Field(default=2, ge=1)
     # Shortest workflow worth proposing as a task. A single tool call is a
     # call, not a workflow; 2 is the smallest sequence with an order in it.
-    min_length: int = 2
+    min_length: int = Field(default=2, ge=1)
     # Longest pattern searched for. Also what keeps PrefixSpan tractable:
     # gapped subsequences of a long trajectory grow exponentially, so an
     # unbounded search on an exploring agent's 50-call session would not
     # terminate. 6 is a guess at "longer than a human would call one task".
-    max_length: int = 6
+    max_length: int = Field(default=6, ge=1)
     # How many candidates to write. Reviewing is the user's cost; a long
     # ranked tail is noise, and the ranking puts the strongest first.
-    max_candidates: int = 10
+    max_candidates: int = Field(default=10, ge=1)
+    # A safety valve, not a tuning knob: stop the search, with an explanation, once it
+    # has found this many patterns. min_support 2 on a large, varied corpus makes
+    # nearly every short subsequence "recur" -- 300 random trajectories of 20 calls
+    # produced 1.4 million and ran for 10s -- and the output would be noise anyway.
+    # 100,000 mines in about a second; a guess like the rest.
+    max_patterns: int = Field(default=100_000, ge=1)
+
+    @model_validator(mode="after")
+    def _min_length_fits_under_max_length(self) -> "Mine":
+        if self.min_length > self.max_length:
+            raise ValueError(
+                f"mine.min_length ({self.min_length}) is above mine.max_length ({self.max_length}), "
+                "so no pattern could ever qualify"
+            )
+        return self
 
 
 class Calibration(BaseModel):

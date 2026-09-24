@@ -226,3 +226,23 @@ def test_mine_imports_nothing_from_a_module_downstream_of_it():
                 names = [a.name for a in node.names]
             for name in names:
                 assert not name.startswith(("mcp_drifter.policy", "mcp_drifter.cli")), f"{path.name} imports {name}"
+
+
+# --- audit finding: "byte for byte" has to include line endings ----------------------
+
+
+def test_appending_to_a_crlf_file_keeps_it_crlf_throughout():
+    original = render_file("srv", build_entries([pattern("a", "b")], total_trajectories=10, taken_ids=set()))
+    crlf = original.replace("\n", "\r\n")
+    result = append_entries(
+        crlf, "srv", build_entries([pattern("c", "d", support=3)], total_trajectories=10, taken_ids={"a_b"})
+    )
+    assert result.startswith(crlf.rstrip("\r\n"))
+    assert "\n" not in result.replace("\r\n", ""), "a bare LF crept into a CRLF file"
+    assert [e["id"] for e in read_candidates(result).entries] == ["a_b", "c_d"]
+
+
+def test_approving_a_crlf_file_touches_no_line_ending():
+    crlf = _two_candidates().replace("\n", "\r\n")
+    result = approve_in_text(crlf, "c_d")
+    assert result.replace("status: approved", "status: candidate") == crlf

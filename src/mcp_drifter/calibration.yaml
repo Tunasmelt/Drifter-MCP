@@ -93,6 +93,9 @@ mine:
   min_length: 2
   max_length: 6
   max_candidates: 10
+  # A safety valve: stop with an explanation past this many patterns (min_support 2 on a
+  # large, varied corpus makes nearly every short sequence 'recur'). A guess, like the rest.
+  max_patterns: 100000
 
 doctor:
   # Not in SPEC.md §9's original table — same reasoning as

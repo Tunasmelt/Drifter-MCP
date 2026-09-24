@@ -34,7 +34,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from mcp_drifter.record.reader import read_session
-from mcp_drifter.record.schema import ToolCall, ToolsList, TrajectoryEnd
+from mcp_drifter.record.schema import SessionStart, ToolCall, ToolsList, TrajectoryEnd
+from mcp_drifter.replay.replay_proxy import REPLAY_SERVER_NAME_PREFIX
 
 Signature = tuple[str, ...]
 
@@ -43,7 +44,6 @@ Signature = tuple[str, ...]
 class Trajectory:
     session_id: str
     trajectory_id: str
-    server: str | None
     tools: Signature
 
 
@@ -55,6 +55,8 @@ class SessionTrajectories:
     server: str | None
     trajectories: list[Trajectory]
     unsegmented_calls: int
+    # Recorded by `drifter replay-serve`, not observed: the agent was being REPLAYED.
+    replayed: bool
     # Tools this session called or was served, for "which tools appear in no task".
     tools: tuple[str, ...]
 
@@ -63,6 +65,8 @@ class SessionTrajectories:
 class MinedCorpus:
     trajectories: list[Trajectory] = field(default_factory=list)
     sessions: int = 0
+    # Sessions left out because they were replays, not observations.
+    replayed_sessions: int = 0
     unsegmented_calls: int = 0
     tools: tuple[str, ...] = ()
 
@@ -81,10 +85,13 @@ def read_session_trajectories(path: Path) -> SessionTrajectories:
     ends: list[TrajectoryEnd] = []
     served: tuple[str, ...] = ()
     server: str | None = None
+    replayed = False
 
     for record in records:
         if not session_id:
             session_id = record.session_id
+        if isinstance(record, SessionStart):
+            replayed = any(name.startswith(REPLAY_SERVER_NAME_PREFIX) for name in record.environment.server_versions)
         if isinstance(record, ToolCall):
             calls[record.seq] = record
             server = server or record.server
@@ -107,7 +114,6 @@ def read_session_trajectories(path: Path) -> SessionTrajectories:
             Trajectory(
                 session_id=session_id,
                 trajectory_id=end.trajectory_id,
-                server=members[0].server,
                 tools=tuple(c.tool_name for c in members),
             )
         )
@@ -118,6 +124,7 @@ def read_session_trajectories(path: Path) -> SessionTrajectories:
         server=server,
         trajectories=trajectories,
         unsegmented_calls=len(calls) - len(placed),
+        replayed=replayed,
         tools=tools,
     )
 
@@ -135,6 +142,12 @@ def load_corpus_trajectories(paths: Sequence[Path], server: str | None = None) -
     for path in paths:
         session = read_session_trajectories(Path(path))
         if server is not None and session.server != server:
+            continue
+        if session.replayed:
+            # `drifter replay-serve` writes into the same directory `observe` does. A
+            # replay records the agent being replayed, not what it does: counting it would
+            # have mining feed on its own replays.
+            corpus.replayed_sessions += 1
             continue
         corpus.sessions += 1
         corpus.trajectories.extend(session.trajectories)

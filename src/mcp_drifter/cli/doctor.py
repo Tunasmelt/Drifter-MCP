@@ -56,6 +56,7 @@ from mcp_drifter.cli.config import (
     ServerConfig,
     load_config,
     server_target,
+    tasks_file_problem,
 )
 from mcp_drifter.cli.stats import resolve_runs_dir
 from mcp_drifter.policy.classify import Classification, classify_manifest
@@ -249,11 +250,18 @@ def run_doctor(config_path: Path | None = None, output_stream: TextIO = sys.stdo
     """
     display_path = config_path or Path("drifter.yaml")
     try:
-        config = load_config(config_path)
+        config = load_config(config_path, merge_tasks=False)
     except ConfigError as e:
         output_stream.write(f"[FAIL] config ({display_path}): {e}\n")
         return False
     output_stream.write(f"[ OK ] config ({display_path}): parses, {len(config.servers)} server(s) declared\n")
+    # A broken tasks file only stops `run`/`report`, so it is a warning here, not a
+    # failure: doctor's exit code 4 is for problems that stop the tool working.
+    tasks_problem = tasks_file_problem(config, config_path)
+    if tasks_problem:
+        output_stream.write(
+            f"[WARN] tasks_file: {tasks_problem} — `drifter run`/`report` will refuse until it is fixed\n"
+        )
 
     calibration = load_calibration()
     timeout_seconds = calibration.doctor.connectivity_timeout_seconds

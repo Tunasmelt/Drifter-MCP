@@ -167,3 +167,22 @@ def test_closed_mode_is_exactly_the_closed_subset_of_the_full_result():
     }
     got = as_dict(mine_patterns(data, min_support=2, min_length=1, max_length=4, closed=True))
     assert got == expected_closed
+
+
+def test_closed_filtering_scales_to_a_realistically_sized_corpus():
+    """Found by audit, not by any earlier test: the search took 0.1s on 100
+    trajectories x 12 calls but the closed-pattern filter compared every pattern with
+    every other and took ~14s, so `drifter tasks mine` looked hung on exactly the
+    corpora mining exists for. A timing bound is the honest test for a scaling defect;
+    5s is ~25x what the fixed version needs and ~3x under the broken one, so it fails
+    for the bug and not for a slow machine."""
+    import time
+
+    rng = random.Random(1)
+    tools = [f"t{i}" for i in range(14)]
+    data = groups(*[(tuple(rng.choice(tools) for _ in range(12)), 1) for _ in range(100)])
+    started = time.perf_counter()
+    result = mine_patterns(data, min_support=2, min_length=2, max_length=6)
+    elapsed = time.perf_counter() - started
+    assert len(result) == 8216
+    assert elapsed < 5.0, f"closed filtering took {elapsed:.1f}s"

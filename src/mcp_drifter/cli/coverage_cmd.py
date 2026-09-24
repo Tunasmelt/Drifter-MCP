@@ -56,7 +56,7 @@ def run_coverage(
     """
     config: DrifterConfig | None = None
     if runs_dir is None or server is None:
-        config = load_config(config_path)
+        config = load_config(config_path, merge_tasks=False)
 
     if runs_dir is None:
         runs_dir = resolve_runs_dir(config, config_path)

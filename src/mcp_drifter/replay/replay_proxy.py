@@ -126,6 +126,11 @@ from mcp_drifter.replay.replay_store import RecordedResponse, ReplayStore
 # test_replay_proxy.py asserts these two never collide with any
 # mcp_types-defined code, so this stays true as the SDK evolves, not
 # just true today.
+# What the replay server calls itself (and so what a session recorded from it carries in
+# `SessionStart.environment.server_versions`). Shared so `mine/` can recognise -- and
+# not mine -- sessions that are replays, not observations.
+REPLAY_SERVER_NAME_PREFIX = "drifter-replay-"
+
 REPLAY_MISS_CODE = -31001
 REPLAY_FAULT_CODE = -31002
 # A call that violates the SERVED (post-mutation) tool schema. Distinct
@@ -419,7 +424,7 @@ def build_replay_server(
             JSONRPCResponse(
                 jsonrpc="2.0",
                 id=init_id,
-                result={"serverInfo": {"name": f"drifter-replay-{server_name}", "version": ""}},
+                result={"serverInfo": {"name": f"{REPLAY_SERVER_NAME_PREFIX}{server_name}", "version": ""}},
             ),
         )
 
@@ -568,7 +573,7 @@ def build_replay_server(
         _emit(Direction.SERVER_TO_AGENT, JSONRPCResponse(jsonrpc="2.0", id=req_id, result=record_result))
         return result
 
-    return Server(name=f"drifter-replay-{server_name}", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
+    return Server(name=f"{REPLAY_SERVER_NAME_PREFIX}{server_name}", on_list_tools=on_list_tools, on_call_tool=on_call_tool)
 
 
 async def run_replay_proxy(

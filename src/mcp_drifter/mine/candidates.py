@@ -164,12 +164,15 @@ def append_entries(text: str, server: str, new_entries: Sequence[dict]) -> str:
     fresh = [e for e in new_entries if tuple(e["pattern"]) not in existing]
     if not fresh:
         return text
-    block = "".join(_entry_text(e) for e in fresh)
+    # Match the file's own line-ending convention: appending bare LFs to a CRLF file would
+    # leave it half one and half the other, and editors then rewrite every line.
+    newline = "\r\n" if "\r\n" in text else "\n"
+    block = "".join(_entry_text(e) for e in fresh).replace("\n", newline)
     empty = re.search(r"^candidates:[ \t]*\[\][ \t]*$", text, flags=re.MULTILINE)
     if empty:
-        result = text[: empty.start()] + "candidates:\n" + block + text[empty.end() :].lstrip("\r\n")
+        result = text[: empty.start()] + "candidates:" + newline + block + text[empty.end() :].lstrip("\r\n")
     else:
-        result = text.rstrip("\r\n") + "\n" + block
+        result = text.rstrip("\r\n") + newline + block
     # Appending is only safe when `candidates:` is the file's last top-level key and
     # the user kept the list's indentation. Prove it rather than assume it.
     try:

@@ -103,3 +103,32 @@ def test_a_corpus_with_no_trajectories_groups_to_nothing(tmp_path):
     corpus = load_corpus_trajectories([tmp_path / "s.jsonl"])
     assert corpus.trajectories == []
     assert group_signatures(corpus.trajectories) == []
+
+
+# --- audit finding: a session `drifter replay-serve` recorded is not an observation ----
+#
+# `replay-serve` writes into the same directory `observe` does by default. Mining those as
+# if observed counted the agent's own replays as evidence that it does what it was
+# replayed doing: mining fed on itself.
+
+
+def test_a_session_recorded_by_replay_is_flagged_and_left_out_of_the_corpus(tmp_path):
+    write_session(tmp_path, "real1", [["a", "b"]])
+    write_session(tmp_path, "real2", [["a", "b"]])
+    write_session(tmp_path, "replay1", [["c", "d"]], replayed=True)
+    assert read_session_trajectories(tmp_path / "replay1.jsonl").replayed is True
+    assert read_session_trajectories(tmp_path / "real1.jsonl").replayed is False
+
+    corpus = load_corpus_trajectories(sorted(tmp_path.glob("*.jsonl")))
+    assert corpus.sessions == 2
+    assert corpus.replayed_sessions == 1
+    assert [t.tools for t in corpus.trajectories] == [("a", "b"), ("a", "b")]
+    # Its tools are not evidence of anything the agent used either.
+    assert corpus.tools == ("a", "b")
+
+
+def test_the_replay_marker_is_the_name_the_replay_server_gives_itself():
+    """One definition, shared: if replay ever renames itself, mining must follow."""
+    from mcp_drifter.replay.replay_proxy import REPLAY_SERVER_NAME_PREFIX
+
+    assert REPLAY_SERVER_NAME_PREFIX == "drifter-replay-"

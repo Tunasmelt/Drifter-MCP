@@ -67,6 +67,30 @@ skipping the config merge, and skipping the id-collision check each fail them). 
 corrected in place: FEATURES.md F-28-F-30 status, SPEC.md §12/§11/§9/limitation 16,
 PHASES.md, and the README, which said mining was out of scope.
 
+**Audit of the above, same day (a follow-up pass, not a rewrite).** Six findings, each fixed
+test-first:
+1. *"Byte for byte" was false for line endings.* `Path.read_text`/`write_text` translate
+   CRLF, so approving one candidate in a CRLF file changed every line; appending wrote bare
+   LFs into it. File I/O is now `newline=""` and appends follow the file's own convention.
+2. *The closed-pattern filter was quadratic* (~14s on 100 trajectories). It now looks up each
+   pattern with one item deleted (equal-support super-patterns imply one exactly one item
+   longer, by support monotonicity). A scaling test mines 8,216 patterns.
+3. *Sessions recorded by `drifter replay-serve` were mined as if an agent chose those calls.*
+   They are skipped (keyed on `REPLAY_SERVER_NAME_PREFIX`, now one constant) and reported.
+4. *A malformed tasks file blocked `drifter observe`*, which agent MCP configs launch
+   unattended. Only `run`/`report` merge tasks now (`load_config(merge_tasks=...)`);
+   `doctor` warns about the file instead.
+5. *Thresholds were unvalidated*: `min_support: -3` and `max_length: 0` loaded, the latter
+   mining nothing and blaming the corpus. All `mine.*` values must be >= 1 and
+   `min_length <= max_length`.
+6. *Unbounded pattern count.* `min_support: 2` on a large varied corpus makes nearly every
+   short sequence recur (300 random trajectories: 1.4M patterns, ~10s). New
+   `mine.max_patterns` (100,000, a guess like the rest, in both calibration files) stops the
+   search with an error saying to raise `min_support`; it never truncates silently.
+
+Known and left: non-ASCII tool names become `_` in candidate ids (cosmetic); `approve` does not
+print coverage; candidate ids are checked against inline task ids at approval, not at mine time.
+
 ---
 
 ## Published: mcp-drifter 0.1.0 is on PyPI

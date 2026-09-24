@@ -187,7 +187,7 @@ def run_observe(
     server_name: str | None = None,
     status_stream: TextIO = sys.stderr,
 ) -> None:
-    config = load_config(config_path)
+    config = load_config(config_path, merge_tasks=False)
     server = select_server(config, server_name)
 
     # DRIFTER_RUNS_DIR / DRIFTER_RAW_DIR take precedence over drifter.yaml

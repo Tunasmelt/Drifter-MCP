@@ -396,7 +396,7 @@ Any report verdict depending on an uncalibrated default carries a footnote sayin
 | `segmentation.idle_gap_seconds` | 30 |
 | `baseline.repeats` | 10 |
 | `mutation.repeats` (screen / confirm / resolve stages) | 1 / 5 / 20 |
-| `mine.min_support` / `mine.min_length` / `mine.max_length` / `mine.max_candidates` | 2 / 2 / 6 / 10 — all guesses; none derived from a real multi-week corpus. `max_length` also bounds PrefixSpan's search, which is exponential on long trajectories if unbounded |
+| `mine.min_support` / `mine.min_length` / `mine.max_length` / `mine.max_candidates` / `mine.max_patterns` | 2 / 2 / 6 / 10 / 100,000 — all guesses (`max_patterns` is a safety valve that stops the search with an error); none derived from a real multi-week corpus. `max_length` also bounds PrefixSpan's search, which is exponential on long trajectories if unbounded |
 
 The verified operator weights (C5) are separate — they are cited research, not defaults.
 

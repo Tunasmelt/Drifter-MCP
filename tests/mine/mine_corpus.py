@@ -32,6 +32,7 @@ def write_session(
     server: str = "srv",
     extra_tools: tuple[str, ...] = (),
     unsegmented_tail: list | None = None,
+    replayed: bool = False,
 ) -> Path:
     """One session file. `trajectories` is a list of tool-name sequences.
 
@@ -52,7 +53,13 @@ def write_session(
     lines = [
         SessionStart(
             session_id=session_id, seq=seq, started_at=TS,
-            environment=Environment(tool_manifest_hash="h"), raw_frame_offset=0,
+            environment=Environment(
+                tool_manifest_hash="h",
+                # What `drifter replay-serve` writes: the replay server names itself
+                # drifter-replay-<server>. An observed session names the real server.
+                server_versions={f"drifter-replay-{server}": ""} if replayed else {server: ""},
+            ),
+            raw_frame_offset=0,
         ).model_dump_json()
     ]
     seq += 1

@@ -334,7 +334,7 @@ def run_stats(
     output_stream: TextIO = sys.stdout,
 ) -> None:
     if runs_dir is None:
-        config = load_config(config_path)
+        config = load_config(config_path, merge_tasks=False)
         runs_dir = resolve_runs_dir(config, config_path)
     stats = collect_stats(runs_dir, server_filter=server_name)
     output_stream.write(render_stats(stats))

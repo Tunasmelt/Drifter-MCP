@@ -223,3 +223,127 @@ def test_the_command_group_is_wired_and_reports_config_errors_with_exit_4(tmp_pa
     monkeypatch.setattr(sys, "argv", ["drifter", "tasks", "mine", "--config", str(config)])
     main()  # success returns normally, like every other command
     assert _candidates(config).exists()
+
+
+# --- audit finding: a broken tasks file must not take unrelated commands down -------
+#
+# Found by audit: merging approved tasks inside `load_config` meant a YAML typo in
+# task_candidates.yaml made `drifter observe` exit 4 -- the recording proxy an agent's
+# MCP config launches, refusing to start over a file that has nothing to do with
+# recording. Only `run`, `report` and `tasks approve` use `config.tasks`.
+
+FAKE_SERVER = str(Path(__file__).parent.parent / "fixtures" / "fake_server.py")
+
+
+def _broken_tasks_file(config: Path) -> Path:
+    path = _candidates(config)
+    path.write_text("version: 1\nserver: srv\ncandidates:\n  - id: x\n   status: candidate\n", encoding="utf-8")
+    return path
+
+
+def test_load_config_can_skip_the_tasks_file_entirely(tmp_path):
+    config, _ = _workspace(tmp_path)
+    _broken_tasks_file(config)
+    assert load_config(config, merge_tasks=False).servers[0].name == "srv"
+    with pytest.raises(ConfigError, match="task_candidates.yaml"):
+        load_config(config)
+
+
+def test_observe_starts_despite_a_broken_tasks_file(tmp_path, monkeypatch):
+    from mcp_drifter.cli import observe
+
+    config, _ = _workspace(tmp_path)
+    _broken_tasks_file(config)
+    ran = []
+    monkeypatch.setattr(observe.anyio, "run", lambda *a, **k: ran.append(True))
+    observe.run_observe(config_path=config, server_name="srv", status_stream=io.StringIO())
+    assert ran == [True]
+
+
+def test_stats_score_and_coverage_ignore_a_broken_tasks_file(tmp_path):
+    from mcp_drifter.cli.coverage_cmd import run_coverage
+    from mcp_drifter.cli.score import run_score
+    from mcp_drifter.cli.stats import run_stats
+
+    config, _ = _workspace(tmp_path)
+    _broken_tasks_file(config)
+    for command in (run_stats, run_score, run_coverage):
+        out = io.StringIO()
+        command(config_path=config, output_stream=out, **({"server": "srv"} if command is run_coverage else {}))
+        assert out.getvalue()
+
+
+def test_run_and_report_still_fail_loudly_because_they_need_the_tasks(tmp_path):
+    from mcp_drifter.cli.report import run_report
+
+    config, _ = _workspace(tmp_path)
+    _broken_tasks_file(config)
+    with pytest.raises(ConfigError, match="task_candidates.yaml"):
+        run_report(config_path=config, task_id="t", output_stream=io.StringIO())
+
+
+def test_doctor_surfaces_a_broken_tasks_file_as_a_warning_not_a_failure(tmp_path):
+    from mcp_drifter.cli.doctor import run_doctor
+
+    runs = tmp_path / "runs"
+    config = tmp_path / "drifter.yaml"
+    config.write_text(
+        f"version: 1\nservers:\n  - name: srv\n    command: ['{sys.executable}', '{FAKE_SERVER}']\n"
+        f"record:\n  dir: '{runs.as_posix()}'\n",
+        encoding="utf-8",
+    )
+    _broken_tasks_file(config)
+    out = io.StringIO()
+    ok = run_doctor(config_path=config, output_stream=out)
+    text = out.getvalue()
+    assert "[WARN] tasks_file" in text and "task_candidates.yaml" in text
+    assert ok is True
+
+
+def test_mine_skips_sessions_replay_recorded_and_says_how_many(tmp_path):
+    """Audit finding: replay-serve writes into the same directory observe does, and mining
+    its sessions proposed the agent's own replays back to it as a workflow."""
+    config, runs = _workspace(tmp_path)
+    for i in range(3):
+        write_session(runs, f"replay{i}", [["c", "d"]] * 2, replayed=True)
+    output = _mine(config)
+    text = _candidates(config).read_text(encoding="utf-8")
+    assert "7 trajectories from 4 session(s)" in output  # unchanged: the replays are not counted
+    assert "3 session(s) recorded by `drifter replay-serve` were skipped" in output
+    assert "pattern:\n  - c\n" not in text and "c_d" not in text
+
+
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"], ids=["LF", "CRLF"])
+def test_approve_changes_one_word_and_no_line_ending_whatever_the_files_convention(tmp_path, newline):
+    """Audit finding: reading and writing through text mode translated the whole file's
+    line endings (an LF file became CRLF on Windows and the reverse elsewhere), so
+    "your edits survive byte for byte" was false for every line. Compared as BYTES,
+    because a test that reads the file back through the same translating API cannot see
+    the difference -- which is how it slipped through."""
+    config, _ = _workspace(tmp_path)
+    _mine(config)
+    path = _candidates(config)
+    raw = path.read_bytes().replace(b"\r\n", b"\n").replace(b"prompt: ''", b"prompt: Look up acme")
+    before = raw.replace(b"\n", newline)
+    path.write_bytes(before)
+    run_tasks_approve("search_get_customer_create_invoice", config_path=config, output_stream=io.StringIO())
+    after = path.read_bytes()
+    assert after.replace(b"status: approved", b"status: candidate") == before
+
+
+@pytest.mark.parametrize("newline", [b"\n", b"\r\n"], ids=["LF", "CRLF"])
+def test_a_second_mine_appends_without_changing_any_existing_byte_or_line_ending(tmp_path, newline):
+    config, runs = _workspace(tmp_path)
+    _mine(config)
+    path = _candidates(config)
+    before = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", newline)
+    path.write_bytes(before)
+    write_session(runs, "s9", [["list_products", "get_product"]] * 3)
+    _mine(config)
+    after = path.read_bytes()
+    assert after.startswith(before.rstrip(b"\r\n"))
+    assert b"list_products_get_product" in after
+    if newline == b"\r\n":
+        assert b"\n" not in after.replace(b"\r\n", b"")
+    else:
+        assert b"\r" not in after

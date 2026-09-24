@@ -434,7 +434,23 @@ def _merge_approved_tasks(config: DrifterConfig, config_path: Path) -> None:
         taken.add(entry["id"])
 
 
-def load_config(path: Path | None = None) -> DrifterConfig:
+def tasks_file_problem(config: DrifterConfig, config_path: Path | None) -> str | None:
+    """Why the tasks file can't be used, or None. For commands that don't need tasks
+    but should still tell the user their file is broken (`drifter doctor`)."""
+    probe = config.model_copy(deep=True)
+    try:
+        _merge_approved_tasks(probe, config_path or Path("drifter.yaml"))
+    except ConfigError as exc:
+        return str(exc)
+    return None
+
+
+def load_config(path: Path | None = None, *, merge_tasks: bool = True) -> DrifterConfig:
+    """`merge_tasks=False` skips the approved-task merge. Only `run`, `report` and
+    `tasks approve` use `config.tasks`; every other command must not fail over a file
+    it never reads. That matters most for `observe`, which an agent's MCP config
+    launches unattended -- a YAML typo in task_candidates.yaml used to make it exit 4,
+    so the agent silently lost its MCP server over a file about tasks."""
     path = path or Path("drifter.yaml")
     if not path.exists():
         raise ConfigError(
@@ -451,5 +467,6 @@ def load_config(path: Path | None = None) -> DrifterConfig:
         config = DrifterConfig.model_validate(data)
     except ValidationError as e:
         raise ConfigError(f"{path} is invalid: {e}") from e
-    _merge_approved_tasks(config, path)
+    if merge_tasks:
+        _merge_approved_tasks(config, path)
     return config

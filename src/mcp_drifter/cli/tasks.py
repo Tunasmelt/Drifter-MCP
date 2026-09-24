@@ -37,7 +37,7 @@ from mcp_drifter.mine.candidates import (
     render_file,
     uncovered_tools,
 )
-from mcp_drifter.mine.prefixspan import mine_patterns
+from mcp_drifter.mine.prefixspan import PatternLimitError, mine_patterns
 from mcp_drifter.mine.signature import group_signatures, load_corpus_trajectories
 from mcp_drifter.record.calibration import Calibration, load_calibration
 
@@ -51,6 +51,19 @@ def _only_server(config: DrifterConfig | None, server: str | None) -> str:
         names = ", ".join(s.name for s in config.servers)
         raise ConfigError(f"More than one server is configured ({names}) — pass --server to choose one.")
     return config.servers[0].name
+
+
+def _read(path: Path) -> str:
+    """Read WITHOUT newline translation. `Path.read_text` turns CRLF into LF, so writing the
+    text back changed every line ending of a file the user had touched in one place --
+    "your edits survive byte for byte" was false for every line."""
+    with path.open("r", encoding="utf-8", newline="") as handle:
+        return handle.read()
+
+
+def _write(path: Path, text: str) -> None:
+    with path.open("w", encoding="utf-8", newline="") as handle:
+        handle.write(text)
 
 
 def _coverage_lines(tools: tuple[str, ...], approved: list[dict]) -> list[str]:
@@ -73,7 +86,7 @@ def run_tasks_mine(
 ) -> None:
     config: DrifterConfig | None = None
     if runs_dir is None or server is None or output is None:
-        config = load_config(config_path)
+        config = load_config(config_path, merge_tasks=False)
     if runs_dir is None:
         runs_dir = resolve_runs_dir(config, config_path)
     server = _only_server(config, server)
@@ -95,24 +108,33 @@ def run_tasks_mine(
         return
 
     groups = group_signatures(corpus.trajectories)
-    patterns = mine_patterns(
-        groups,
-        min_support=settings.min_support,
-        min_length=settings.min_length,
-        max_length=settings.max_length,
-    )
+    try:
+        patterns = mine_patterns(
+            groups,
+            min_support=settings.min_support,
+            min_length=settings.min_length,
+            max_length=settings.max_length,
+            max_patterns=settings.max_patterns,
+        )
+    except PatternLimitError as exc:
+        raise ConfigError(str(exc)) from exc
     out.write(
         f"TASK MINING  {total} trajectories from {corpus.sessions} session(s) on {server!r}\n"
         f"             {len(groups)} distinct workflow(s); {len(patterns)} recurring pattern(s) "
         f"(support >= {settings.min_support}, length {settings.min_length}-{settings.max_length})\n"
     )
+    if corpus.replayed_sessions:
+        out.write(
+            f"             {corpus.replayed_sessions} session(s) recorded by `drifter replay-serve` were "
+            "skipped: they record an agent being replayed, not what it does\n"
+        )
     if corpus.unsegmented_calls:
         out.write(
             f"             {corpus.unsegmented_calls} call(s) fell outside any recorded "
             "trajectory and were not mined\n"
         )
 
-    existing_text = path.read_text(encoding="utf-8") if path.exists() else None
+    existing_text = _read(path) if path.exists() else None
     try:
         existing = read_candidates(existing_text) if existing_text is not None else None
     except CandidateFileError as exc:
@@ -146,7 +168,7 @@ def run_tasks_mine(
         out.write(f"             no new candidates: every recurring pattern is already in {path}\n")
     else:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(new_text, encoding="utf-8")
+        _write(path, new_text)
         verb = "wrote" if existing_text is None else "appended"
         out.write(f"             {verb} {len(entries)} candidate(s) to {path}\n\nCANDIDATES\n")
         for entry in entries:
@@ -173,13 +195,13 @@ def run_tasks_approve(
     file: Path | None = None,
     output_stream: TextIO = sys.stdout,
 ) -> None:
-    config = load_config(config_path)
+    config = load_config(config_path, merge_tasks=False)
     configured = resolve_tasks_file(config, config_path)
     path = file if file is not None else configured
     if not path.exists():
         raise ConfigError(f"{path} not found. Run `drifter tasks mine` first to write candidates.")
 
-    text = path.read_text(encoding="utf-8")
+    text = _read(path)
     try:
         doc = read_candidates(text)
         new_text = approve_in_text(text, candidate)
@@ -202,7 +224,7 @@ def run_tasks_approve(
     except ValidationError as exc:
         raise ConfigError(f"candidate {candidate!r} has an invalid `assert` block: {exc}") from exc
 
-    path.write_text(new_text, encoding="utf-8")
+    _write(path, new_text)
     out = output_stream
     out.write(
         f"APPROVED  {task.id}\n"

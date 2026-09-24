@@ -182,7 +182,7 @@ def _run_live(server, requests, allow_tools, timeout_s):
 
 
 def _load_server(config_path: Path | None, server_name: str | None) -> ServerConfig:
-    return select_server(load_config(config_path), server_name)
+    return select_server(load_config(config_path, merge_tasks=False), server_name)
 
 
 def _print(statuses: list[EntryStatus], verb: str, output_stream: TextIO) -> None:

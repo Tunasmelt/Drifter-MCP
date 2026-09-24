@@ -113,7 +113,7 @@ def run_score(
     check.
     """
     if runs_dir is None:
-        config: DrifterConfig | None = load_config(config_path)
+        config: DrifterConfig | None = load_config(config_path, merge_tasks=False)
         runs_dir = resolve_runs_dir(config, config_path)
 
     calibration = calibration or load_calibration()
