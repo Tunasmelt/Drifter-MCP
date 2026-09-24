@@ -283,3 +283,44 @@ def test_appending_to_a_file_with_no_final_newline_adds_exactly_one():
         original, "srv", build_entries([pattern("c", "d", support=3)], total_trajectories=10, taken_ids={"a_b"})
     )
     assert result.startswith(original + "\n- id: c_d")
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+@pytest.mark.parametrize("tail", ["", "\n", "\n\n", "\n\n\n"])
+def test_filling_an_empty_list_keeps_every_other_byte_in_either_line_ending(newline, tail):
+    head = f"# mine{newline}version: 1{newline}server: srv{newline}candidates: []"
+    text = head + (tail.replace("\n", newline) if tail else "")
+    new = build_entries([pattern("a", "b")], total_trajectories=4, taken_ids=set())
+    result = append_entries(text, "srv", new)
+    assert [e["id"] for e in read_candidates(result).entries] == ["a_b"]
+    assert result.startswith(f"# mine{newline}version: 1{newline}server: srv{newline}candidates:{newline}- id: a_b")
+    assert result.endswith(tail.replace("\n", newline))
+    if newline == "\r\n":
+        assert "\n" not in result.replace("\r\n", ""), "a bare LF crept into a CRLF file"
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_a_round_trip_of_appends_and_approvals_only_ever_adds_or_flips_a_word(newline):
+    """Fuzz-ish: a user-edited file with comments and blank lines, appended to several times
+    and approved in different orders, always keeps the original as an exact prefix modulo
+    the status word."""
+    text = render_file("srv", build_entries([pattern("a", "b")], total_trajectories=9, taken_ids=set()))
+    text = ("# user note\n" + text + "\n\n# trailing note\n").replace("\n", newline)
+    taken = {"a_b"}
+    for index, pair in enumerate([("c", "d"), ("e", "f"), ("g", "h")]):
+        before = text
+        entries = build_entries([pattern(*pair, support=3 + index)], total_trajectories=9, taken_ids=taken)
+        taken |= {e["id"] for e in entries}
+        text = append_entries(text, "srv", entries)
+        assert text.startswith(before)
+        assert append_entries(text, "srv", entries) == text  # idempotent
+    for cid in ["e_f", "a_b", "g_h"]:
+        before = text
+        text = approve_in_text(text, cid)
+        assert text.replace("status: approved", "status: candidate") == before.replace(
+            "status: approved", "status: candidate"
+        )
+    doc = read_candidates(text)
+    assert [(e["id"], e["status"]) for e in doc.entries] == [
+        ("a_b", "approved"), ("c_d", "candidate"), ("e_f", "approved"), ("g_h", "approved")
+    ]

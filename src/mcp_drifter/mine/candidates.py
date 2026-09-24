@@ -172,9 +172,13 @@ def append_entries(text: str, server: str, new_entries: Sequence[dict]) -> str:
     # leave it half one and half the other, and editors then rewrite every line.
     newline = "\r\n" if "\r\n" in text else "\n"
     block = "".join(_entry_text(e) for e in fresh).replace("\n", newline)
-    empty = re.search(r"^candidates:[ \t]*\[\][ \t]*$", text, flags=re.MULTILINE)
+    # `\r?` because with CRLF, `$` matches before the `\n` and so leaves the `\r` behind.
+    empty = re.search(r"^candidates:[ \t]*\[\][ \t]*(\r?\n|\Z)", text, flags=re.MULTILINE)
     if empty:
-        result = text[: empty.start()] + "candidates:" + newline + block + text[empty.end() :].lstrip("\r\n")
+        # Replace only `candidates: []`; its own line ending and everything after it (blank
+        # lines, trailing comments) stay, with the new entries slotted in between.
+        eol = empty.group(1) or newline
+        result = text[: empty.start()] + "candidates:" + eol + block + text[empty.end() :]
     else:
         # Append after the file as it is, trailing blank lines included: only supply the
         # final newline if the last line lacks one.

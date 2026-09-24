@@ -370,3 +370,30 @@ def test_a_candidates_file_with_nothing_approved_is_not_checked_against_the_serv
     text = _candidates(config).read_text(encoding="utf-8")
     _candidates(config).write_text(text.replace("server: srv", "server: other", 1), encoding="utf-8")
     assert load_config(config).tasks == []
+
+
+@pytest.mark.parametrize("newline", ["\r\n", "\n"])
+def test_mine_fills_an_empty_candidates_list_in_place_keeping_trailing_lines(tmp_path, newline):
+    config, _ = _workspace(tmp_path)
+    original = f"version: 1{newline}server: srv{newline}candidates: []{newline}{newline}# mine{newline}"
+    with _candidates(config).open("w", encoding="utf-8", newline="") as handle:
+        handle.write(original)
+    _mine(config)
+    with _candidates(config).open("r", encoding="utf-8", newline="") as handle:
+        result = handle.read()
+    assert result.startswith(f"version: 1{newline}server: srv{newline}candidates:{newline}- id: ")
+    assert result.endswith(f"{newline}{newline}# mine{newline}")
+    if newline == "\r\n":
+        assert "\n" not in result.replace("\r\n", "")
+    assert "search_get_customer_create_invoice" in result
+
+
+def test_mine_only_reads_the_named_server_when_several_are_recorded(tmp_path):
+    config, runs = _workspace(tmp_path)
+    for i in range(3):
+        write_session(runs, f"o{i}", [["x", "y"]] * 2, server="other")
+    out = io.StringIO()
+    run_tasks_mine(config_path=config, server="srv", output_stream=out)
+    text = _candidates(config).read_text(encoding="utf-8")
+    assert "x_y" not in text
+    assert "search_get_customer_create_invoice" in text

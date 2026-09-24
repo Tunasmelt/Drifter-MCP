@@ -102,6 +102,14 @@ print coverage; candidate ids are checked against inline task ids at approval, n
   deliberately: edit `server:`.
 - *Appending still trimmed trailing blank lines*, so "every existing byte" was slightly too
   strong. It now appends after the file as it is, adding only a missing final newline.
+- *The trailing-byte fix missed the empty-list path* (found on re-review). With `candidates: []`
+  followed by blank lines, `.lstrip` still deleted them; with CRLF the empty-list pattern never
+  matched (`$` stops before `\n`, leaving `\r`), so the fallthrough appended a second
+  `candidates:` and was refused as invalid. Only the `[]` token is replaced now; its own line
+  ending and everything after it stay. Tested for LF and CRLF with 0-3 trailing blank lines.
+  Also added: an append/approve round-trip test, and a 400-seed sweep of the miner against an
+  independent brute-force closed-pattern enumerator (support and closedness both exact, zero
+  mismatches; the sweep script was run ad hoc, not committed).
 
 ---
 
