@@ -131,9 +131,13 @@ def read_candidates(text: str) -> CandidateDoc:
     server = data.get("server")
     if not isinstance(server, str) or not server:
         raise CandidateFileError("task candidates file needs a `server:` naming the server it was mined from")
-    raw = data.get("candidates") or []
+    # No `or []`: a missing key, or a null/false/0/{} value, is a file that lost its list,
+    # and reading it as "no candidates" would silently drop every approved task.
+    raw = data.get("candidates")
     if not isinstance(raw, list):
-        raise CandidateFileError("`candidates:` must be a list")
+        raise CandidateFileError(
+            "task candidates file needs a `candidates:` list (write `candidates: []` for none)"
+        )
     seen: set[str] = set()
     for index, entry in enumerate(raw):
         if not isinstance(entry, dict):
@@ -172,7 +176,9 @@ def append_entries(text: str, server: str, new_entries: Sequence[dict]) -> str:
     if empty:
         result = text[: empty.start()] + "candidates:" + newline + block + text[empty.end() :].lstrip("\r\n")
     else:
-        result = text.rstrip("\r\n") + newline + block
+        # Append after the file as it is, trailing blank lines included: only supply the
+        # final newline if the last line lacks one.
+        result = text + ("" if text.endswith("\n") else newline) + block
     # Appending is only safe when `candidates:` is the file's last top-level key and
     # the user kept the list's indentation. Prove it rather than assume it.
     try:

@@ -420,8 +420,17 @@ def _merge_approved_tasks(config: DrifterConfig, config_path: Path) -> None:
         doc = read_candidates(path.read_text(encoding="utf-8"))
     except (OSError, CandidateFileError) as exc:
         raise ConfigError(f"{path} is invalid: {exc}") from exc
+    approved = approved_entries(doc)
+    names = [s.name for s in config.servers]
+    if approved and names and doc.server not in names:
+        raise ConfigError(
+            f"{path} was mined from server {doc.server!r}, but this project configures "
+            f"{', '.join(repr(n) for n in names)}. A workflow seen on one server is not evidence "
+            "about another: re-mine against the right server, or edit `server:` in the file if "
+            "you know the tasks apply."
+        )
     taken = {t.id for t in config.tasks}
-    for entry in approved_entries(doc):
+    for entry in approved:
         if entry["id"] in taken:
             raise ConfigError(
                 f"{path}: approved task {entry['id']!r} is also defined under `tasks:` in "

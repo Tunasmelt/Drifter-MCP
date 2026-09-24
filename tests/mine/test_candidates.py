@@ -246,3 +246,40 @@ def test_approving_a_crlf_file_touches_no_line_ending():
     crlf = _two_candidates().replace("\n", "\r\n")
     result = approve_in_text(crlf, "c_d")
     assert result.replace("status: approved", "status: candidate") == crlf
+
+
+# --- second-reviewer findings ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "body",
+    ["", "candidates:\n", "candidates: {}\n", "candidates: ''\n", "candidates: 0\n", "candidates: false\n"],
+)
+def test_a_missing_or_non_list_candidates_key_is_refused_not_read_as_empty(body):
+    """`data.get('candidates') or []` turned all of these into 'no candidates', so a file
+    that lost its list silently dropped every approved task."""
+    with pytest.raises(CandidateFileError, match="candidates"):
+        read_candidates("version: 1\nserver: s\n" + body)
+
+
+def test_an_explicitly_empty_list_is_still_fine():
+    assert read_candidates("version: 1\nserver: s\ncandidates: []\n").entries == []
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_appending_keeps_every_existing_byte_even_trailing_blank_lines(newline):
+    original = render_file("srv", build_entries([pattern("a", "b")], total_trajectories=10, taken_ids=set()))
+    original = original.replace("\n", newline) + newline + newline  # two trailing blank lines
+    result = append_entries(
+        original, "srv", build_entries([pattern("c", "d", support=3)], total_trajectories=10, taken_ids={"a_b"})
+    )
+    assert result.startswith(original)
+    assert [e["id"] for e in read_candidates(result).entries] == ["a_b", "c_d"]
+
+
+def test_appending_to_a_file_with_no_final_newline_adds_exactly_one():
+    original = render_file("srv", build_entries([pattern("a", "b")], total_trajectories=10, taken_ids=set())).rstrip("\n")
+    result = append_entries(
+        original, "srv", build_entries([pattern("c", "d", support=3)], total_trajectories=10, taken_ids={"a_b"})
+    )
+    assert result.startswith(original + "\n- id: c_d")

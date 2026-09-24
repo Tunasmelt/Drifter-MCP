@@ -347,3 +347,26 @@ def test_a_second_mine_appends_without_changing_any_existing_byte_or_line_ending
         assert b"\n" not in after.replace(b"\r\n", b"")
     else:
         assert b"\r" not in after
+
+
+# --- second-reviewer findings: provenance ------------------------------------------------
+
+
+def test_candidates_mined_from_another_server_are_not_loaded_as_tasks(tmp_path):
+    """A candidate file records which server it was mined from; loading it under a project
+    that only configures a different server used to succeed silently."""
+    config, _ = _workspace(tmp_path)
+    _mine(config)
+    _approve_with_prompt(config)
+    text = _candidates(config).read_text(encoding="utf-8")
+    _candidates(config).write_text(text.replace("server: srv", "server: other", 1), encoding="utf-8")
+    with pytest.raises(ConfigError, match="other.*srv|srv.*other"):
+        load_config(config)
+
+
+def test_a_candidates_file_with_nothing_approved_is_not_checked_against_the_server(tmp_path):
+    config, _ = _workspace(tmp_path)
+    _mine(config)
+    text = _candidates(config).read_text(encoding="utf-8")
+    _candidates(config).write_text(text.replace("server: srv", "server: other", 1), encoding="utf-8")
+    assert load_config(config).tasks == []

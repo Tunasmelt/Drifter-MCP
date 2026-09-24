@@ -91,6 +91,18 @@ test-first:
 Known and left: non-ASCII tool names become `_` in candidate ids (cosmetic); `approve` does not
 print coverage; candidate ids are checked against inline task ids at approval, not at mine time.
 
+**Second review of the audit (an independent reviewer), three more findings, fixed test-first.**
+- *A candidates file that lost its `candidates:` list was read as empty* (`data.get(...) or []`
+  accepted a missing key, `null`, `{}`, `''`, `0`, `false`), silently dropping every approved
+  task. Anything but a list is now an error; `candidates: []` is the way to say "none".
+- *Approval discarded server provenance.* The file records the server it was mined from, but
+  the merge into `config.tasks` never checked it, so alpha's tasks loaded into a beta-only
+  project. Loading now refuses when an approved entry's file names a server the project does
+  not configure (a file with nothing approved is not checked). The message says how to override
+  deliberately: edit `server:`.
+- *Appending still trimmed trailing blank lines*, so "every existing byte" was slightly too
+  strong. It now appends after the file as it is, adding only a missing final newline.
+
 ---
 
 ## Published: mcp-drifter 0.1.0 is on PyPI
