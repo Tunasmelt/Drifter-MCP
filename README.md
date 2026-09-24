@@ -112,7 +112,8 @@ history in [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/mast
 - **Tested across the matrix that matters** — both MCP protocol eras, both transports
   (stdio and HTTP), and Python 3.11–3.13.
 
-Mutation mining/approval (`mine/`) is out of scope for v1 — see
+Task mining (`drifter tasks mine` / `approve`) turns recurring workflows in your recordings
+into editable task candidates. It works, and on a small corpus it has little to find — see
 [`docs/FEATURES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/FEATURES.md) for the complete per-feature breakdown and
 [`docs/SPEC.md` §15](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md) for known limitations, stated plainly, including
 several found only by testing against a real agent rather than a scripted stand-in.
@@ -312,6 +313,34 @@ mutated arm fails assertions the baseline passed.
 There's no `result_contains`: Drifter records result *shapes*, never payloads, so
 there'd be nothing for it to read. Writing one is a config error rather than a check
 that silently never runs — use `result_has_keys: {tool: [key]}` instead.
+
+### Finding tasks in your own recordings
+
+Rather than writing every task by hand, let Drifter propose them from what your agent
+actually did:
+
+```
+drifter tasks mine                 # recurring workflows -> task_candidates.yaml
+# edit the file: write each candidate's `prompt`, review its `assert`, add never_calls
+drifter tasks approve <id>         # promote one; it is now an ordinary task
+drifter run --task-id <id> ...
+```
+
+`mine` groups your recorded trajectories by the sequence of tools called, finds the
+sub-workflows that recur across them (PrefixSpan, gaps allowed, so `get_customer ->
+create_invoice` is found even when some runs did something between the two), and writes
+each as an editable candidate with its evidence: how many trajectories and sessions it
+appeared in. It also lists the tools no approved task covers.
+
+Two things it deliberately does not do. It cannot know what the agent was *asked* — a
+sequence of calls doesn't say — so every `prompt` starts empty and `approve` refuses
+until you write one. And nothing becomes a task until you approve it. Your edits are safe:
+re-running `mine` only appends patterns not already listed, and neither command rewrites
+anything else in the file, comments included.
+
+The thresholds (`mine:` in `calibration.yaml`) are guesses, and mining is only as good as
+the corpus: with a handful of trajectories there is little that recurs. It reads
+recorded sessions only — no server, no agent, no cost.
 
 `drifter run` shows a blast-radius preview (planned agent runs, estimated tool calls
 by risk level) and asks for confirmation before spawning any real agent process —

@@ -6,6 +6,69 @@ not just a diff.
 
 ---
 
+## `mine/` is built (F-28, F-29, F-30)
+
+Excluded from 0.1.0 by an earlier, deliberate decision (docs/PHASES.md R5: "only if the
+release must satisfy the full original scope"), built afterwards at the user's direction.
+The reasoning that deferred it was not refuted and is stated again, not buried: it was
+deferred because no real multi-week corpus exists to mine, and docs/SPEC.md §15 limitation
+16 says mining a thin corpus yields candidates for tasks Drifter cannot yet replay well
+enough to score. Run against this project's own recordings, `drifter tasks mine` found 4
+trajectories across 19 sessions and one recurring pattern — it works, and there is little
+for it to find yet.
+
+**F-28, `mine/signature.py`.** A signature is the ordered tool-name sequence and nothing
+else — request ids, timestamps, argument values and keys, result shapes all dropped — computed
+at read time, never stored (docs/SPEC.md §5), so the recording schema is untouched. Trajectory
+boundaries are `TrajectoryEnd.call_seqs`, i.e. record/'s own segmentation, inherited rather
+than re-derived. A call no trajectory names is counted and reported, not folded into one,
+which would invent a workflow. The 300-trajectory fixture collapses to exactly its four
+known signatures, spread across 30 files so grouping must work across sessions.
+
+**F-29, `mine/prefixspan.py`.** PrefixSpan written from the published description; no new
+dependency for a screen of code. Support is counted in trajectories, weighted by each
+signature's occurrence count; subsequences may have gaps; only closed patterns are kept,
+closed *within* `max_length`. `max_length` is not presentation: gapped subsequences of a
+long trajectory grow exponentially, so an unbounded search over an exploring agent's
+fifty-call session would not terminate. Verified against an independent brute-force count
+rather than trusted: every support PrefixSpan reports, for several `max_length` values over
+random small-alphabet data where patterns genuinely collide, equals an enumeration sharing
+no code with the miner. The tests were then mutation-checked — an off-by-one on
+`min_support` and projecting past the first occurrence each fail them (3 and 10 failures).
+The four thresholds live in `calibration.yaml`'s new `mine:` block as labelled guesses,
+per CLAUDE.md, in both copies of the file.
+
+**F-30, `mine/candidates.py` + `cli/tasks.py`.** `drifter tasks mine` writes editable
+candidates; `drifter tasks approve <id>` promotes one. Decisions worth recording:
+- **`prompt` starts empty and approval refuses without one.** A frequent sequence says what
+  the agent did, not what it was asked; guessing a prompt would present a mined artefact as
+  the user's intent.
+- **The file is the user's, so nothing re-serializes it.** `mine` appends text and `approve`
+  changes one word on one line; everything else stays byte for byte, comments included. When
+  a targeted edit cannot be made safely (an entry reformatted beyond recognition) it refuses
+  and says what to change by hand, never falling back to rewriting around them. Appending
+  proves the result still parses to the old entries plus the new ones before writing.
+- **Approved entries become ordinary tasks at config load.** A new `tasks_file` key (default
+  `task_candidates.yaml`, anchored to drifter.yaml's directory like `record.dir`) is read in
+  `load_config` and its approved entries appended to `config.tasks`; `drifter run --task-id`
+  and `drifter report` needed no changes. An unapproved candidate is never a task; an approved
+  id colliding with an inline task, or a malformed file, is a `ConfigError` naming the file
+  rather than a task silently not running. `anchor_relative_to_config` moved from
+  `cli/stats.py` to `cli/config.py` to support this (stats re-imports it; still one
+  implementation).
+- **Approval validates the assertions** through the same `TaskConfig` a run would use, so a
+  bad edit (e.g. the rejected `result_contains`) fails at approval, not mid-run.
+- `mine` also lists the tools no approved task covers, per FEATURES.md.
+
+`mine/` imports only upstream modules (checked by an AST test); `cli/` imports it. 62 new
+tests (45 in `tests/mine/`, 17 end to end in `tests/cli/test_tasks.py`, including the
+CLI's exit codes), and the CLI tests were mutation-checked too (dropping the prompt check,
+skipping the config merge, and skipping the id-collision check each fail them). Docs
+corrected in place: FEATURES.md F-28-F-30 status, SPEC.md §12/§11/§9/limitation 16,
+PHASES.md, and the README, which said mining was out of scope.
+
+---
+
 ## Published: mcp-drifter 0.1.0 is on PyPI
 
 The four items the previous entry left for the user are done, in order. CI's dependency

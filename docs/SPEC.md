@@ -396,6 +396,7 @@ Any report verdict depending on an uncalibrated default carries a footnote sayin
 | `segmentation.idle_gap_seconds` | 30 |
 | `baseline.repeats` | 10 |
 | `mutation.repeats` (screen / confirm / resolve stages) | 1 / 5 / 20 |
+| `mine.min_support` / `mine.min_length` / `mine.max_length` / `mine.max_candidates` | 2 / 2 / 6 / 10 — all guesses; none derived from a real multi-week corpus. `max_length` also bounds PrefixSpan's search, which is exponential on long trajectories if unbounded |
 
 The verified operator weights (C5) are separate — they are cited research, not defaults.
 
@@ -504,6 +505,11 @@ unbuilt speculative surface, unrelated to F-32. `tasks: [...]` is REAL as of F-2
 (docs/CHANGELOG.md) — each entry is `{id, prompt, assert: {...}}`, selected by
 `drifter run --task-id`, which now supplies both the task's prompt and its Task-axis
 assertions (§8). An unmatched `--task-id` stays a bare label, exactly as before.
+`tasks_file` (default `task_candidates.yaml`, anchored to drifter.yaml's directory like
+`record.dir`) names the file `drifter tasks mine` writes and `drifter tasks approve`
+edits (F-28-F-30). Its APPROVED entries are merged into `tasks` when the config loads, so
+they are indistinguishable from inline tasks; a candidate that is not approved is never a
+task, and an approved id colliding with an inline task is a config error.
 
 ## 12. CLI
 
@@ -523,9 +529,9 @@ Exit codes: `0` clean · `1` behavior regression · `2` assertion failure ·
 `3` safety violation · `4` config/connectivity error · `5` budget exceeded.
 
 *Implementation status:* `init`/`observe`/`stats`/`score`/`report`/`run`/
-`replay-serve`/`doctor` are all built. `tasks mine`/`tasks approve` remain unbuilt
-(F-28/F-29/F-30, deliberately deferred past Gate 3 — no real multi-week corpus
-exists yet to mine). The exit-code scheme above is now wired for `run` and
+`replay-serve`/`doctor`/`tasks mine`/`tasks approve` are all built (F-28/F-29/F-30 were
+deferred past Gate 3 for want of a real multi-week corpus, and built after the 0.1.0
+release; that absence still limits what they can find — limitation 16). The exit-code scheme above is now wired for `run` and
 `report` (`cli.report_format.compute_exit_code`) — the two commands that
 produce a full BEHAVIOR/TASK/SAFETY `RunResult` with real verdicts to read.
 `score` still exits `0`/`4` only: it produces a bare per-corpus `BaselineResult`,
@@ -955,9 +961,11 @@ when*.
     it CAN be resolved is now an empirical question with a defined experiment: 20-50
     real recordings of one narrow task, plotting the coverage curve to find whether it
     reaches 0.70 or plateaus. Until that runs, this limitation stays open, and
-    `mine/` (F-28-F-30) stays deliberately unbuilt — mining a 27%-coverage corpus
-    would yield task candidates for tasks Drifter cannot yet replay well enough to
-    score.
+    `mine/` (F-28-F-30) was deliberately left unbuilt at the time — mining a
+    27%-coverage corpus would yield task candidates for tasks Drifter cannot yet replay
+    well enough to score. It has since been built at the user's direction; that reasoning
+    was not refuted and still applies: a candidate is a proposal about what the agent
+    DID, and a task Drifter cannot replay well is still a task it cannot score.
 
     Secondary finding (a) above — `drifter run` unconfigurable from README alone — is
     FIXED: README now documents the `agent:` block for both `mode: subprocess` and

@@ -54,7 +54,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
 
-from mcp_drifter.cli.config import DrifterConfig, load_config
+from mcp_drifter.cli.config import DrifterConfig, anchor_relative_to_config, load_config
 from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.schema import ToolCall, ToolsList
 
@@ -307,27 +307,6 @@ def render_stats(stats: CorpusStats) -> str:
             "(schema pre-v1.0.10) — excluded from fault totals above, not counted as non-faults"
         )
     return "\n".join(lines) + "\n"
-
-
-def anchor_relative_to_config(path: Path, config_path: Path | None) -> Path:
-    """docs/PHASES.md R5: resolves a RELATIVE path against the directory
-    CONTAINING drifter.yaml, not the process's current working directory --
-    returns an absolute `path` unchanged (it already names one specific
-    location regardless of anchor). `config_path=None` mirrors
-    `load_config`'s own default (`Path("drifter.yaml")`, i.e. the cwd), so
-    a caller that never passes an explicit --config keeps behaving exactly
-    as before.
-
-    Shared by `resolve_runs_dir` (record.dir / DRIFTER_RUNS_DIR) and
-    `cli/observe.py`'s own raw_dir override (DRIFTER_RAW_DIR) -- both are
-    "a directory path that came from config or an env var and must not
-    silently depend on launch-time cwd," the same underlying problem, not
-    two separate ones.
-    """
-    if path.is_absolute():
-        return path
-    anchor = (config_path or Path("drifter.yaml")).resolve().parent
-    return anchor / path
 
 
 def resolve_runs_dir(config: DrifterConfig | None, config_path: Path | None = None) -> Path:

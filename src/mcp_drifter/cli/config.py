@@ -45,6 +45,7 @@ from mcp.client.stdio import StdioServerParameters
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 from mcp_drifter.evaluate.assertions import TaskAssertions
+from mcp_drifter.mine.candidates import CandidateFileError, approved_entries, read_candidates
 
 
 class ServerConfig(BaseModel):
@@ -294,6 +295,11 @@ class DrifterConfig(BaseModel):
     # honest default: no authored tasks means the Task axis reports
     # UNKNOWN, which is the correct answer rather than a missing feature.
     tasks: list[TaskConfig] = []
+    # F-30: where `drifter tasks mine` writes candidates and `drifter tasks approve`
+    # promotes them. Relative paths anchor to this file's directory, like
+    # `record.dir`. APPROVED entries are merged into `tasks` at load time (see
+    # `_merge_approved_tasks`); candidates that are not approved are never tasks.
+    tasks_file: str = "task_candidates.yaml"
     record: RecordConfig = RecordConfig()
     # None (not a default AgentConfig()) since there's no sensible
     # default agent command -- absence must stay distinguishable from
@@ -367,6 +373,67 @@ class ConfigError(ValueError):
     """
 
 
+def anchor_relative_to_config(path: Path, config_path: Path | None) -> Path:
+    """docs/PHASES.md R5: resolves a RELATIVE path against the directory
+    CONTAINING drifter.yaml, not the process's current working directory --
+    returns an absolute `path` unchanged (it already names one specific
+    location regardless of anchor). `config_path=None` mirrors
+    `load_config`'s own default (`Path("drifter.yaml")`, i.e. the cwd), so
+    a caller that never passes an explicit --config keeps behaving exactly
+    as before.
+
+    Shared by `resolve_runs_dir` (record.dir / DRIFTER_RUNS_DIR) and
+    `cli/observe.py`'s own raw_dir override (DRIFTER_RAW_DIR) -- both are
+    "a directory path that came from config or an env var and must not
+    silently depend on launch-time cwd," the same underlying problem, not
+    two separate ones.
+    """
+    if path.is_absolute():
+        return path
+    anchor = (config_path or Path("drifter.yaml")).resolve().parent
+    return anchor / path
+
+
+def resolve_tasks_file(config: DrifterConfig | None, config_path: Path | None) -> Path:
+    name = config.tasks_file if config is not None else "task_candidates.yaml"
+    return anchor_relative_to_config(Path(name), config_path)
+
+
+def approved_task_from_entry(entry: dict) -> TaskConfig:
+    """An approved candidate as an ordinary `TaskConfig`. Only id/prompt/assert cross
+    over -- the evidence fields (support, pattern, ...) are for the reader."""
+    return TaskConfig.model_validate(
+        {"id": entry["id"], "prompt": entry.get("prompt") or "", "assert": entry.get("assert") or {}}
+    )
+
+
+def _merge_approved_tasks(config: DrifterConfig, config_path: Path) -> None:
+    """Adds the candidates file's APPROVED entries to `config.tasks`, so `drifter run
+    --task-id` and `drifter report` treat them exactly like tasks written inline. A
+    missing file is normal (nothing mined yet); a malformed one, or an approved id that
+    collides with an inline task, is an error naming the file -- silently ignoring
+    either would leave a task the user approved not running."""
+    path = resolve_tasks_file(config, config_path)
+    if not path.exists():
+        return
+    try:
+        doc = read_candidates(path.read_text(encoding="utf-8"))
+    except (OSError, CandidateFileError) as exc:
+        raise ConfigError(f"{path} is invalid: {exc}") from exc
+    taken = {t.id for t in config.tasks}
+    for entry in approved_entries(doc):
+        if entry["id"] in taken:
+            raise ConfigError(
+                f"{path}: approved task {entry['id']!r} is also defined under `tasks:` in "
+                f"{config_path}; ids must be unique — rename one."
+            )
+        try:
+            config.tasks.append(approved_task_from_entry(entry))
+        except ValidationError as exc:
+            raise ConfigError(f"{path}: approved task {entry['id']!r} is invalid: {exc}") from exc
+        taken.add(entry["id"])
+
+
 def load_config(path: Path | None = None) -> DrifterConfig:
     path = path or Path("drifter.yaml")
     if not path.exists():
@@ -381,6 +448,8 @@ def load_config(path: Path | None = None) -> DrifterConfig:
         except yaml.YAMLError as e:
             raise ConfigError(f"{path} is not valid YAML: {e}") from e
     try:
-        return DrifterConfig.model_validate(data)
+        config = DrifterConfig.model_validate(data)
     except ValidationError as e:
         raise ConfigError(f"{path} is invalid: {e}") from e
+    _merge_approved_tasks(config, path)
+    return config

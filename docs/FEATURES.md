@@ -42,9 +42,9 @@ table and docs/PHASES.md for gate-level narrative.
 | F-25 | Safety verdict engine | ✅ Built | `policy/safety.py`, 2 of docs/SPEC.md §8's 5 check categories built (destructive invocation, confirmation_required bypass), 3 real documented gaps — wired into `drifter run`'s real report, evaluated with no fidelity gate |
 | F-26 | Tool risk classification | ✅ Built | `policy/classify.py`'s 4-tier resolution (user override → MCP annotations → name heuristics → observed behavior), wired into `drifter doctor`. Tier 4 (observed behavior) is a documented, deliberate stub — no signal currently recorded can honestly distinguish write from read-only |
 | F-27 | Adaptive repeat scheduling | ✅ Built, reframed | `evaluate/scheduling.py`. The three-stage screen/confirm/resolve ladder allocates budget across MANY mutations, which `drifter run` doesn't have — and `screen: 1` can no longer produce a verdict at all under DEC-027's min_valid_runs. Same principle rebuilt as sequential early stopping within one comparison, with a PROVABLE stopping rule (stops only when no remaining run could change the verdict), so verdicts are identical to fixed-N by construction |
-| F-28 | Signature grouping | ❌ Not built | **Needs building** — `mine/` is empty; deferred past Gate 3 deliberately (no real multi-week corpus yet) |
-| F-29 | Frequent subsequence mining (PrefixSpan) | ❌ Not built | **Needs building** — depends on F-28 |
-| F-30 | Task candidate generation + approval | ❌ Not built | **Needs building** — depends on F-29; blocks F-24's real authoring UX |
+| F-28 | Signature grouping | ✅ Built | `mine/signature.py`. Signature = the ordered tool-name sequence, computed at read time (never stored); trajectory boundaries come from `TrajectoryEnd.call_seqs`. Calls no trajectory names are counted and reported, not folded into one. 300-trajectory fixture collapses to exactly its 4 known signatures (`tests/mine/test_signature.py`) |
+| F-29 | Frequent subsequence mining (PrefixSpan) | ✅ Built | `mine/prefixspan.py`, written from the published algorithm (no dependency). Support counts trajectories, weighted by signature count; gapped subsequences; closed patterns only, closed WITHIN `max_length` (which also bounds the search — unbounded gapped mining of a long trajectory is exponential). Thresholds live in `calibration.yaml`'s `mine:` block, all guesses. Every support is cross-checked against an independent brute-force count in `tests/mine/test_prefixspan.py` |
+| F-30 | Task candidate generation + approval | ✅ Built | `mine/candidates.py` + `cli/tasks.py`: `drifter tasks mine` writes `task_candidates.yaml` (`status: candidate`, `prompt` deliberately empty — mining cannot recover intent), `drifter tasks approve <id>` promotes one, refusing without a prompt or with an invalid `assert`. Edits are TEXT edits: nothing re-serializes the user's file, so their comments and edits survive `mine` and `approve` byte for byte. Approved entries merge into `config.tasks` at load (`tasks_file:` in drifter.yaml, default `task_candidates.yaml`), so `drifter run --task-id` treats them as ordinary tasks. `mine` also lists the tools no approved task covers |
 | F-31 | Blast-radius preview | ✅ Built, reframed | `policy/blast_radius.py`, gates real agent-process spawning (drifter run's actual real-cost path today), not a live-server mode that doesn't exist. "Estimated replay coverage" in that section's live-fallback sense stays unbuilt, but the useful reading of it — what fraction of an agent's calls the corpus can answer — is built as DEC-027(c) (`replay/coverage.py`), shown alongside the preview |
 | F-32 | Budget and hard limits | ✅ Built, reframed | `policy/budget.py`; `--budget` is a TOOL-CALL ceiling (not literally "model calls" — unobservable, docs/SPEC.md §15 limitation 2), checked before each repeat starts, never mid-run. `--dry-run` reuses F-31's preview |
 | F-33 | `drifter init` | ⚠️ Built narrower than spec, deliberate | F-26 now exists but `init` still doesn't call it — done-when bar doesn't require it, wiring classification into `init` itself is separate, unrequested scope |
@@ -96,9 +96,10 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    deliberately execution-free `cli/report_format.py` shared with `cli/run.py`,
    rather than `report.py` importing `cli.run` directly (which would have
    transitively pulled in real subprocess-spawning code just by being imported).
-9. **F-28 → F-29 → F-30 → F-24's real authoring UX** — the `mine/` module, once a real
-   multi-week corpus exists to mine (the reason this was deferred past Gate 3 in the
-   first place, still true).
+9. ~~**F-28 → F-29 → F-30 → F-24's real authoring UX**~~ — built (docs/CHANGELOG.md, "`mine/`
+   is built"). Deferred past Gate 3 because no real multi-week corpus existed to mine, and
+   that is still true: it runs, and on a small corpus it has little to find (see
+   docs/SPEC.md §15 limitation 16).
 10. **F-27** (adaptive scheduling) — lower urgency, no blocking dependents. All other
     v1 priority-list items are now built.
 

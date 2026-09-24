@@ -82,6 +82,18 @@ mutation:
     # mutated arm may spend before it stops regardless of certainty.
     resolve: 20
 
+# `drifter tasks mine` (F-28-F-30). All guesses; none derived from a real
+# multi-week corpus, which does not exist yet -- that absence is why mining was
+# deferred (docs/SPEC.md section 15 limitation 16). min_support is an absolute
+# trajectory count, not a fraction: a fraction of a tiny corpus is noise.
+# max_length also bounds the search -- gapped subsequences of a long trajectory
+# grow exponentially, so it must not be unbounded.
+mine:
+  min_support: 2
+  min_length: 2
+  max_length: 6
+  max_candidates: 10
+
 doctor:
   # Not in SPEC.md §9's original table — same reasoning as
   # segmentation.heuristic_confidence above: a guessed operational

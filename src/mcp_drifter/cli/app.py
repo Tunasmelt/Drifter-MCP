@@ -168,6 +168,27 @@ def _build_parser() -> argparse.ArgumentParser:
     fixture_sub.choices["capture"].add_argument("--force", action="store_true", help="Overwrite an existing --output")
     fixture_sub.choices["check"].add_argument("--responses", type=Path, required=True, help="Response fixture YAML to verify")
 
+    tasks_parser = subparsers.add_parser(
+        "tasks", help="Mine recurring workflows from your recordings into task candidates, and approve them (F-28-F-30)"
+    )
+    tasks_sub = tasks_parser.add_subparsers(dest="tasks_command")
+    mine_parser = tasks_sub.add_parser(
+        "mine", help="Group trajectories, mine recurring workflows, and write editable task candidates"
+    )
+    mine_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+    mine_parser.add_argument("--server", default=None, help="Server name from drifter.yaml (required if more than one)")
+    mine_parser.add_argument("--runs-dir", type=Path, default=None, help="Recorded sessions to mine, bypassing drifter.yaml")
+    mine_parser.add_argument(
+        "--output", type=Path, default=None,
+        help="Candidates file to write or append to (default: drifter.yaml's tasks_file, task_candidates.yaml)",
+    )
+    approve_parser = tasks_sub.add_parser(
+        "approve", help="Promote an edited candidate to an approved task (needs a prompt you wrote)"
+    )
+    approve_parser.add_argument("task_id", help="The candidate's id, as written in the candidates file")
+    approve_parser.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+    approve_parser.add_argument("--file", type=Path, default=None, help="Candidates file (default: drifter.yaml's tasks_file)")
+
     replay_serve_parser = subparsers.add_parser("replay-serve", help="Serve a replayed manifest over real stdio, for a real agent to connect to")
     replay_serve_parser.add_argument(
         "--fixture", type=Path, required=True, nargs="+",
@@ -323,6 +344,21 @@ def main() -> None:
             print(f"drifter fixture {args.fixture_command}: {e}", file=sys.stderr)
             raise SystemExit(4) from None
         parser.parse_args(["fixture", "--help"])
+    elif args.command == "tasks":
+        from mcp_drifter.cli.tasks import run_tasks_approve, run_tasks_mine
+
+        try:
+            if args.tasks_command == "mine":
+                run_tasks_mine(
+                    config_path=args.config, runs_dir=args.runs_dir, server=args.server, output=args.output
+                )
+            elif args.tasks_command == "approve":
+                run_tasks_approve(args.task_id, config_path=args.config, file=args.file)
+            else:
+                parser.parse_args(["tasks", "--help"])
+        except ConfigError as e:
+            print(f"drifter tasks {args.tasks_command}: {e}", file=sys.stderr)
+            raise SystemExit(4) from None
     else:
         parser.print_help(sys.stderr)
         raise SystemExit(1 if args.command else 0)

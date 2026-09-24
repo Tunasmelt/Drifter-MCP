@@ -113,6 +113,33 @@ class Plateau(BaseModel):
     window: int = 3
 
 
+class Mine(BaseModel):
+    """Thresholds for `drifter tasks mine` (F-28-F-30). Every one is a guess with
+    stated reasoning; none has been derived from a real multi-week corpus, because
+    none exists yet (docs/SPEC.md section 15 limitation 16 is why mining was deferred).
+    They live here, not in `mine/`, per CLAUDE.md's rule that an invented constant
+    belongs in this file -- so they can be tuned against real data without a code
+    change.
+    """
+
+    model_config = ConfigDict(extra="allow")
+    # Fewest trajectories a workflow must appear in to be proposed. An
+    # ABSOLUTE count, not a fraction: a fraction of a 5-trajectory corpus is
+    # noise, and 2 is the smallest number at which "recurs" means anything.
+    min_support: int = 2
+    # Shortest workflow worth proposing as a task. A single tool call is a
+    # call, not a workflow; 2 is the smallest sequence with an order in it.
+    min_length: int = 2
+    # Longest pattern searched for. Also what keeps PrefixSpan tractable:
+    # gapped subsequences of a long trajectory grow exponentially, so an
+    # unbounded search on an exploring agent's 50-call session would not
+    # terminate. 6 is a guess at "longer than a human would call one task".
+    max_length: int = 6
+    # How many candidates to write. Reviewing is the user's cost; a long
+    # ranked tail is noise, and the ranking puts the strongest first.
+    max_candidates: int = 10
+
+
 class Calibration(BaseModel):
     model_config = ConfigDict(extra="allow")
     semantic_weight: float = 0.8
@@ -135,6 +162,7 @@ class Calibration(BaseModel):
     # Re-derive against real corpus data before defending this number.
     min_valid_runs: int = 3
     plateau: Plateau = Plateau()
+    mine: Mine = Mine()
     effect_size: EffectSize = EffectSize()
     behavior: Behavior = Behavior()
     segmentation: Segmentation = Segmentation()

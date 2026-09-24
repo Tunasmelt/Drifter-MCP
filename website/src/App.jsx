@@ -102,6 +102,7 @@ const COMMANDS = [
   ["stats", "Per-tool call frequency, error and fault rate, latency."],
   ["coverage", "Projected replay coverage from recordings alone, before you spend anything."],
   ["fixture", "Author and maintain response fixtures from the live server (read-only tools)."],
+  ["tasks", "Mine recurring workflows from your recordings into task candidates, then approve the ones you want."],
   ["run", "Baseline plus one mutation operator in replay mode, with a verdict."],
   ["report", "Re-render a prior run from stored sessions. Zero new execution."],
   ["score", "Re-analyse already-recorded sessions."],

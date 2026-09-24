@@ -879,9 +879,9 @@ encountered yet; no current consumer needs it.
   built: `parameter_rename` (F-40, docs/CHANGELOG.md), which also finally gave F-12
   (inverse-mutation key resolution — sat as an unbuilt stub since Gate 2) a real
   inverse to resolve against.
-- Workflow mining end to end: F-28/F-29/F-30 (signature grouping, PrefixSpan,
-  candidate approval) — deferred past Gate 3 because Gate 3's dogfood task can be
-  hand-written; mining matters once there's a real multi-week corpus
+- ~~Workflow mining end to end: F-28/F-29/F-30~~ — built after the v1 release
+  (docs/CHANGELOG.md, "`mine/` is built"); deferred past Gate 3 because Gate 3's dogfood
+  task can be hand-written, and its value still scales with the corpus
 - ~~Task assertions as a first-class authored feature~~ — built (F-24,
   docs/CHANGELOG.md): `evaluate/assertions.py` plus a real `tasks:` block in
   `drifter.yaml`, evaluated per arm over valid runs only. Note the premise in this
@@ -1504,8 +1504,10 @@ tasks can pick a path that belongs to a different task; the report shows P so th
       being `None` (real under 2026-07-28+, per the SDK's own `ServerSession.client_params`
       docstring) — no bug found there. docs/SPEC.md's C8 register entry and limitation 15
       updated with the full corrected account.
-- [ ] F-28–F-30 (`mine/`) only if the release must satisfy the full original scope.
-      Mining proposes editable candidates; it cannot recover user intent from a sequence.
+- [x] F-28–F-30 (`mine/`) — excluded from the 0.1.0 release, then built afterwards at the
+      user's direction (docs/CHANGELOG.md, "`mine/` is built"). Mining proposes editable
+      candidates; it cannot recover user intent from a sequence, which is why a candidate's
+      `prompt` starts empty and approval refuses until the user writes one.
 
 ### The release gate — PASSED (2026-09-23)
 
