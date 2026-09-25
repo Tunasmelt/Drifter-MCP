@@ -34,6 +34,9 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Claude Code local data (agent worktrees, plugin databases, lock files)
+.claude/
+
 # Drifter runtime data — recorded trajectories and raw frames may reveal
 # internal tool names, server topology, and usage patterns even with
 # shape-redaction applied. Never commit this directory. (SECURITY.md)
