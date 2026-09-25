@@ -385,6 +385,19 @@ Three guards are worth knowing:
 - Sessions recorded by `drifter replay-serve` are skipped and counted in the output: they
   record an agent being replayed, not what it does.
 
+**Recording a corpus worth mining.** Mining finds what recurs, so it needs recurrence:
+- Use your agent normally through `drifter observe` for a week or two, on a real mix of
+  tasks, not one scripted prompt. Ten identical runs give one workflow at 100%, which tests
+  nothing; ten runs of five different tasks give something to separate.
+- Aim for at least 5 sessions per task you care about (`mine.min_support` is 2, so 2 is the floor,
+  not the goal), spread across days so they are not one session's habits.
+- Keep the server and its tool list stable while you record. Sessions from another server are
+  ignored, and a changed manifest changes what the risk pre-fill sees.
+- Skip `replay-serve` sessions; `mine` ignores them anyway.
+- Then run `drifter tasks mine` and read the numbers it prints (trajectories, distinct workflows,
+  recurring patterns) before trusting any candidate. Treat the thresholds as guesses until your
+  own corpus says otherwise; if you tune them, say what data justified it.
+
 A one-call task is not proposed by default, because `mine.min_length` is 2 (a single call is
 a call, not a sequence): when workflows recur but are too short, `mine` names them and says
 so, and `mine.min_length: 1` proposes them.
