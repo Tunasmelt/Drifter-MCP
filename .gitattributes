@@ -1,3 +1,8 @@
 # Committed experiment evidence is hash-checked byte for byte
 # (tests/evaluate/test_limitation_20_evidence.py); never rewrite its line endings.
 tests/fixtures/experiments/** -text
+
+# The E2 evidence bundle holds an archived copy of this file (under -text, above) and a
+# test compares the two byte for byte. Without this, a Windows checkout with autocrlf turns
+# this copy into CRLF and the comparison fails.
+tests/fixtures/orders_server.py text eol=lf

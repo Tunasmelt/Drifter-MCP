@@ -6,6 +6,22 @@ not just a diff.
 
 ---
 
+## CI matrix findings (Python 3.12 on Linux, and Windows)
+
+Widening CI from Linux/3.11 to Ubuntu 3.11-3.13 plus Windows 3.11 failed two cells on its
+first run. Neither was the long-suspected flaky observe test, which did not fail anywhere.
+- **`drifter report` could show the older of two experiments** (Ubuntu 3.12,
+  `test_report_defaults_to_the_latest_experiment_and_can_select_one`). Experiment ids were
+  `<second-resolution timestamp>-<random hex>` and "latest" is chosen by sorting names, so two
+  experiments started in the same second sorted by the random suffix. Ids now carry the
+  microseconds before the suffix (`20260925T185043Z-123456-a3e555`), keeping the old prefix and
+  sorting after older-format ids within a second only, which cannot occur in practice. Tested
+  with 200 same-second ids and the report's selection, red before the change (21 failures).
+- **A byte-for-byte fixture comparison failed on Windows** (`tests/fixtures/orders_server.py`
+  vs its archived copy under `experiments/**`, which is `-text`). A Windows checkout with
+  autocrlf converted only the live copy to CRLF. `.gitattributes` now pins it to LF.
+  Not a product bug: no Drifter code reads that file's line endings.
+
 ## `mine/` is built (F-28, F-29, F-30)
 
 Excluded from 0.1.0 by an earlier, deliberate decision (docs/PHASES.md R5: "only if the

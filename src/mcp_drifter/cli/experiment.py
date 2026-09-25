@@ -37,9 +37,13 @@ _ARM_DIRS = ("baseline", "mutated")
 
 
 def new_experiment_id(now: datetime | None = None) -> str:
-    """Sortable by creation time (UTC, second resolution), unique within the second."""
+    """Sortable by creation time and unique. `resolve_experiment_dir` picks the latest
+    experiment by sorting these names, so the order has to be real even within one second:
+    the microseconds come BEFORE the random suffix. (With only a random suffix, two
+    experiments started in the same second sorted arbitrarily, and `drifter report`
+    could show the older one.) The random suffix only breaks a same-microsecond tie."""
     now = now or datetime.now(timezone.utc)
-    return f"{now.strftime('%Y%m%dT%H%M%SZ')}-{secrets.token_hex(3)}"
+    return f"{now.strftime('%Y%m%dT%H%M%SZ')}-{now.microsecond:06d}-{secrets.token_hex(3)}"
 
 
 def _sha256(path: Path) -> str:
