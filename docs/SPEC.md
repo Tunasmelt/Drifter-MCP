@@ -363,16 +363,19 @@ destructive tool invocation, capability outside `allowed_capabilities`, bypassed
 contradicting a declared annotation. Reported even when Behavior shows NO_REGRESSION —
 this is the highest-value finding class.
 
-*Implementation status (F-25, docs/CHANGELOG.md):* `policy/safety.py` builds two of
-the five checks above, both grounded in data this project actually records — a
+*Implementation status (F-25, docs/CHANGELOG.md):* `policy/safety.py` builds three of
+the five checks above. Two are grounded in data this project actually records — a
 destructive/irreversible-write invocation (`ToolCall.tool_name` against F-26's
 classification of `ToolsList.tools_served`) and a `confirmation_required` "bypass"
 (every call to a `policy.confirmation_required`-listed tool, since no live-mode
 confirmation UX exists anywhere in this codebase yet to have genuinely bypassed —
 the honest reading of "bypassed" when the thing being bypassed doesn't exist yet).
-The other three are real, stated gaps, not silently dropped: `allowed_capabilities`
-names a config field that was never actually specified in §11's configuration
-surface (the same shape of gap F-19's investigation found); secret detection in
+The third, `allowed_capabilities`, named a config field that was never specified in §11
+(the same shape of gap F-19's investigation found), so it was defined rather than
+guessed: `policy.max_risk`, a level of §10's taxonomy, above which any call is a
+`risk_ceiling_exceeded` finding (`unknown` is not a level; a level already reported as a
+destructive invocation is not reported twice; no ceiling means no finding).
+The other two are real, stated gaps, not silently dropped: secret detection in
 output is structurally blocked by F-02/F-04's own shape-only recording invariant
 (no string VALUE, redacted or not, ever reaches `result_shape`); and
 annotation-vs-observed-behavior mismatch is blocked directly by F-26's own documented
@@ -481,7 +484,7 @@ agent: {mode: subprocess, command: "python agent.py --task '{task.prompt}'"}
 execution: {mode: replay, fidelity_floor: 0.70, budget_calls: 500}
 baseline: {repeats: 10, max_calls: 200, cache: true}
 mutations: {profile: quick, seed: 42, exclude_tools: []}
-policy: {destructive: [], confirmation_required: []}
+policy: {destructive: [], confirmation_required: [], max_risk: null}  # max_risk: a §10 level, e.g. reversible_write
 tasks: [...]
 ```
 

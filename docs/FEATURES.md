@@ -39,7 +39,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-22 | Baseline fidelity gating | ✅ Built | Gate 2 |
 | F-23 | Behavior effect-size scoring | ✅ Built | Gate 2, zero-spread edge case is a stated design decision |
 | F-24 | Task assertion engine | ✅ Built | `evaluate/assertions.py` + `drifter.yaml`'s `tasks:` block. 3 of docs/SPEC.md §8's 4 named types built; `result_contains` is structurally unevaluable under shape-only recording and is rejected loudly, with `result_has_keys`/`no_errors` offered instead. Did NOT need F-30 — that dependency was about auto-DISCOVERING tasks, and was blocking a whole verdict axis |
-| F-25 | Safety verdict engine | ✅ Built | `policy/safety.py`, 2 of docs/SPEC.md §8's 5 check categories built (destructive invocation, confirmation_required bypass), 3 real documented gaps — wired into `drifter run`'s real report, evaluated with no fidelity gate |
+| F-25 | Safety verdict engine | ✅ Built | `policy/safety.py`, 3 of docs/SPEC.md §8's 5 check categories built (destructive invocation, confirmation_required bypass, `policy.max_risk` risk ceiling), 2 real documented gaps — wired into `drifter run`'s real report, evaluated with no fidelity gate |
 | F-26 | Tool risk classification | ✅ Built | `policy/classify.py`'s 4-tier resolution (user override → MCP annotations → name heuristics → observed behavior), wired into `drifter doctor`. Tier 4 (observed behavior) is a documented, deliberate stub — no signal currently recorded can honestly distinguish write from read-only |
 | F-27 | Adaptive repeat scheduling | ✅ Built, reframed | `evaluate/scheduling.py`. The three-stage screen/confirm/resolve ladder allocates budget across MANY mutations, which `drifter run` doesn't have — and `screen: 1` can no longer produce a verdict at all under DEC-027's min_valid_runs. Same principle rebuilt as sequential early stopping within one comparison, with a PROVABLE stopping rule (stops only when no remaining run could change the verdict), so verdicts are identical to fixed-N by construction |
 | F-28 | Signature grouping | ✅ Built | `mine/signature.py`. Signature = the ordered tool-name sequence, computed at read time (never stored); trajectory boundaries come from `TrajectoryEnd.call_seqs`. Calls no trajectory names are counted and reported, not folded into one. 300-trajectory fixture collapses to exactly its 4 known signatures (`tests/mine/test_signature.py`) |
@@ -78,8 +78,9 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    stub, see F-26's own entry), wired into `drifter doctor`. Now unblocks F-25 →
    F-31/F-32.
 5. ~~**F-25**~~ — **built.** `policy/safety.py`, wired into `drifter run`'s real
-   report. 2 of 5 check categories built (destructive invocation,
-   confirmation_required bypass), 3 real documented gaps — see F-25's own entry.
+   report. 3 of 5 check categories built (destructive invocation,
+   confirmation_required bypass, `policy.max_risk` risk ceiling), 2 real documented
+   gaps — see F-25's own entry.
    Now unblocks F-31/F-32.
 6. ~~**F-31**~~ — **built, reframed.** `policy/blast_radius.py`, gates spawning real
    agent processes — `drifter run`'s actual real-cost path today — with `drifter
@@ -564,16 +565,19 @@ wrong rather than the mutation.
 unexpected write/destructive invocation, capability outside policy,
 `confirmation_required` bypass, secret leakage, annotation-behavior mismatch.
 **Built** (`policy/safety.py`): `evaluate_safety`/`evaluate_safety_for_session`
-resolve 2 of the 5 categories above from data this project actually records —
+resolve 3 of the 5 categories above from data this project actually records —
 a call to a tool F-26 classifies `"destructive"`/`"irreversible_write"`, and a
 call to a `policy.confirmation_required`-listed tool (treated as an automatic
 finding, since no live-mode confirmation UX exists anywhere in this codebase to
 have genuinely bypassed — see docs/SPEC.md §8's own implementation-status note for
-the full account). The other 3 (capability outside `allowed_capabilities`, secret
-leakage, annotation-behavior mismatch) are real, documented gaps, not silently
-dropped — each blocked by a real, separate reason (an unspecified config field, a
-structural recording invariant, F-26's own tier-3 stub respectively), not
-reinterpreted loosely to look built. Wired into `drifter run`'s real report
+the full account). A third, "capability outside `allowed_capabilities`", is built as a RISK CEILING:
+the field was named in §8 but never defined, so it was defined as `policy.max_risk`, a
+level of §10's own taxonomy, and a call to a tool classified above it is a
+`risk_ceiling_exceeded` finding (`unknown` is not a ceiling; levels already reported as a
+destructive invocation are not reported twice). The other 2 (secret leakage,
+annotation-behavior mismatch) are real, documented gaps, not silently dropped — each
+blocked by a real, separate reason (a structural recording invariant, F-26's own tier-3
+stub respectively), not reinterpreted loosely to look built. Wired into `drifter run`'s real report
 (`cli/run.py`'s `_evaluate_safety_across_arms`) — evaluated across EVERY recorded
 session from both arms, deliberately with no fidelity gate, matching docs/SPEC.md §8's
 "evaluated on every run regardless of configuration."

@@ -342,3 +342,36 @@ def test_calls_before_rejects_a_malformed_pair(tmp_path):
     )
     with pytest.raises(ConfigError, match="earlier, later"):
         load_config(path)
+
+
+# --- policy.max_risk (SPEC §8 check 3) ---------------------------------------------------
+
+
+def test_policy_max_risk_defaults_to_none_and_accepts_the_ceiling_levels():
+    from mcp_drifter.cli.config import PolicyConfig
+
+    assert PolicyConfig().max_risk is None
+    for level in ("read_only_local", "read_only_external", "reversible_write", "irreversible_write", "destructive"):
+        assert PolicyConfig(max_risk=level).max_risk == level
+
+
+@pytest.mark.parametrize("bad", ["unknown", "bogus", "", 3])
+def test_policy_max_risk_rejects_values_that_are_not_a_ceiling(bad):
+    """`unknown` is deliberately not a ceiling: it is a classification failure, not a level."""
+    from pydantic import ValidationError
+
+    from mcp_drifter.cli.config import PolicyConfig
+
+    with pytest.raises(ValidationError):
+        PolicyConfig(max_risk=bad)
+
+
+def test_an_experiment_written_before_max_risk_existed_still_loads_with_no_ceiling():
+    """Schema-evolution rule (CLAUDE.md): a hand-built pre-change `experiment.json` policy
+    block has no `max_risk`; it must load as 'no ceiling', not as any level."""
+    from mcp_drifter.cli.config import PolicyConfig
+
+    old = {"destructive": ["delete_customer"], "confirmation_required": []}
+    policy = PolicyConfig.model_validate(old)
+    assert policy.max_risk is None
+    assert policy.destructive == ["delete_customer"]

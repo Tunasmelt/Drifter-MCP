@@ -349,7 +349,7 @@ def run_mutation_comparison(
     )
     effective_policy = policy or PolicyConfig()
     safety = evaluate_safety_across_arms(
-        session_dir, effective_policy.destructive, effective_policy.confirmation_required
+        session_dir, effective_policy.destructive, effective_policy.confirmation_required, effective_policy.max_risk
     )
 
     # F-24: evaluated over each arm's VALID sessions only -- a run excluded

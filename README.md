@@ -105,7 +105,9 @@ history in [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/mast
   note above), Task (opt-in assertions you author, including an `answer_matches`
   outcome oracle on the agent's final answer), Safety (evaluated on every run, never
   gated by the others, and explicit about calls it couldn't classify rather than
-  silently passing them through).
+  silently passing them through). Set `policy.max_risk` in `drifter.yaml` (for example
+  `reversible_write`) and any call to a tool classified above that ceiling is a safety
+  finding too.
 - **Cost controls** — blast-radius preview, budget/wall-time ceilings enforced live,
   projected replay coverage before you spend, and adaptive scheduling that stops once
   the verdict is provably settled.

@@ -163,6 +163,15 @@ class PolicyConfig(BaseModel):
 
     destructive: list[str] = []
     confirmation_required: list[str] = []
+    # A risk CEILING over SPEC §10's taxonomy (SPEC §8 check 3, which named an
+    # `allowed_capabilities` field that was never defined): a call to a tool classified above
+    # it is a SAFETY finding. None = no ceiling. Nullable with no default level, so an
+    # `experiment.json` written before this field existed loads as "no ceiling".
+    # `unknown` is not a level you can allow up to, so it is not accepted.
+    max_risk: (
+        Literal["read_only_local", "read_only_external", "reversible_write", "irreversible_write", "destructive"]
+        | None
+    ) = None
 
 
 class TaskAssertConfig(BaseModel):

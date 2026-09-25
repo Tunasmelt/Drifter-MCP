@@ -38,16 +38,27 @@ SERVER = "filesystem"
 TASK = "iso_task"
 
 
-def _config(tmp_path: Path, *, destructive: list[str] | None = None) -> Path:
+def _config(
+    tmp_path: Path,
+    *,
+    destructive: list[str] | None = None,
+    max_risk: str | None = None,
+    extra_calls: tuple[tuple[str, dict], ...] = (),
+) -> Path:
     calls = [r for r in read_session(GOLDEN) if isinstance(r, ToolCall)][:2]
-    command = json.dumps([sys.executable, str(AGENT), *(f"{c.tool_name}|{json.dumps(c.arguments)}" for c in calls)])
+    steps = [(c.tool_name, c.arguments) for c in calls] + list(extra_calls)
+    command = json.dumps([sys.executable, str(AGENT), *(f"{name}|{json.dumps(args)}" for name, args in steps)])
     text = (
         "version: 1\nservers:\n  - name: filesystem\n    command: ['echo', 'unused-in-replay-mode']\n"
         f"agent:\n  command: {command}\n"
         f"tasks:\n  - id: {TASK}\n    prompt: list and search\n    assert:\n      calls: [{calls[0].tool_name}]\n"
     )
-    if destructive:
-        text += "policy:\n  destructive: [" + ", ".join(destructive) + "]\n"
+    if destructive or max_risk:
+        text += "policy:\n"
+        if destructive:
+            text += "  destructive: [" + ", ".join(destructive) + "]\n"
+        if max_risk:
+            text += f"  max_risk: {max_risk}\n"
     path = tmp_path / "drifter.yaml"
     path.write_text(text, encoding="utf-8")
     return path
@@ -178,3 +189,27 @@ def test_a_pre_r2_run_directory_still_rebuilds(tmp_path):
 
     assert rebuilt.baseline.total_runs == 1
     assert rebuilt.experiment_id is None
+
+
+def test_a_risk_ceiling_flows_from_config_through_experiment_json_into_a_rebuilt_report(tmp_path):
+    """`policy.max_risk` end to end: the agent calls `write_file` (a reversible write in the
+    golden manifest); under a `read_only_local` ceiling that is a SAFETY finding, and a
+    `drifter report` rebuilt from the experiment alone -- no config -- reports it too."""
+    config = _config(tmp_path, max_risk="read_only_local", extra_calls=(("write_file", {"path": "x", "content": "y"}),))
+    live = _run(tmp_path, config)
+    assert live.safety.verdict == "VIOLATION"
+    assert {f.kind for f in live.safety.findings} == {"risk_ceiling_exceeded"}
+    assert {f.tool_name for f in live.safety.findings} == {"write_file"}
+
+    stored = json.loads(next((tmp_path / "runs").rglob("experiment.json")).read_text(encoding="utf-8"))
+    assert stored["policy"]["max_risk"] == "read_only_local"
+
+    rebuilt = run_report(config_path=tmp_path / "does-not-exist.yaml", runs_dir=tmp_path / "runs", task_id=TASK,
+                         output_stream=io.StringIO())
+    assert rebuilt.safety.verdict == "VIOLATION"
+    assert {f.tool_name for f in rebuilt.safety.findings} == {"write_file"}
+
+
+def test_the_same_run_without_a_ceiling_has_no_safety_finding(tmp_path):
+    config = _config(tmp_path, extra_calls=(("write_file", {"path": "x", "content": "y"}),))
+    assert _run(tmp_path, config).safety.verdict == "NO_VIOLATION"

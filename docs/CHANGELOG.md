@@ -6,6 +6,37 @@ not just a diff.
 
 ---
 
+## `policy.max_risk`: safety check 3 is built (SPEC §8)
+
+SPEC §8 lists five safety checks; F-25 built two and recorded three as gaps. The first of
+those three was "capability outside `allowed_capabilities`": §8 names that field but §11
+never defined it, so there was nothing to implement and inventing a meaning would have been
+guessing. The meaning is now decided, not guessed: **a risk ceiling over §10's own taxonomy**,
+`policy.max_risk`, one of `read_only_local`, `read_only_external`, `reversible_write`,
+`irreversible_write`, `destructive`. A call to a tool classified above it is a
+`risk_ceiling_exceeded` SAFETY finding, carrying the tool, the call's `seq`, and the exact
+classification and source.
+
+Decisions worth recording:
+- **`unknown` is not a level.** It is a classification failure, not a point on the scale, so it
+  is rejected as a ceiling and is never "above" one; it keeps its own existing finding.
+- **No double reporting.** A destructive or irreversible-write call is already a
+  `destructive_invocation`, so the ceiling reports only what that check does not
+  (`read_only_external` and `reversible_write`, depending on the ceiling).
+- **No ceiling is the default and changes nothing.** The field is nullable with no default
+  level, so an `experiment.json` written before it existed loads as "no ceiling" (tested
+  against a hand-built pre-change policy block, per CLAUDE.md's schema-evolution rule).
+- **It reaches the report from disk.** `experiment.json` already stores the policy block, so a
+  `drifter report` rebuilt with no config still applies the ceiling (end-to-end test: the
+  agent calls `write_file`, the config sets `read_only_local`, the live run and the rebuilt
+  report both show the finding).
+
+Tests were written first (13 failing) and mutation-checked: `>=` for `>`, dropping the
+already-reported guard, dropping the `unknown` guard, and losing `max_risk` in `run.py`,
+`report.py` or `evaluate_safety_across_arms` each fail a test (6 of 6 caught). Safety checks
+now built: 3 of 5. The two left are still blocked for the stated reasons: secret leakage by the
+shape-only recording invariant, annotation-vs-behavior by classification tier 4.
+
 ## CI matrix findings (Python 3.12 on Linux, and Windows)
 
 Widening CI from Linux/3.11 to Ubuntu 3.11-3.13 plus Windows 3.11 failed two cells on its

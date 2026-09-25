@@ -136,7 +136,9 @@ def build_report_result(
         baseline_result, mutated_result, calibration=calibration,
         path_of_interest=path_of_interest, path_source=path_source,
     )
-    safety = evaluate_safety_across_arms(session_dir, policy.destructive, policy.confirmation_required)
+    safety = evaluate_safety_across_arms(
+        session_dir, policy.destructive, policy.confirmation_required, policy.max_risk
+    )
 
     # F-24: unlike `mutation_log`, task assertions ARE reconstructable from
     # disk -- they are evaluated against the recorded trajectories
