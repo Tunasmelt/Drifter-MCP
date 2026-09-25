@@ -7,7 +7,21 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      # One failing cell must not hide the others: a Windows-only or 3.13-only
+      # failure is exactly what this matrix exists to show.
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python: ["3.11", "3.12", "3.13"]
+        include:
+          # Windows is where line-ending and path bugs have actually shown up
+          # (docs/CHANGELOG.md, mine/ audit), so it is tested, not assumed.
+          - os: windows-latest
+            python: "3.11"
     steps:
       - uses: actions/checkout@v4
 
@@ -17,13 +31,15 @@ jobs:
           version: "latest"
 
       - name: Set up Python
-        run: uv python install 3.11
+        run: uv python install ${{ matrix.python }}
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --python ${{ matrix.python }} --all-extras --dev
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run --python ${{ matrix.python }} pytest
 
       - name: Dependency audit (fails build on known vulnerabilities)
+        # Once is enough: the dependency set does not vary by OS or interpreter.
+        if: matrix.os == 'ubuntu-latest' && matrix.python == '3.11'
         run: uv run --with pip-audit pip-audit --skip-editable
