@@ -7,6 +7,7 @@ const DOCS = `${REPO}/blob/master/docs`;
 const NAV = [
   ["problem", "The problem"],
   ["how", "How it works"],
+  ["mine", "Mining"],
   ["mutations", "Mutations"],
   ["verdicts", "Verdicts"],
   ["evidence", "Evidence"],
@@ -54,6 +55,41 @@ const OPERATORS = [
     changes: "The manifest gains one extra tool, always at the end.",
     never: "Any existing tool.",
   },
+];
+
+const CANDIDATE_YAML = `version: 1
+server: my-server
+candidates:
+- id: search_get_customer_create_invoice
+  status: candidate     # approve flips it
+  support: 12           # seen in 12 ...
+  of_trajectories: 40   # ... of 40 trajectories
+  sessions: 4           # across 4 sessions
+  pattern: [search, get_customer, create_invoice]
+  prompt: ''            # you write this
+  assert:
+    calls: [search, get_customer, create_invoice]
+    calls_before: [[search, get_customer], [get_customer, create_invoice]]
+    never_calls: []
+    no_errors: false`;
+
+const MINING_POINTS = [
+  [
+    "Gaps allowed",
+    "Finds get_customer then create_invoice even when some runs did something in between. Support is counted in trajectories, so a workflow that ran forty times counts forty.",
+  ],
+  [
+    "Proposes, never decides",
+    "Every prompt starts empty and approval refuses until you write one. A sequence of calls says what the agent did, not what it was asked.",
+  ],
+  [
+    "Your file stays yours",
+    "Re-running mine only appends new patterns. Approving changes one word on one line. Comments, edits and line endings are left exactly as you wrote them.",
+  ],
+  [
+    "Reads recordings only",
+    "No server contacted, no agent run, no cost. Sessions recorded by replay-serve are skipped, since they record an agent being replayed rather than what it does.",
+  ],
 ];
 
 const VERDICTS = [
@@ -270,18 +306,24 @@ const STEPS = [
   },
   {
     n: "2",
+    name: "Mine (optional)",
+    cmd: "drifter tasks mine",
+    text: "Recurring workflows in your recordings become editable task candidates: the tool sequence, how often it appeared, and draft assertions. You supply the prompt and approve. It reads recordings only, so it costs nothing to run.",
+  },
+  {
+    n: "3",
     name: "Replay",
     cmd: "drifter replay-serve",
     text: "Your recordings become an offline stand-in for the server. Matching calls resolve instantly from the recording with no live connection. Because a real agent explores, coverage matters: calls with no recording MISS, those runs are excluded for low fidelity, and too few survivors means UNKNOWN.",
   },
   {
-    n: "3",
+    n: "4",
     name: "Mutate",
     cmd: "drifter run --operator …",
     text: "One structural, closed-set operator changes the tool interface the agent sees. No free-text generation anywhere: every operator's output space is fixed and reviewable as data.",
   },
   {
-    n: "4",
+    n: "5",
     name: "Evaluate",
     cmd: "drifter run / drifter report",
     text: "The agent runs the same task against the unmutated and mutated manifests. Drifter compares behavior, checks your task assertions, and screens for safety. A verdict defaults to UNKNOWN, never a false pass.",
@@ -324,6 +366,52 @@ function How() {
           </li>
         ))}
       </ol>
+    </Section>
+  );
+}
+
+function Mining() {
+  return (
+    <Section id="mine" eyebrow="Mining" title="Let your recordings propose the tasks.">
+      <p className="lead-in">
+        Writing every task by hand is the slow part. <code className="inline">drifter tasks mine</code>{" "}
+        reads what your agent already did, finds the workflows that recur, and writes each as an
+        editable candidate with its evidence. You write the prompt, review the assertions, and
+        approve the ones you want. An approved candidate is an ordinary task:{" "}
+        <code className="inline">drifter run --task-id</code> uses it as is.
+      </p>
+      <div className="cols cols-code">
+        <div>
+          <CopyBlock
+            label="Copy mining commands"
+            text={`drifter tasks mine
+# edit task_candidates.yaml:
+#   write each prompt, review its assert
+drifter tasks approve <id>
+drifter run --task-id <id> --yes`}
+          />
+          <ul className="bullets" style={{ marginTop: 20 }}>
+            {MINING_POINTS.map(([h, t]) => (
+              <li key={h}>
+                <strong>{h}.</strong> {t}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div>
+          <p className="diff-label">Example candidate (task_candidates.yaml)</p>
+          <pre>
+            <code>{CANDIDATE_YAML}</code>
+          </pre>
+        </div>
+      </div>
+      <p className="fine">
+        It also lists the tools no approved task covers, so you can see what is still untested.
+        The thresholds (<code className="inline">mine:</code> in{" "}
+        <code className="inline">calibration.yaml</code>) are guesses, and mining is only as good
+        as the corpus: run against this project's own recordings it found 4 trajectories and one
+        recurring pattern. It works, and on a small corpus it has little to find.
+      </p>
     </Section>
   );
 }
@@ -460,7 +548,14 @@ drifter doctor    # config, connectivity, tool risk classification`}
             text={`drifter observe --server my-server
 # point your agent's MCP config at this, then use it normally`}
           />
-          <h3 className="sub">3. Check coverage, then run</h3>
+          <h3 className="sub">3. Turn recurring workflows into tasks (optional)</h3>
+          <CopyBlock
+            label="Copy mining commands"
+            text={`drifter tasks mine
+# write each candidate's prompt in task_candidates.yaml
+drifter tasks approve <id>`}
+          />
+          <h3 className="sub">4. Check coverage, then run</h3>
           <CopyBlock
             label="Copy run commands"
             text={`drifter coverage --server my-server
@@ -526,6 +621,10 @@ function Limits() {
               Detecting a genuine regression with a real agent is not yet separately validated.
               Treat Behavior verdicts as experimental, not as a release gate.
             </li>
+            <li>
+              Task mining needs a real corpus: a handful of trajectories has little that recurs,
+              and its thresholds are unvalidated guesses.
+            </li>
             <li>Expect the interface to change while it is pre-1.0.</li>
           </ul>
         </div>
@@ -562,6 +661,7 @@ export default function App() {
         <Hero />
         <Problem />
         <How />
+        <Mining />
         <Mutations />
         <Verdicts />
         <Evidence />

@@ -338,8 +338,25 @@ until you write one. And nothing becomes a task until you approve it. Your edits
 re-running `mine` only appends patterns not already listed, and neither command rewrites
 anything else in the file, comments included.
 
-The thresholds (`mine:` in `calibration.yaml`) are guesses, and mining is only as good as
-the corpus: with a handful of trajectories there is little that recurs. It reads
+The candidates file is `task_candidates.yaml` next to your `drifter.yaml` (change it with
+`tasks_file:`). Approved entries are merged into your tasks when `drifter run` or
+`drifter report` loads the config, so they behave exactly like tasks written under `tasks:`.
+Three guards are worth knowing:
+
+- The file records the server it was mined from. Loading approved tasks into a project
+  that doesn't configure that server is an error, because a workflow seen on one server
+  is not evidence about another. Edit `server:` in the file if you know they apply.
+- A malformed candidates file is an error naming the file, never silently read as
+  empty. It only affects `run` and `report`; `observe` and the other commands don't read it,
+  and `drifter doctor` warns about it.
+- Sessions recorded by `drifter replay-serve` are skipped and counted in the output: they
+  record an agent being replayed, not what it does.
+
+The thresholds (`mine:` in `calibration.yaml`: `min_support`, `min_length`, `max_length`,
+`max_candidates`, `max_patterns`) are guesses, and mining is only as good as the corpus:
+with a handful of trajectories there is little that recurs. On a large, varied corpus a low
+`min_support` makes nearly every short sequence recur; past `max_patterns` the search stops
+with an error telling you to raise it, rather than truncating silently. Mining reads
 recorded sessions only — no server, no agent, no cost.
 
 `drifter run` shows a blast-radius preview (planned agent runs, estimated tool calls
