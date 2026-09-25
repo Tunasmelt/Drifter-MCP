@@ -49,6 +49,22 @@ class Pattern:
     session_count: int
 
 
+def _is_subsequence(pattern: Sequence[str], signature: Sequence[str]) -> bool:
+    remaining = iter(signature)
+    return all(item in remaining for item in pattern)
+
+
+def supporting_tools(items: Sequence[str], groups: Sequence[SignatureGroup]) -> set[str]:
+    """Every tool called in any trajectory that CONTAINS `items` (gaps allowed): the calls
+    this workflow is actually seen alongside. A candidate assertion must not forbid one of
+    these, or the workflow would fail against the very recordings it was mined from."""
+    tools: set[str] = set()
+    for group in groups:
+        if _is_subsequence(items, group.signature):
+            tools.update(group.signature)
+    return tools
+
+
 def mine_patterns(
     groups: Sequence[SignatureGroup],
     *,

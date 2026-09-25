@@ -70,7 +70,7 @@ candidates:
   assert:
     calls: [search, get_customer, create_invoice]
     calls_before: [[search, get_customer], [get_customer, create_invoice]]
-    never_calls: []
+    never_calls: [delete_customer]   # pre-filled from tool risk
     no_errors: false`;
 
 const MINING_POINTS = [
@@ -85,6 +85,10 @@ const MINING_POINTS = [
   [
     "Your file stays yours",
     "Re-running mine only appends new patterns. Approving changes one word on one line. Comments, edits and line endings are left exactly as you wrote them.",
+  ],
+  [
+    "Safety pre-filled",
+    "never_calls starts out listing the tools your risk classification calls destructive, minus any the workflow's own recordings call. Review it like the rest.",
   ],
   [
     "Reads recordings only",

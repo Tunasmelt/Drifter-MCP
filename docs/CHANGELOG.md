@@ -6,6 +6,33 @@ not just a diff.
 
 ---
 
+## Mining pre-fills `never_calls` from the risk classification
+
+`drifter tasks mine` used to write `never_calls: []` and leave safety to the user. Each
+candidate's `never_calls` is now pre-filled with the tools F-26 classifies `destructive`
+(including the user's `policy.destructive`), so a mined task starts out forbidding them. This
+is the first place `cli/` composes `mine/` with `policy/` (`mine/` still imports neither).
+
+Decisions worth recording:
+- **A tool the pattern's own recordings call is left out.** "Supporting" means any trajectory
+  containing the pattern as a gapped subsequence. Without this, `delete_customer` called inside
+  the very workflow being mined would land in `never_calls` and the candidate would fail against
+  its own baseline. `mine/prefixspan.py` gains `supporting_tools`; the exclusion is per pattern.
+- **Only `destructive`.** Not `unknown` (asserting against a tool nobody could classify is a
+  guess), and not `irreversible_write` (`send_email` may be precisely what a task is for). SPEC §10
+  itself singles out `destructive` as "never invoked".
+- **The classification input is the real server's declaration.** The loader keeps the last
+  `tools/list`'s `tools_raw` per session (not the served, possibly mutated manifest) and merges
+  across sessions, later wins; replay-recorded sessions contribute nothing, as before.
+- **It is a proposal.** Same editable file, same review, same "nothing is a task until you
+  approve it"; the header comment says how the field was filled. `mine` prints the pre-filled
+  list per candidate, and prints nothing when there is none.
+
+Tests first (9 failing), then 7 of 7 mutants caught: dropping the supporting-trajectory
+exclusion, also listing irreversible writes, ignoring the user override, a contiguous-only
+subsequence test, not merging manifests, leaking a replay session's manifest, and
+`build_entries` ignoring the mapping.
+
 ## `policy.max_risk`: safety check 3 is built (SPEC §8)
 
 SPEC §8 lists five safety checks; F-25 built two and recorded three as gaps. The first of

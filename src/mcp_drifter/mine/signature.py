@@ -34,7 +34,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from mcp_drifter.record.reader import read_session
-from mcp_drifter.record.schema import SessionStart, ToolCall, ToolsList, TrajectoryEnd
+from mcp_drifter.record.schema import SessionStart, ToolCall, ToolDescriptor, ToolsList, TrajectoryEnd
 from mcp_drifter.replay.replay_proxy import REPLAY_SERVER_NAME_PREFIX
 
 Signature = tuple[str, ...]
@@ -59,6 +59,9 @@ class SessionTrajectories:
     replayed: bool
     # Tools this session called or was served, for "which tools appear in no task".
     tools: tuple[str, ...]
+    # The descriptors the real server declared (the last `tools/list`), so a caller can
+    # classify them by risk. Mining never classifies: that is policy/, downstream of it.
+    manifest: dict[str, ToolDescriptor] = field(default_factory=dict)
 
 
 @dataclass
@@ -69,6 +72,9 @@ class MinedCorpus:
     replayed_sessions: int = 0
     unsegmented_calls: int = 0
     tools: tuple[str, ...] = ()
+    # Union of the declared descriptors over the mined (non-replay) sessions; where a
+    # tool is declared twice, the later session's declaration wins.
+    manifest: dict[str, ToolDescriptor] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -84,6 +90,7 @@ def read_session_trajectories(path: Path) -> SessionTrajectories:
     calls: dict[int, ToolCall] = {}
     ends: list[TrajectoryEnd] = []
     served: tuple[str, ...] = ()
+    manifest: dict[str, ToolDescriptor] = {}
     server: str | None = None
     replayed = False
 
@@ -101,6 +108,8 @@ def read_session_trajectories(path: Path) -> SessionTrajectories:
             # The LAST manifest, matching policy/safety's own precedent: a later
             # re-list is the more representative one.
             served = tuple(t.name for t in record.tools_served)
+            # `tools_raw`: what the real server declared, not what a mutation served.
+            manifest = {t.name: t for t in record.tools_raw}
             server = record.server
 
     placed: set[int] = set()
@@ -126,6 +135,7 @@ def read_session_trajectories(path: Path) -> SessionTrajectories:
         unsegmented_calls=len(calls) - len(placed),
         replayed=replayed,
         tools=tools,
+        manifest=manifest,
     )
 
 
@@ -153,6 +163,7 @@ def load_corpus_trajectories(paths: Sequence[Path], server: str | None = None) -
         corpus.trajectories.extend(session.trajectories)
         corpus.unsegmented_calls += session.unsegmented_calls
         tools.update(session.tools)
+        corpus.manifest.update(session.manifest)
     corpus.tools = tuple(sorted(tools))
     return corpus
 

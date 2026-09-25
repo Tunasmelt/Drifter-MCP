@@ -324,3 +324,23 @@ def test_a_round_trip_of_appends_and_approvals_only_ever_adds_or_flips_a_word(ne
     assert [(e["id"], e["status"]) for e in doc.entries] == [
         ("a_b", "approved"), ("c_d", "candidate"), ("e_f", "approved"), ("g_h", "approved")
     ]
+
+
+# --- pre-filled never_calls (mining pre-fill) ---------------------------------------------
+
+
+def test_never_calls_can_be_prefilled_per_pattern_and_defaults_to_empty():
+    p1, p2 = pattern("a", "b"), pattern("c", "d")
+    entries = build_entries(
+        [p1, p2], total_trajectories=9, taken_ids=set(), never_calls={p1.items: ["delete_x", "drop_y"]}
+    )
+    assert entries[0]["assert"]["never_calls"] == ["delete_x", "drop_y"]
+    assert entries[1]["assert"]["never_calls"] == []
+    (plain,) = build_entries([p1], total_trajectories=9, taken_ids=set())
+    assert plain["assert"]["never_calls"] == []
+
+
+def test_a_prefilled_candidate_file_reads_back_with_its_never_calls():
+    p = pattern("a", "b")
+    text = render_file("srv", build_entries([p], total_trajectories=9, taken_ids=set(), never_calls={p.items: ["delete_x"]}))
+    assert read_candidates(text).entries[0]["assert"]["never_calls"] == ["delete_x"]

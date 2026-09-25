@@ -37,8 +37,9 @@ from mcp_drifter.mine.candidates import (
     render_file,
     uncovered_tools,
 )
-from mcp_drifter.mine.prefixspan import PatternLimitError, mine_patterns
+from mcp_drifter.mine.prefixspan import PatternLimitError, mine_patterns, supporting_tools
 from mcp_drifter.mine.signature import group_signatures, load_corpus_trajectories
+from mcp_drifter.policy.classify import classify_manifest
 from mcp_drifter.record.calibration import Calibration, load_calibration
 
 
@@ -154,7 +155,20 @@ def run_tasks_mine(
     listed = {tuple(e.get("pattern") or ()) for e in existing.entries} if existing else set()
     fresh = [p for p in patterns if p.items not in listed][: settings.max_candidates]
     taken = {e["id"] for e in existing.entries} if existing else set()
-    entries = build_entries(fresh, total_trajectories=total, taken_ids=taken)
+    # Pre-fill `never_calls` with what the risk classification calls destructive (plus the
+    # user's own `policy.destructive`), except tools this workflow is seen alongside. Only
+    # destructive: a tool the classifier could not place is not asserted against, and an
+    # irreversible write may be exactly what a task is for.
+    override = list(config.policy.destructive) if config is not None else []
+    destructive = sorted(
+        name
+        for name, classification in classify_manifest(list(corpus.manifest.values()), override).items()
+        if classification.risk == "destructive"
+    )
+    never_calls = {
+        p.items: [t for t in destructive if t not in supporting_tools(p.items, groups)] for p in fresh
+    }
+    entries = build_entries(fresh, total_trajectories=total, taken_ids=taken, never_calls=never_calls)
 
     try:
         if existing_text is None:
@@ -179,6 +193,12 @@ def run_tasks_mine(
                 f"{entry['sessions']} session(s)\n"
                 f"    {' -> '.join(entry['pattern'])}\n"
             )
+            if entry["assert"]["never_calls"]:
+                out.write(
+                    "    never_calls (pre-filled from tool risk): "
+                    + ", ".join(entry["assert"]["never_calls"])
+                    + "\n"
+                )
         out.write(
             f"\nNEXT  write `prompt` (and review `assert`) in {path}, then "
             "`drifter tasks approve <id>`. Nothing is a task until you do.\n"

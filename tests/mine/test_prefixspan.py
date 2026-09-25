@@ -186,3 +186,24 @@ def test_closed_filtering_scales_to_a_realistically_sized_corpus():
     elapsed = time.perf_counter() - started
     assert len(result) == 8216
     assert elapsed < 5.0, f"closed filtering took {elapsed:.1f}s"
+
+
+# --- supporting_tools (mining pre-fill) ---------------------------------------------------
+
+
+def test_supporting_tools_are_exactly_those_called_in_trajectories_containing_the_pattern():
+    from mcp_drifter.mine.prefixspan import supporting_tools
+    from mcp_drifter.mine.signature import SignatureGroup
+
+    groups = [
+        SignatureGroup(signature=("a", "b", "c"), count=3, session_ids=("s1",)),
+        SignatureGroup(signature=("a", "x", "b"), count=2, session_ids=("s2",)),
+        SignatureGroup(signature=("b", "a", "z"), count=1, session_ids=("s3",)),  # b BEFORE a: no support
+        SignatureGroup(signature=("q",), count=9, session_ids=("s4",)),
+    ]
+    # (a, b) is a gapped subsequence of the first two only; z and q never co-occur with it.
+    assert supporting_tools(("a", "b"), groups) == {"a", "b", "c", "x"}
+    # (a, c) is only in the first.
+    assert supporting_tools(("a", "c"), groups) == {"a", "b", "c"}
+    # A pattern nothing contains has no supporting trajectories.
+    assert supporting_tools(("c", "a"), groups) == set()

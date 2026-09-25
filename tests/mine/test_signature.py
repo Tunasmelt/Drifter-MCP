@@ -132,3 +132,21 @@ def test_the_replay_marker_is_the_name_the_replay_server_gives_itself():
     from mcp_drifter.replay.replay_proxy import REPLAY_SERVER_NAME_PREFIX
 
     assert REPLAY_SERVER_NAME_PREFIX == "drifter-replay-"
+
+
+# --- tool manifest, for classification (mining pre-fill) --------------------------------
+
+
+def test_the_corpus_carries_the_tools_the_server_declared_across_sessions(tmp_path):
+    write_session(tmp_path, "a", [["search", "get_customer"]], extra_tools=("delete_customer",))
+    write_session(tmp_path, "b", [["search"]], extra_tools=("remove_item",))
+    corpus = load_corpus_trajectories(sorted(tmp_path.glob("*.jsonl")), server="srv")
+    assert sorted(corpus.manifest) == ["delete_customer", "get_customer", "remove_item", "search"]
+    assert all(descriptor.name == name for name, descriptor in corpus.manifest.items())
+
+
+def test_a_replayed_sessions_manifest_is_not_mixed_into_the_corpus(tmp_path):
+    write_session(tmp_path, "real", [["search"]])
+    write_session(tmp_path, "replay", [["search"]], extra_tools=("delete_everything",), replayed=True)
+    corpus = load_corpus_trajectories(sorted(tmp_path.glob("*.jsonl")), server="srv")
+    assert sorted(corpus.manifest) == ["search"]

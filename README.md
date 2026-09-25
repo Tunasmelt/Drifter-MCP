@@ -340,6 +340,13 @@ until you write one. And nothing becomes a task until you approve it. Your edits
 re-running `mine` only appends patterns not already listed, and neither command rewrites
 anything else in the file, comments included.
 
+Each candidate's `never_calls` is pre-filled with the tools your risk classification calls
+destructive (plus your `policy.destructive` list), so a task starts out forbidding
+`delete_customer` and the like. Two exclusions keep that honest: a tool the workflow's own
+recordings call is left out (otherwise the candidate would fail against the very sessions it
+came from), and only *destructive* tools are listed, not ones Drifter couldn't classify.
+It is a proposal to review like everything else in the file.
+
 The candidates file is `task_candidates.yaml` next to your `drifter.yaml` (change it with
 `tasks_file:`). Approved entries are merged into your tasks when `drifter run` or
 `drifter report` loads the config, so they behave exactly like tasks written under `tasks:`.

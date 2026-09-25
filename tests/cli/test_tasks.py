@@ -397,3 +397,72 @@ def test_mine_only_reads_the_named_server_when_several_are_recorded(tmp_path):
     text = _candidates(config).read_text(encoding="utf-8")
     assert "x_y" not in text
     assert "search_get_customer_create_invoice" in text
+
+
+# --- mining pre-fill: never_calls from the risk classification ---------------------------------
+
+
+def _prefill_workspace(tmp_path: Path, *, extra_config: str = "", risky_in_pattern: bool = False) -> Path:
+    """Sessions whose manifest advertises destructive-, irreversible- and unclassifiable-
+    looking tools. With `risky_in_pattern`, some trajectories that support the mined pattern
+    also call `delete_customer`."""
+    runs = tmp_path / "runs"
+    extras = ("idle_tool", "delete_customer", "remove_item", "send_receipt")
+    core = ["search", "get_customer", "create_invoice"]
+    for i in range(3):
+        trajectories = [core, core]
+        if risky_in_pattern:
+            trajectories = [core, ["search", "get_customer", "delete_customer", "create_invoice"]]
+        write_session(runs, f"p{i}", trajectories, extra_tools=extras)
+    config = tmp_path / "drifter.yaml"
+    config.write_text(
+        "version: 1\nservers:\n  - name: srv\n    command: ['python']\n"
+        f"record:\n  dir: '{runs.as_posix()}'\n" + extra_config,
+        encoding="utf-8",
+    )
+    return config
+
+
+def _never_calls(config: Path, candidate: str = "search_get_customer_create_invoice") -> list[str]:
+    import yaml
+
+    doc = yaml.safe_load(_candidates(config).read_text(encoding="utf-8"))
+    return next(e for e in doc["candidates"] if e["id"] == candidate)["assert"]["never_calls"]
+
+
+def test_mine_prefills_never_calls_with_destructive_tools_the_pattern_does_not_use(tmp_path):
+    config = _prefill_workspace(tmp_path)
+    output = _mine(config)
+    # Exactly the destructive-classified ones, sorted. `send_receipt` is an irreversible write
+    # and `idle_tool` is unclassifiable: neither is asserted against.
+    assert _never_calls(config) == ["delete_customer", "remove_item"]
+    assert "never_calls (pre-filled from tool risk): delete_customer, remove_item" in output
+
+
+def test_a_destructive_tool_called_in_a_supporting_trajectory_is_not_prefilled(tmp_path):
+    """Otherwise the candidate would fail its own baseline: the recordings it was mined from
+    call `delete_customer` inside this very workflow."""
+    config = _prefill_workspace(tmp_path, risky_in_pattern=True)
+    _mine(config)
+    assert _never_calls(config) == ["remove_item"]
+
+
+def test_the_users_destructive_override_is_prefilled_too(tmp_path):
+    config = _prefill_workspace(tmp_path, extra_config="policy:\n  destructive: [idle_tool]\n")
+    _mine(config)
+    assert _never_calls(config) == ["delete_customer", "idle_tool", "remove_item"]
+
+
+def test_a_prefilled_candidate_approves_into_a_task_that_enforces_it(tmp_path):
+    config = _prefill_workspace(tmp_path)
+    _mine(config)
+    _approve_with_prompt(config)
+    oracle = assertions_for(load_config(config).tasks, "search_get_customer_create_invoice")
+    assert oracle.never_calls == ("delete_customer", "remove_item")
+
+
+def test_a_corpus_with_no_destructive_tools_prefills_nothing_and_says_nothing(tmp_path):
+    config, _ = _workspace(tmp_path)
+    output = _mine(config)
+    assert _never_calls(config) == []
+    assert "pre-filled" not in output

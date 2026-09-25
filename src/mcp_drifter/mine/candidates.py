@@ -21,7 +21,7 @@ task schema). Imports only its own sibling.
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 import yaml
@@ -37,7 +37,9 @@ _HEADER = """\
 # Nothing here is a task until you approve it. For each candidate you want:
 #   1. write `prompt` -- what the agent should be asked (mining cannot know your intent),
 #   2. review `assert` -- calls, calls_before, never_calls, no_errors (add whatever is
-#      right for this task, including tools it must never call),
+#      right for this task). `never_calls` is pre-filled with the tools your risk
+#      classification calls destructive (and your `policy.destructive` list), minus any tool
+#      this workflow was seen alongside; a tool it could not classify is NOT listed.
 #   3. run `drifter tasks approve <id>`.
 # Re-running `drifter tasks mine` only appends patterns not already listed here; it never
 # rewrites anything you edited. `pattern`, `support`, `of_trajectories` and `sessions`
@@ -67,7 +69,10 @@ def candidate_id(items: Sequence[str], taken: Iterable[str]) -> str:
 
 
 def build_entries(
-    patterns: Sequence[Pattern], total_trajectories: int, taken_ids: Iterable[str]
+    patterns: Sequence[Pattern],
+    total_trajectories: int,
+    taken_ids: Iterable[str],
+    never_calls: Mapping[tuple[str, ...], Sequence[str]] | None = None,
 ) -> list[dict]:
     taken = set(taken_ids)
     entries: list[dict] = []
@@ -95,7 +100,9 @@ def build_entries(
                 "assert": {
                     "calls": calls,
                     "calls_before": pairs,
-                    "never_calls": [],
+                    # Supplied by the caller (cli/, which owns the risk classification).
+                    # Empty unless it says otherwise; a proposal to review, like the rest.
+                    "never_calls": list((never_calls or {}).get(p.items, ())),
                     "no_errors": False,
                 },
             }

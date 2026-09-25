@@ -699,7 +699,12 @@ a ranked candidate.
 
 **Technical:** Converts mined workflows into editable YAML task candidates
 (`status: candidate`). User edits and promotes via `drifter tasks approve`
-(`status: approved`). Coverage report lists tools appearing in no selected task.
+(`status: approved`). Coverage report lists tools appearing in no selected task. **Built:** each candidate's
+`assert.never_calls` is pre-filled with the tools the risk classification (F-26, plus the
+user's `policy.destructive`) calls destructive, minus any tool called in a trajectory that
+supports the pattern, so a candidate never forbids what its own recordings do. Only
+`destructive`: an unclassifiable tool is not asserted against, and an irreversible write may
+be exactly what a task is for.
 
 **Simple:** Turns "here's a pattern we noticed" into a real, named test — but only
 after you've looked at it and said yes. Nothing becomes an official test without your
