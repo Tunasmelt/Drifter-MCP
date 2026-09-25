@@ -344,3 +344,30 @@ def test_a_prefilled_candidate_file_reads_back_with_its_never_calls():
     p = pattern("a", "b")
     text = render_file("srv", build_entries([p], total_trajectories=9, taken_ids=set(), never_calls={p.items: ["delete_x"]}))
     assert read_candidates(text).entries[0]["assert"]["never_calls"] == ["delete_x"]
+
+
+# --- found mining the real filesystem server's recordings ------------------------------------
+
+
+def test_a_long_id_is_cut_between_tool_names_never_inside_one_and_never_ends_in_an_underscore():
+    """Real corpus: list_allowed_directories -> list_directory -> list_directory -> read_text_file
+    used to become `list_allowed_directories_list_directory_list_directory_read_`."""
+    items = ("list_allowed_directories", "list_directory", "list_directory", "read_text_file")
+    assert candidate_id(items, set()) == "list_allowed_directories_list_directory_list_directory"
+
+
+def test_ids_that_collide_after_cutting_are_still_distinct():
+    a = ("list_allowed_directories", "list_directory", "list_directory", "read_text_file")
+    b = ("list_allowed_directories", "list_directory", "list_directory", "search_files")
+    first = candidate_id(a, set())
+    assert candidate_id(b, {first}) == first + "_2"
+
+
+def test_a_single_tool_name_longer_than_the_limit_is_hard_cut_without_a_trailing_underscore():
+    long_name = "x" * 59 + "_yyy"  # the 60th character is an underscore
+    result = candidate_id((long_name, "z"), set())
+    assert result == "x" * 59
+
+
+def test_short_ids_are_unchanged():
+    assert candidate_id(("get_customer", "create-invoice"), set()) == "get_customer_create_invoice"

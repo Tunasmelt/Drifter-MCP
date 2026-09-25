@@ -59,7 +59,20 @@ class CandidateDoc:
 
 def candidate_id(items: Sequence[str], taken: Iterable[str]) -> str:
     taken = set(taken)
-    base = re.sub(r"[^A-Za-z0-9_]+", "_", "_".join(items)).strip("_")[:_ID_MAX] or "task"
+    # Whole tool names, joined until the limit: cutting the joined string at a fixed width
+    # split names in the middle and could leave a trailing underscore (seen on a real
+    # filesystem-server corpus). Two workflows sharing a long prefix collapse to one base;
+    # the `_2` suffix below keeps them distinct.
+    names = [re.sub(r"[^A-Za-z0-9_]+", "_", item).strip("_") for item in items]
+    base = ""
+    for name in filter(None, names):
+        joined = f"{base}_{name}" if base else name
+        if len(joined) > _ID_MAX:
+            break
+        base = joined
+    if not base:  # the first name alone is over the limit: hard cut
+        base = next((name for name in names if name), "")[:_ID_MAX].strip("_")
+    base = base or "task"
     if base not in taken:
         return base
     n = 2

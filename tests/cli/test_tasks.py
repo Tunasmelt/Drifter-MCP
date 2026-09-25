@@ -466,3 +466,39 @@ def test_a_corpus_with_no_destructive_tools_prefills_nothing_and_says_nothing(tm
     output = _mine(config)
     assert _never_calls(config) == []
     assert "pre-filled" not in output
+
+
+# --- found mining real recordings: single-tool tasks -----------------------------------------
+
+
+def _single_tool_workspace(tmp_path: Path) -> Path:
+    runs = tmp_path / "runs"
+    for i in range(3):
+        write_session(runs, f"e{i}", [["econ_lookup"], ["econ_lookup"]])
+    config = tmp_path / "drifter.yaml"
+    config.write_text(
+        "version: 1\nservers:\n  - name: srv\n    command: ['python']\n"
+        f"record:\n  dir: '{runs.as_posix()}'\n",
+        encoding="utf-8",
+    )
+    return config
+
+
+def test_a_single_tool_workflow_is_not_proposed_by_default_and_the_output_says_how_to_change_that(tmp_path):
+    """Real data: an agent given a one-call task (econ_index_get_usage_by_country) repeated it 46
+    times and mining proposed nothing, because a single call is not a 'workflow' at the default
+    `mine.min_length` of 2. The output must not just say 'nothing recurs' when 6 of 6 do."""
+    config = _single_tool_workspace(tmp_path)
+    output = _mine(config)
+    assert not _candidates(config).exists()
+    assert "mine.min_length" in output
+
+
+def test_lowering_min_length_to_one_proposes_the_single_tool_workflow(tmp_path):
+    from mcp_drifter.record.calibration import Calibration, Mine
+
+    config = _single_tool_workspace(tmp_path)
+    out = io.StringIO()
+    run_tasks_mine(config_path=config, calibration=Calibration(mine=Mine(min_length=1)), output_stream=out)
+    assert "econ_lookup" in _candidates(config).read_text(encoding="utf-8")
+    assert "in 6 of 6 trajectories (100%)" in out.getvalue()

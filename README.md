@@ -361,6 +361,10 @@ Three guards are worth knowing:
 - Sessions recorded by `drifter replay-serve` are skipped and counted in the output: they
   record an agent being replayed, not what it does.
 
+A one-call task is not proposed by default, because `mine.min_length` is 2 (a single call is
+a call, not a sequence): when workflows recur but are too short, `mine` names them and says
+so, and `mine.min_length: 1` proposes them.
+
 The thresholds (`mine:` in `calibration.yaml`: `min_support`, `min_length`, `max_length`,
 `max_candidates`, `max_patterns`) are guesses, and mining is only as good as the corpus:
 with a handful of trajectories there is little that recurs. On a large, varied corpus a low

@@ -142,11 +142,34 @@ def run_tasks_mine(
         raise ConfigError(f"{path} is invalid: {exc}") from exc
 
     if not patterns:
-        out.write(
-            f"             no workflow recurs in at least {settings.min_support} trajectories, so "
-            "nothing was proposed. Record more sessions of the same task, or lower "
-            "`mine.min_support` in calibration.yaml.\n"
+        # Distinguish "nothing recurs" from "something recurs but is shorter than min_length":
+        # on real data a one-call task repeated 46 times produced the first message, which
+        # sent the user to the wrong setting.
+        too_short = (
+            mine_patterns(
+                groups,
+                min_support=settings.min_support,
+                min_length=1,
+                max_length=settings.max_length,
+                max_patterns=settings.max_patterns,
+            )
+            if settings.min_length > 1
+            else []
         )
+        if too_short:
+            shown = ", ".join(" -> ".join(p.items) + f" (x{p.support})" for p in too_short[:3])
+            out.write(
+                f"             {len(too_short)} workflow(s) recur but are shorter than "
+                f"`mine.min_length` ({settings.min_length}), so nothing was proposed: {shown}. "
+                "A one-call task is a workflow too: set `mine.min_length: 1` in calibration.yaml "
+                "to propose them.\n"
+            )
+        else:
+            out.write(
+                f"             no workflow recurs in at least {settings.min_support} trajectories, so "
+                "nothing was proposed. Record more sessions of the same task, or lower "
+                "`mine.min_support` in calibration.yaml.\n"
+            )
         approved = approved_entries(existing) if existing is not None else []
         for line in _coverage_lines(corpus.tools, approved):
             out.write(line + "\n")

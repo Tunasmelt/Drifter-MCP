@@ -6,6 +6,47 @@ not just a diff.
 
 ---
 
+## `mine/` against the real recordings in this repo
+
+The first time mining ran on data it did not build itself. What was available, stated plainly:
+the observed corpora are tiny (`.drifter/runs`: 4 trajectories in 19 usable sessions;
+`limitation_20/corpus`: 10; the orders/econ/time/variance corpora: 0 to 2 each). The
+`r4_live_trials/*_pool` folders hold 60 real Claude Code sessions each, but they were recorded
+through `replay-serve`, which `mine` skips on purpose (an agent being replayed is not an agent
+being observed), so they were mined ad hoc, outside the tool, purely to see whether the
+algorithm recovers real agent behaviour. This is small-N evidence, not validation of the
+thresholds.
+
+What it showed:
+- **The known workflow was recovered.** The orders pool (a preregistered task whose oracle is
+  `find_order` then `get_order`): 60 sessions, 44 trajectories, one signature, one pattern,
+  `find_order -> get_order`, support 44 of 44. The 16 sessions with no trajectory contain no tool
+  calls at all, so nothing was dropped by mining (checked: 0 unsegmented calls across the pools).
+- **A one-call task produced nothing, and the output misled.** The econ pool repeated
+  `econ_index_get_usage_by_country` 46 times. At the default `mine.min_length` of 2 that is not a
+  "workflow", so no candidate was written, and the message said "no workflow recurs ... lower
+  `mine.min_support`", which is false and points at the wrong setting. It now says that N
+  workflows recur but are shorter than `mine.min_length`, names them, and says to set
+  `mine.min_length: 1`. The default is unchanged: it is still a guess, and nothing here argues
+  for a different one.
+- **A candidate id was cut mid-name.** On the real filesystem-server corpus the id
+  `list_allowed_directories_list_directory_list_directory_read_` cut `read_text_file` in half
+  and ended in an underscore (`[:60]` after the strip). Ids are now cut between tool names.
+- **Pre-fill behaved on a real server.** That server's own annotations classify `edit_file`,
+  `move_file` and `write_file` as destructive, so the read-only workflow it found starts out
+  forbidding them. (The golden fixture's manifest lacks those annotations and classifies
+  `move_file` as unknown, so the same tool lists differently by source; expected, and a reminder
+  that pre-fill is only as good as the manifest.)
+
+What it did not show, and should not be read as showing: `limitation_20/corpus` is 10
+identical trajectories, so "100% of trajectories" there is not independent evidence; the
+pools contain one or two distinct workflows each, so nothing here tests whether mining
+separates many workflows; and no threshold (`min_support`, `min_length`, `max_length`,
+`max_candidates`, `max_patterns`) has been derived from data. Those still need many real,
+varied sessions of one agent doing several tasks.
+
+Tests first (the id and the message each failed before the fix), then 4 of 4 mutants caught.
+
 ## Mining pre-fills `never_calls` from the risk classification
 
 `drifter tasks mine` used to write `never_calls: []` and leave safety to the user. Each
