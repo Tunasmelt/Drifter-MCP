@@ -1,0 +1,95 @@
+name: Field report
+description: You tried Drifter on your own agent. Tell us how it went, good or bad.
+labels: ["field-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This is the most useful thing you can send. Several of Drifter's defaults are still
+        guesses, and only runs against real agents can show which ones are wrong. A report
+        that says "I got stuck at step 2" is worth as much as a full run.
+
+        This issue is public. Paste command *output* below, not recordings. If you're willing
+        to share recordings, tick the box at the end and we'll arrange a private channel
+        (see "Sharing a recording" in the README for what they contain).
+
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and model
+      placeholder: "Claude Code 2.1 / an in-house LangGraph agent / ..."
+    validations:
+      required: true
+
+  - type: input
+    id: servers
+    attributes:
+      label: MCP server(s)
+      description: Which servers, and stdio or HTTP. Public server names are enough.
+      placeholder: "filesystem (stdio), our internal orders API (HTTP)"
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Drifter version, OS and Python
+      placeholder: "0.1.0, Ubuntu 24.04, Python 3.12"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: steps
+    attributes:
+      label: How far did you get?
+      description: Tick each step that worked.
+      options:
+        - label: "`drifter init` found my servers"
+        - label: "`drifter doctor` passed"
+        - label: "`drifter observe` recorded sessions"
+        - label: "`drifter tasks mine` proposed useful candidates"
+        - label: "`drifter run` completed"
+        - label: "I could read the report without help"
+
+  - type: textarea
+    id: friction
+    attributes:
+      label: Where it went wrong or got confusing
+      description: |
+        Every point where you stopped, guessed, or had to read the source. Include the
+        command and its output where you have them.
+    validations:
+      required: true
+
+  - type: textarea
+    id: verdicts
+    attributes:
+      label: What did the report say, and do you believe it?
+      description: |
+        The Behavior, Task and Safety verdicts, and whether each matched what you know about
+        your agent. An UNKNOWN you think should have been a PASS (or the other way round) is
+        exactly what we need to hear.
+
+  - type: textarea
+    id: coverage
+    attributes:
+      label: "`drifter coverage --curve` output"
+      description: |
+        Run `drifter coverage --server <name> --curve` and paste the result. It's computed
+        from your recordings with no agent runs and no API cost, and it's the measurement
+        that tells us whether replay works for agents like yours.
+      render: shell
+
+  - type: textarea
+    id: stats
+    attributes:
+      label: "`drifter stats` output"
+      description: A summary of your recordings. Check it for names you'd rather not publish.
+      render: shell
+
+  - type: checkboxes
+    id: share
+    attributes:
+      label: Recordings
+      options:
+        - label: I'm willing to share my `.drifter/runs/` recordings privately.

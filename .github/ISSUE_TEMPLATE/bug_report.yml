@@ -1,0 +1,79 @@
+name: Bug report
+description: Something in Drifter crashed, hung, or gave a wrong result.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting this. Before you paste anything, remember this issue is public:
+        don't include anything from `.drifter/raw/`, and check pasted output for file paths,
+        IDs or server details you'd rather not publish.
+
+        Security problems go to a [private advisory](https://github.com/Tunasmelt/Drifter-MCP/security/advisories/new), not here.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you ran, what you expected, and what you got instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: command
+    attributes:
+      label: Command and output
+      description: The exact `drifter` command and its full output, including any traceback.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`drifter doctor` output"
+      description: Run `drifter doctor` in the same directory and paste the result.
+      render: shell
+
+  - type: input
+    id: version
+    attributes:
+      label: Drifter version
+      description: "`uv tool list` or `pip show mcp-drifter` shows it."
+      placeholder: "0.1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS and Python version
+      placeholder: "macOS 15, Python 3.12"
+    validations:
+      required: true
+
+  - type: input
+    id: agent
+    attributes:
+      label: Agent and MCP client
+      description: What agent you pointed Drifter at, and how it's driven.
+      placeholder: "Claude Code 2.1, agent.mode: http"
+
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Server transport
+      options:
+        - stdio (servers[].command)
+        - HTTP (servers[].url)
+        - Not sure
+
+  - type: dropdown
+    id: hang
+    attributes:
+      label: Did it hang rather than exit?
+      description: Shutdown hangs are a known pattern in this codebase, so this matters.
+      options:
+        - "No"
+        - Yes, during normal running
+        - Yes, after Ctrl+C or while shutting down
