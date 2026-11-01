@@ -1,7 +1,7 @@
 # Drifter
 
 A proxy that sits on the MCP connection between your agent and its tools and records
-real tool-use trajectories — shapes only, secrets redacted. On top of that recorder it
+real tool-use trajectories, with secret-looking strings redacted. On top of that recorder it
 offers **experimental** structural mutation and offline replay of the tool interface.
 
 > **Scope of this release.** Recording is the dependable part. Mutation and replay
@@ -54,8 +54,9 @@ agent ──MCP──▶ drifter (replayed, mutated)        (drifter replay-serv
 
 1. **Record** (`drifter observe`) — a transparent passthrough proxy between your agent
    and a real MCP server. Records the trajectory (which tools, in what order, with
-   what shapes of arguments and results) to a local JSONL corpus. Payloads are never
-   written by default — only shapes — and secrets are pattern-matched and redacted.
+   what arguments, and the shape of each result) to a local JSONL corpus, plus a full
+   copy of the traffic, tool results included. Strings that look like secrets are
+   redacted from both; see "Sharing a recording" below for what each file holds.
 2. **Replay** — your recorded sessions become an offline stand-in for the real
    server: matching tool calls resolve instantly from the recording, for free, with
    no live connection and no API cost. **How much you need to record is the catch,
@@ -312,8 +313,8 @@ assertions. Both arms are checked, so you can see whether the *mutation* broke t
 task rather than just that something failed — and `drifter run` exits `2` when the
 mutated arm fails assertions the baseline passed.
 
-There's no `result_contains`: Drifter records result *shapes*, never payloads, so
-there'd be nothing for it to read. Writing one is a config error rather than a check
+There's no `result_contains`: the corpus that assertions read keeps result *shapes*,
+not values, so there'd be nothing for it to read. Writing one is a config error rather than a check
 that silently never runs — use `result_has_keys: {tool: [key]}` instead.
 
 ### Finding tasks in your own recordings
@@ -488,7 +489,9 @@ The short version (full list in [`docs/SPEC.md` §3](https://github.com/Tunasmel
   and behavioral effect-size scoring all default to "don't know" rather than a
   plausible-looking wrong answer.
 - **Secure by default.** No telemetry. No live writes without explicit authorization.
-  Payloads aren't recorded by default, only shapes.
+  Recordings stay on your machine, and strings that look like secrets are redacted before
+  anything is written. They are not shape-only: see "Sharing a recording" above for what
+  each file holds.
 
 ## Contributing / project structure
 
