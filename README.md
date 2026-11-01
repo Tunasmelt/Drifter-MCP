@@ -437,6 +437,43 @@ the agent's own nondeterminism. Then re-run `drifter coverage --curve` and watch
 gain-per-session column. Recordings of a *different* server or task are ignored by the
 curve and don't help; it tells you how many it dropped.
 
+## Feedback from your own agent
+
+Several of Drifter's defaults are still guesses (every value in `calibration.yaml`), and
+whether replay works well enough for a given agent is an open question
+([limitation 16](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)). Runs
+against real agents are the only way to settle either. If you try Drifter, please
+[open a field report](https://github.com/Tunasmelt/Drifter-MCP/issues/new?template=field_report.yml),
+even if you only got as far as `drifter init`. For a crash, a hang or a wrong result, use a
+[bug report](https://github.com/Tunasmelt/Drifter-MCP/issues/new?template=bug_report.yml).
+
+The most useful thing to paste is `drifter coverage --server <name> --curve`. It runs from
+your recordings alone, with no agent runs and no API cost, and it shows whether recording
+more would help an agent like yours.
+
+### Sharing a recording
+
+Issues are public, so don't attach recordings to them. If you're willing to share, tick
+the box in the field report and we'll arrange a private channel. Before you do, here is
+what the files contain.
+
+**`.drifter/runs/*.jsonl` (what to share)**, one file per session:
+
+- the full name, description and input schema of every tool your server lists;
+- every tool call: the tool name and **the argument values your agent sent**, such as file
+  paths, IDs and search queries;
+- the *shape* of each result (its keys and array lengths), never its values;
+- timing, error flags, the agent's name and version, and the server's version.
+
+Strings that look like secrets (API keys, tokens, high-entropy credentials) are redacted
+before anything is written. Other argument values are not, so a path like
+`/home/alice/clients/acme/` is recorded as is. Read the files before sending them, and
+leave out any session you wouldn't want someone else to read.
+
+**`.drifter/raw/*.frames` (never share)**: a full copy of every message on the wire,
+including **the complete contents of every tool result**. Only secret-shaped strings are
+redacted. Replay doesn't need these files, and nobody else does either.
+
 ## Design principles
 
 The short version (full list in [`docs/SPEC.md` §3](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md)):
