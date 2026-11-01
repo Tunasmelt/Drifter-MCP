@@ -35,11 +35,19 @@ first 2.x release fixing all four, and the lock moves to `mcp` 2.3.0, `pyjwt` 2.
 flags the old pins and is clean on the new ones. Full suite on `mcp` 2.3.0: 991 passed,
 1 skipped, 1 xfailed.
 
-Known and NOT fixed by this release: `SECURITY.md` and README's "Design principles" say
-payloads are not written by default, but `observe` always writes `.drifter/raw/*.frames`
-with full tool-result contents (only secret-shaped strings redacted). This is docs/SPEC.md
-§15's open retention contract, which touches a §3 invariant, so it is left for its own
-decision rather than patched in a version bump.
+`SECURITY.md` corrected: it said raw frames were "off by default" and that payload values
+were written only with an explicit `--record-full`. No such flag exists. `observe` always
+writes `.drifter/raw/*.frames` with full tool-result contents (only secret-shaped strings
+redacted, `record/writer.py`'s `SessionRecorder`), and `runs/*.jsonl` keeps argument
+values. It also said `.drifter/` is gitignored by default; that is only true of this
+repository, since `drifter init` writes no `.gitignore` entry. The paragraph now states
+what each file holds and tells users to ignore `.drifter/` themselves.
+
+Only the wording changed, not the behaviour. Whether `observe` should stop writing raw
+frames by default is docs/SPEC.md §15's open retention contract, which touches a §3
+invariant (CLAUDE.md's "Recording never writes payload data by default"), so it is left for
+its own decision. README's "Design principles" still makes the old claim for the same
+reason.
 
 ---
 

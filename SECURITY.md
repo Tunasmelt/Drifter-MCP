@@ -19,15 +19,22 @@ Drifter is a single-user, local CLI tool: no accounts, no hosted server, no tele
 Everything it does runs as the invoking user's own process, with the invoking user's own
 filesystem and network access. The relevant boundaries are:
 
-- **Data written to disk.** `drifter observe` records tool-use trajectories to
-  `.drifter/runs/*.jsonl` (shapes) and `.drifter/raw/*.frames` (full wire frames, off by
-  default). Payload *values* are never written unless you explicitly opt into
-  `--record-full`; string values likely to be secrets (API keys, tokens, credentials
-  matching common high-entropy patterns) are redacted before anything touches disk.
-  Recorded data still includes tool names, call frequency, timing, and error rates —
-  real operational detail about your server, not a secret in the redaction sense, but
-  not something to publish either. `.drifter/` is `.gitignore`d by default; don't
-  override that for a real project without thinking about what you're publishing.
+- **Data written to disk.** Every `drifter observe` session writes two files, and
+  neither is optional:
+  - `.drifter/runs/*.jsonl`: every tool's name, description and input schema; for each
+    call, the argument values your agent sent (file paths, IDs, queries) and the
+    *shape* of the result (its keys and array lengths, not its values); plus timing,
+    error flags, and agent and server versions.
+  - `.drifter/raw/*.frames`: a full copy of every message on the wire, **including the
+    complete contents of every tool result**.
+
+  In both files, strings that look like secrets (API keys, tokens, credentials matching
+  common high-entropy patterns) are redacted before anything touches disk. Nothing
+  else is: an ordinary value such as a customer name in a tool result, or a path in an
+  argument, is written as is. Treat `.drifter/raw/` as holding everything your tools
+  returned, and don't share it. The README's "Sharing a recording" section says what is
+  safe to send. Drifter's own repository ignores `.drifter/`, but `drifter init` does
+  not add it to yours: add `.drifter/` to your project's `.gitignore` before recording.
 - **The loopback HTTP listener** (`agent.mode: http`, used when your agent is driven by
   a client — like the Claude Code CLI — that speaks MCP over its own subprocess rather
   than yours). Binds to `127.0.0.1` only, with no config option to widen that. Validates
