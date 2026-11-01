@@ -6,6 +6,34 @@ not just a diff.
 
 ---
 
+## Release 0.2.0 prepared
+
+Version bumped from 0.1.0 to 0.2.0. Minor rather than patch because it adds commands:
+everything since the `v0.1.0` tag (`b6d4d43`) was unreleased, so PyPI users had no
+`drifter tasks` at all while the README documented it.
+
+What 0.2.0 adds over 0.1.0:
+- Task mining, F-28 to F-30 (`drifter tasks mine` / `approve`, `tasks_file:` merged into
+  `config.tasks` at load), including the audit fixes and the real-recording fixes above.
+- Mined candidates pre-fill `never_calls` from the risk classification.
+- `policy.max_risk`, safety check 3 as a risk ceiling.
+- `drifter doctor` warns on a broken tasks file.
+- Fix: `drifter report` picked an arbitrary experiment when two started in the same second.
+
+Verified before tagging, the same way `publish.yml`'s `build` job does it: `uv build`,
+`twine check` passed for both artifacts, the wheel installed into a clean venv reports
+0.2.0, `drifter tasks --help` lists `mine` and `approve`, and `drifter init` in an empty
+directory exits 4 with its actionable message. Full suite on the base commit: 991 passed,
+1 skipped, 1 xfailed. `pip-audit` clean.
+
+Known and NOT fixed by this release: `SECURITY.md` and README's "Design principles" say
+payloads are not written by default, but `observe` always writes `.drifter/raw/*.frames`
+with full tool-result contents (only secret-shaped strings redacted). This is docs/SPEC.md
+§15's open retention contract, which touches a §3 invariant, so it is left for its own
+decision rather than patched in a version bump.
+
+---
+
 ## `mine/` against the real recordings in this repo
 
 The first time mining ran on data it did not build itself. What was available, stated plainly:

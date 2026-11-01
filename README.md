@@ -84,7 +84,7 @@ the full `init → doctor → observe → prepare fixture → baseline replay �
 report` workflow against three agents (an unchanged client, a deliberately unadapted
 one, and a real Claude Code session that reads a changed schema and recovers). Full
 history in [`docs/PHASES.md`](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/PHASES.md). Published to
-[PyPI](https://pypi.org/project/mcp-drifter/) as `mcp-drifter` 0.1.0.
+[PyPI](https://pypi.org/project/mcp-drifter/) as `mcp-drifter` 0.2.0.
 
 - **Record & replay** (`drifter observe`, tiered replay resolution, redaction,
   trajectory segmentation) — built and tested.
