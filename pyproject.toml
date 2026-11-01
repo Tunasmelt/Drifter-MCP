@@ -25,7 +25,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "mcp>=2.0.0",
+    # >=2.2: 2.0.0 carries four known vulnerabilities (CVE-2026-59951, -116684, -116685,
+    # -116686), caught by CI's pip-audit step; 2.2.0 is the first 2.x release fixing them.
+    "mcp>=2.2",
     "pydantic>=2.0",
     "pyyaml>=6.0.3",
     # F-38 (docs/SPEC.md §5.1): cli/http_proxy.py imports uvicorn directly to
