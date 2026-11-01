@@ -24,7 +24,16 @@ Verified before tagging, the same way `publish.yml`'s `build` job does it: `uv b
 `twine check` passed for both artifacts, the wheel installed into a clean venv reports
 0.2.0, `drifter tasks --help` lists `mine` and `approve`, and `drifter init` in an empty
 directory exits 4 with its actionable message. Full suite on the base commit: 991 passed,
-1 skipped, 1 xfailed. `pip-audit` clean.
+1 skipped, 1 xfailed.
+
+CI's `pip-audit` then failed on the PR: advisories published since 0.1.0 cover the locked
+`mcp` 2.0.0 (CVE-2026-59951, -116684, -116685, -116686), `pyjwt` 2.13.0 (fifteen PYSEC
+entries plus GHSA-pxh4-856f-4h89) and `opentelemetry-api` 1.44.0 (CVE-2026-114603). Same
+handling as `httpx2` before 0.1.0: the direct dependency's floor is raised to `mcp>=2.2`, the
+first 2.x release fixing all four, and the lock moves to `mcp` 2.3.0, `pyjwt` 2.15.1 and
+`opentelemetry-api` 1.45.2 (both transitive, so not floored). Reproduced first: `pip-audit`
+flags the old pins and is clean on the new ones. Full suite on `mcp` 2.3.0: 991 passed,
+1 skipped, 1 xfailed.
 
 Known and NOT fixed by this release: `SECURITY.md` and README's "Design principles" say
 payloads are not written by default, but `observe` always writes `.drifter/raw/*.frames`
