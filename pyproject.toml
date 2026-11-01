@@ -1,6 +1,6 @@
 [project]
 name = "mcp-drifter"
-version = "0.1.0"
+version = "0.2.0"
 description = "Records MCP tool-use trajectories; experimental structural mutation and offline replay of tool interfaces."
 readme = "README.md"
 license = { text = "MIT" }
