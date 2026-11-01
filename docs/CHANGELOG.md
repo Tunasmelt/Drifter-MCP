@@ -46,8 +46,9 @@ what each file holds and tells users to ignore `.drifter/` themselves.
 Only the wording changed, not the behaviour. Whether `observe` should stop writing raw
 frames by default is docs/SPEC.md §15's open retention contract, which touches a §3
 invariant (CLAUDE.md's "Recording never writes payload data by default"), so it is left for
-its own decision. README's "Design principles" still makes the old claim for the same
-reason.
+its own decision. The same false claim was also corrected in README (intro, "How it works",
+the `result_contains` note, "Design principles") and on the website (the Record step, the
+recording diagram, and the Limits list), so all three describe what is actually written.
 
 ---
 

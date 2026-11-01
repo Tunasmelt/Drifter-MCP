@@ -170,7 +170,7 @@ function CopyBlock({ text, label }) {
     }
   };
   return (
-    <div className="copyblock">
+    <div className={text.includes("\n") ? "copyblock copyblock-multi" : "copyblock"}>
       <pre>
         <code>{text}</code>
       </pre>
@@ -229,7 +229,7 @@ function Hero() {
   return (
     <section id="top" className="hero">
       <div className="wrap">
-        <p className="pill">Alpha · v0.1.0 · on PyPI</p>
+        <p className="pill">Alpha · v0.2.0 · on PyPI</p>
         <h1>
           Your agent's tools will change.
           <br />
@@ -306,7 +306,7 @@ const STEPS = [
     n: "1",
     name: "Record",
     cmd: "drifter observe",
-    text: "A transparent passthrough proxy sits between your agent and a real server and writes each trajectory to a local JSONL corpus: which tools, in what order, with what shapes of arguments and results. Payloads are never written by default, only shapes, and secrets are pattern-matched and redacted.",
+    text: "A transparent passthrough proxy sits between your agent and a real server and writes each trajectory to a local JSONL corpus: which tools, in what order, with what arguments, and the shape of each result. A full copy of the traffic, tool results included, is kept alongside it. Strings that look like secrets are redacted from both.",
   },
   {
     n: "2",
@@ -340,7 +340,7 @@ function How() {
       <div className="lanes">
         <Lane
           title="Recording"
-          note="Real server, real traffic, shapes only."
+          note="Real server, real traffic, recorded locally."
           nodes={[
             { label: "Your agent", sub: "unchanged" },
             { label: "drifter observe", sub: "records", hot: true },
@@ -404,7 +404,7 @@ drifter run --task-id <id> --yes`}
         </div>
         <div>
           <p className="diff-label">Example candidate (task_candidates.yaml)</p>
-          <pre>
+          <pre className="code">
             <code>{CANDIDATE_YAML}</code>
           </pre>
         </div>
@@ -423,15 +423,31 @@ drifter run --task-id <id> --yes`}
 function Mutations() {
   const [active, setActive] = useState(0);
   const op = OPERATORS[active];
+  const onKey = (e) => {
+    const last = OPERATORS.length - 1;
+    const next =
+      e.key === "ArrowRight" ? (active === last ? 0 : active + 1)
+      : e.key === "ArrowLeft" ? (active === 0 ? last : active - 1)
+      : e.key === "Home" ? 0
+      : e.key === "End" ? last
+      : null;
+    if (next === null) return;
+    e.preventDefault();
+    setActive(next);
+    document.getElementById(`tab-${OPERATORS[next].id}`)?.focus();
+  };
   return (
     <Section id="mutations" eyebrow="Mutations" title="Three structural operators, all closed-set.">
-      <div className="tabs" role="tablist" aria-label="Mutation operators">
+      <div className="tabs" role="tablist" aria-label="Mutation operators" onKeyDown={onKey}>
         {OPERATORS.map((o, i) => (
           <button
             key={o.id}
+            id={`tab-${o.id}`}
             role="tab"
             type="button"
             aria-selected={i === active}
+            aria-controls="mutation-panel"
+            tabIndex={i === active ? 0 : -1}
             className={i === active ? "tab tab-on" : "tab"}
             onClick={() => setActive(i)}
           >
@@ -439,7 +455,7 @@ function Mutations() {
           </button>
         ))}
       </div>
-      <div className="panel" role="tabpanel">
+      <div className="panel" role="tabpanel" id="mutation-panel" aria-labelledby={`tab-${op.id}`}>
         <p>{op.summary}</p>
         <dl className="facts">
           <div>
@@ -462,13 +478,13 @@ function Mutations() {
             <div className="diff">
               <div>
                 <p className="diff-label">Served to the agent, before</p>
-                <pre>
+                <pre className="code">
                   <code>{op.before}</code>
                 </pre>
               </div>
               <div>
                 <p className="diff-label diff-label-new">After</p>
-                <pre className="pre-new">
+                <pre className="code pre-new">
                   <code>{op.after}</code>
                 </pre>
               </div>
@@ -608,7 +624,7 @@ function Limits() {
           <h3 className="sub">What is solid</h3>
           <ul className="bullets">
             <li>Recording, replay, scoring and safety checks, exercised end to end.</li>
-            <li>No telemetry. Payloads aren't recorded by default, only shapes.</li>
+            <li>No telemetry. Recordings stay on your machine, and strings that look like secrets are redacted before anything is written.</li>
             <li>A mutated call is never forwarded to a live server.</li>
             <li>Tested on Python 3.11 to 3.13, over stdio and HTTP.</li>
           </ul>
@@ -628,6 +644,11 @@ function Limits() {
             <li>
               Task mining needs a real corpus: a handful of trajectories has little that recurs,
               and its thresholds are unvalidated guesses.
+            </li>
+            <li>
+              Recordings hold the arguments your agent sent, and{" "}
+              <code className="inline">.drifter/raw/</code> holds everything your tools returned.
+              Keep <code className="inline">.drifter/</code> out of git and don't share the raw files.
             </li>
             <li>Expect the interface to change while it is pre-1.0.</li>
           </ul>
