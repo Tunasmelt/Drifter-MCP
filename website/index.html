@@ -1,17 +1,436 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Drifter — test your agent against changing MCP tools</title>
-    <meta
-      name="description"
-      content="Drifter records how your agent uses an MCP server, then replays those sessions against a deliberately mutated tool interface to show whether your agent still works."
-    />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230e1116'/%3E%3Cpath d='M7 21c4-9 8-9 12-3s5 3 7-2' fill='none' stroke='%232dd4bf' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-  </body>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Drifter — test your agent against changing MCP tools</title>
+<meta name="description" content="Drifter records how your agent really uses an MCP server, then replays those sessions against a deliberately mutated tool interface to see whether your agent still gets the job done.">
+<meta property="og:title" content="Drifter — test your agent against changing MCP tools">
+<meta property="og:description" content="Record real MCP tool-use trajectories, replay them against a mutated interface, get an honest verdict.">
+<meta property="og:url" content="https://drifter-mcp.vercel.app/">
+<meta name="theme-color" content="#160F21">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'%3E%3Crect x='1' y='1' width='26' height='26' rx='7' fill='%23160F21' stroke='%23FF6B9A' stroke-width='2'/%3E%3Cpath d='M7 17c3-6 6 2 9-4s4-2 5-3' fill='none' stroke='%23FFC857' stroke-width='2.2' stroke-linecap='round'/%3E%3C/svg%3E">
+<script>if(!matchMedia("(prefers-reduced-motion: reduce)").matches&&"IntersectionObserver" in window)document.documentElement.classList.add("motion")</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+:root{--bg:#160F21;--bg2:#1C1429;--surface:#211833;--line:#3B2F55;--line2:#2E2443;--text:#F1ECF9;--muted:#B3A6CC;--dim:#8E80A8;--code:#D9D0EA;--pink:#FF6B9A;--pink2:#FF8FB1;--amber:#FFC857;--green:#63D9A0;--red:#FF7A7A;--violet:#9D7BFF}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:80px}
+body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+a{color:var(--pink2);text-decoration:none}a:hover{color:#FFC1D3}
+:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+.wrap{max-width:1200px;margin:0 auto;padding:0 24px}
+.mono,code,pre{font-family:'JetBrains Mono',ui-monospace,monospace}
+.g3{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(340px,100%),1fr));gap:16px}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 20px;border-radius:10px;font:600 15px Inter,sans-serif;cursor:pointer;border:1px solid var(--line);color:var(--text);background:transparent}
+.btn:hover{color:var(--text);border-color:#5A4A7E}
+.btn-primary{background:var(--pink);color:var(--bg);border-color:var(--pink)}
+.btn-primary:hover{background:#FF85AC;color:var(--bg);border-color:#FF85AC}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;display:flex;flex-direction:column;gap:12px}
+.panel{background:var(--bg2);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.panel-h{padding:16px 24px;border-bottom:1px solid var(--line2);font-weight:600}
+.pill{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;align-self:flex-start;white-space:nowrap}
+.p-green{color:#0F2A1E;background:var(--green)}.p-red{color:#2E0F14;background:var(--red)}.p-amber{color:#2A2113;background:var(--amber)}.p-violet{color:var(--bg);background:var(--violet)}
+.t-built{color:var(--green);background:#132A20;font-weight:500}.t-free{color:#C4B2FF;background:#251D3D;font-weight:500}.t-exp{color:var(--amber);background:#2A2113;font-weight:500}
+.eyebrow{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--pink);letter-spacing:.1em}
+.h2{margin:0;font-family:'Space Grotesk',sans-serif;font-size:44px;line-height:1.1;letter-spacing:-.02em}
+.lead{margin:0;font-size:17px;line-height:1.65;color:var(--muted)}
+.head{display:flex;flex-direction:column;gap:14px;max-width:760px}
+.sec{padding-top:112px}
+.sec>.wrap{display:flex;flex-direction:column;gap:40px}
+.muted{color:var(--muted)}
+pre.code{margin:0;padding:16px;background:#120C1B;border:1px solid var(--line2);border-radius:10px;font-size:12.5px;line-height:1.6;color:var(--code);overflow-x:auto}
+ul.list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;font-size:15px;line-height:1.6;color:var(--code)}
+header.top{position:sticky;top:0;z-index:10;background:rgba(22,15,33,.92);backdrop-filter:blur(10px);border-bottom:1px solid #2A2040}
+.navlink{color:var(--muted);font-size:14px;font-weight:500;padding:12px 4px}.navlink:hover{color:var(--text)}
+.tab{min-height:44px;padding:0 16px;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font:500 14px 'JetBrains Mono',monospace;cursor:pointer}
+.tab:hover{color:var(--text);border-color:#5A4A7E}
+.tab[aria-selected=true]{background:var(--pink);color:var(--bg);border-color:var(--pink)}
+.stat{font-family:'Space Grotesk',sans-serif;font-size:52px;font-weight:700;letter-spacing:-.02em}
+.step{display:flex;flex-wrap:wrap;gap:20px;padding:24px;background:var(--bg2);border-bottom:1px solid var(--line2)}
+.step:last-child{border-bottom:0}
+.num{flex:0 0 40px;height:40px;border-radius:10px;background:#2A2040;color:var(--pink2);display:flex;align-items:center;justify-content:center;font-weight:700}
+.row{display:flex;flex-wrap:wrap;gap:6px 24px;padding:14px 24px;border-bottom:1px solid var(--line2)}
+.row:last-child{border-bottom:0}
+.node{padding:10px 14px;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+.gate{display:grid;grid-template-columns:1fr auto auto;font-size:13px}
+.gate>div{padding:14px 18px;border-bottom:1px solid var(--line2);align-self:stretch;display:flex;flex-direction:column;justify-content:center}
+.gate>.th{padding:10px 18px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+.gate>.last{border-bottom:0}
+.sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--dim);margin-top:2px}
+@media (max-width:760px){html{scroll-padding-top:124px}header.top .wrap{flex-wrap:wrap;height:auto!important;row-gap:0;padding-top:10px}.navlinks{order:3;flex:1 0 100%;gap:20px!important;overflow-x:auto;scrollbar-width:none;-webkit-mask-image:linear-gradient(90deg,#000 85%,transparent);mask-image:linear-gradient(90deg,#000 85%,transparent)}.navlinks::-webkit-scrollbar{display:none}.navlink{white-space:nowrap}.h1{font-size:42px!important}.h2{font-size:30px}.sec{padding-top:72px}.hero{padding-top:56px!important;padding-bottom:56px!important}}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+</style>
+</head>
+<body>
+
+<header class="top">
+<div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:16px;height:64px">
+<a href="#top" style="display:flex;align-items:center;gap:10px;color:var(--text)">
+<svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true"><rect x="1" y="1" width="26" height="26" rx="7" stroke="#FF6B9A" stroke-width="2"/><path d="M7 17c3-6 6 2 9-4s4-2 5-3" stroke="#FFC857" stroke-width="2.2" stroke-linecap="round"/></svg>
+<span style="font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px">drifter</span>
+<span class="mono" style="font-size:11px;color:var(--amber);border:1px solid #5C4A2A;background:#2A2113;padding:2px 8px;border-radius:99px">alpha</span>
+</a>
+<nav class="navlinks" aria-label="Sections" style="display:flex;gap:24px">
+<a class="navlink" href="#how">How it works</a>
+<a class="navlink" href="#features">Features</a>
+<a class="navlink" href="#verdicts">Verdicts</a>
+<a class="navlink" href="#start">Get started</a>
+<a class="navlink" href="#changelog">Changelog</a>
+</nav>
+<a class="btn" href="https://github.com/Tunasmelt/Drifter-MCP" style="background:var(--surface);font-size:14px;padding:0 16px">
+<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.9a3.4 3.4 0 0 0-.9-2.6c3.1-.4 6.4-1.5 6.4-7a5.4 5.4 0 0 0-1.5-3.8 5 5 0 0 0-.1-3.8s-1.2-.3-3.9 1.5a13.4 13.4 0 0 0-7 0C6.3 1.6 5.1 2 5.1 2a5 5 0 0 0-.1 3.8A5.4 5.4 0 0 0 3.5 9.6c0 5.4 3.3 6.6 6.4 7a3.4 3.4 0 0 0-.9 2.6V22"/></svg>
+GitHub</a>
+</div>
+</header>
+
+<main>
+<section id="top" style="border-bottom:1px solid #2A2040">
+<div class="wrap hero" style="display:flex;flex-wrap:wrap;gap:56px;align-items:center;padding-top:96px;padding-bottom:96px">
+<div style="flex:1 1 480px;min-width:0;display:flex;flex-direction:column;gap:28px">
+<div class="mono" style="display:inline-flex;align-self:flex-start;align-items:center;gap:10px;font-size:13px;color:var(--muted);border:1px solid var(--line);background:var(--surface);padding:6px 12px;border-radius:99px">
+<span class="dot" style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>v0.2.0 on PyPI · MIT · Python 3.11+</div>
+<h1 class="h1" style="margin:0;font-family:'Space Grotesk',sans-serif;font-size:64px;line-height:1.02;letter-spacing:-.03em">Your agent's tools will change.<br><span style="color:var(--pink)">Find out what breaks first.</span></h1>
+<p style="margin:0;font-size:19px;line-height:1.6;color:var(--muted);max-width:560px">Drifter is a proxy on the MCP connection between your agent and its tools. It records real tool-use trajectories, then replays them against a deliberately mutated interface, so you can see whether your agent still gets the job done. No live calls under a mutated schema, no API cost per replayed call.</p>
+<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">
+<button type="button" class="btn btn-primary mono" data-copy="uv tool install mcp-drifter"><span style="opacity:.6">$</span> uv tool install mcp-drifter <span class="copy-label" style="font-family:Inter,sans-serif;font-size:12px;background:rgba(22,15,33,.18);padding:3px 8px;border-radius:6px">Copy</span></button>
+<a class="btn" href="https://github.com/Tunasmelt/Drifter-MCP#quickstart">Read the quickstart →</a>
+</div>
+<p class="mono" style="margin:0;font-size:13px;color:var(--dim)">or: pip install mcp-drifter</p>
+</div>
+
+<div class="panel" style="flex:1 1 460px;min-width:0;box-shadow:0 30px 80px rgba(0,0,0,.45);border-radius:16px">
+<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 18px;border-bottom:1px solid var(--line2);background:var(--surface)">
+<div style="display:flex;gap:8px;align-items:center"><span style="font-weight:600;font-size:14px">drifter run</span><span class="mono" style="font-size:12px;color:var(--dim)">orders · parameter_rename</span></div>
+<span class="mono" style="font-size:11px;color:var(--muted)">release gate</span></div>
+<div class="mono" style="padding:14px 18px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line2);line-height:1.7">
+<div><span style="color:var(--violet)">MUTATION</span> get_order.order_id → <span style="color:var(--amber)">orderId</span></div>
+<div><span style="color:var(--violet)">REPLAY</span> upstream server file removed from disk</div></div>
+<div class="gate" role="table" aria-label="Release gate results">
+<div class="th" role="columnheader">Arm</div><div class="th" role="columnheader" style="text-align:right">Runs</div><div class="th" role="columnheader">Task</div>
+<div><b>Unchanged agent</b><span class="sub">scripted client, no mutation</span></div><div class="mono" style="text-align:right">3/3</div><div><span class="pill p-green">PASS</span></div>
+<div><b>Unadapted agent</b><span class="sub">get_order rejected · code -31003</span></div><div class="mono" style="text-align:right">0/3</div><div><span class="pill p-red">FAIL</span></div>
+<div class="last"><b>Adapting agent</b><span class="sub">headless Claude Code · inverse tier</span></div><div class="mono last" style="text-align:right">3/3</div><div class="last"><span class="pill p-green">PASS</span></div>
+</div>
+<div class="mono" style="padding:12px 18px;font-size:12px;color:var(--amber);background:#241B12;border-top:1px solid #4A3A20">BEHAVIOR UNKNOWN · too few valid runs per arm to say more</div>
+</div>
+</div>
+</section>
+
+<section class="sec"><div class="wrap">
+<div class="head"><span class="eyebrow">THE PROBLEM</span><h2 class="h2">MCP tools change under agents, silently.</h2>
+<p class="lead">Existing tools test models, servers, or agents in general. Nobody tests your actual agent against your actual tools under controlled interface change. Drifter fills that gap.</p></div>
+<div class="g3">
+<div class="card" style="padding:28px"><div class="stat" style="color:var(--pink)">54.6%</div><div class="muted" style="font-size:15px;line-height:1.55">of tools modified or deprecated across 515 MCP servers in a three-month study.</div></div>
+<div class="card" style="padding:28px"><div class="stat" style="color:var(--amber)">13.7–14.4%</div><div class="muted" style="font-size:15px;line-height:1.55">degradation in frontier models under simulated tool evolution, concentrated in planning and reasoning, not call syntax.</div></div>
+<div class="card" style="padding:28px"><div class="stat" style="color:var(--violet)">12 mo</div><div class="muted" style="font-size:15px;line-height:1.55">deprecation policy in the MCP spec itself, which guarantees the churn continues.</div></div>
+</div></div></section>
+
+<section id="how" class="sec"><div class="wrap">
+<div class="head"><span class="eyebrow">HOW IT WORKS</span><h2 class="h2">Record once. Replay against a changed interface.</h2></div>
+<div class="g2">
+<div class="panel" style="padding:24px;display:flex;flex-direction:column;gap:16px"><span class="mono" style="font-size:12px;color:var(--green)">RECORD · drifter observe</span>
+<div class="mono" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px"><span class="node">agent</span><span style="color:var(--dim)">──MCP──▶</span><span class="node" style="border-color:var(--pink);background:#2B1726;color:var(--pink2)">drifter</span><span style="color:var(--dim)">──MCP──▶</span><span class="node">real server</span></div>
+<p class="muted" style="margin:0;font-size:14px;line-height:1.6">Real server, real traffic, recorded locally.</p></div>
+<div class="panel" style="padding:24px;display:flex;flex-direction:column;gap:16px"><span class="mono" style="font-size:12px;color:var(--amber)">REPLAY + MUTATE · drifter run</span>
+<div class="mono" style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;font-size:13px"><span class="node">agent</span><span style="color:var(--dim)">──MCP──▶</span><span class="node" style="border-color:var(--amber);background:#2A2113;color:#FFD884">drifter (replayed, mutated)</span></div>
+<p class="muted" style="margin:0;font-size:14px;line-height:1.6">No upstream server is contacted. A live call under a mutated schema never happens.</p></div>
+</div>
+<ol class="panel" style="list-style:none;margin:0;padding:0">
+<li class="step"><div class="num mono">1</div><div style="flex:1 1 220px;min-width:0"><div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600">Record</div><code style="font-size:13px;color:var(--amber)">drifter observe</code></div><p class="muted" style="flex:3 1 420px;min-width:0;margin:0;font-size:15px;line-height:1.6">A transparent proxy writes each trajectory to a local JSONL corpus: which tools, in what order, with what arguments, and the shape of each result. Secret-looking strings are redacted.</p></li>
+<li class="step"><div class="num mono">2</div><div style="flex:1 1 220px;min-width:0"><div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600">Mine (optional)</div><code style="font-size:13px;color:var(--amber)">drifter tasks mine</code></div><p class="muted" style="flex:3 1 420px;min-width:0;margin:0;font-size:15px;line-height:1.6">Recurring workflows become editable task candidates with their evidence. You write the prompt and approve. Reads recordings only, so it costs nothing.</p></li>
+<li class="step"><div class="num mono">3</div><div style="flex:1 1 220px;min-width:0"><div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600">Replay</div><code style="font-size:13px;color:var(--amber)">drifter replay-serve</code></div><p class="muted" style="flex:3 1 420px;min-width:0;margin:0;font-size:15px;line-height:1.6">Recordings become an offline stand-in for the server. Unrecorded calls MISS, low-fidelity runs are excluded, and too few survivors means UNKNOWN.</p></li>
+<li class="step"><div class="num mono">4</div><div style="flex:1 1 220px;min-width:0"><div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600">Mutate</div><code style="font-size:13px;color:var(--amber)">drifter run --operator …</code></div><p class="muted" style="flex:3 1 420px;min-width:0;margin:0;font-size:15px;line-height:1.6">One structural, closed-set operator changes the tool interface the agent sees.</p></li>
+<li class="step"><div class="num mono">5</div><div style="flex:1 1 220px;min-width:0"><div style="font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:600">Evaluate</div><code style="font-size:13px;color:var(--amber)">drifter run · drifter report</code></div><p class="muted" style="flex:3 1 420px;min-width:0;margin:0;font-size:15px;line-height:1.6">The same task runs against unmutated and mutated manifests. Drifter compares behavior, checks assertions and screens for safety.</p></li>
+</ol>
+</div></section>
+
+<section id="features" class="sec"><div class="wrap">
+<div class="head"><span class="eyebrow">FEATURES</span><h2 class="h2">Everything between your agent and its tools.</h2></div>
+<div class="g3">
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Record &amp; replay</b><span class="pill t-built">built</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Transparent passthrough proxy, tiered replay resolution, redaction and trajectory segmentation.</p><code style="font-size:12px;color:var(--violet)">drifter observe</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Mutation operators</b><span class="pill t-built">built</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">description_update, tool_addition, parameter_rename. Safety-reviewed red-test-first against prompt-injection-shaped output.</p><code style="font-size:12px;color:var(--violet)">drifter run --operator …</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Response fixtures</b><span class="pill t-built">built</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Authored test payloads close the content gap: 8/8 valid runs and correct answers vs 0/4 with shape-only replay, on one task.</p><code style="font-size:12px;color:var(--violet)">--response-fixture responses.yaml</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Coverage before cost</b><span class="pill t-free">free</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Leave-one-out projected coverage from recordings alone, plus a curve showing whether recording more will help.</p><code style="font-size:12px;color:var(--violet)">drifter coverage --curve</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Re-scoring</b><span class="pill t-free">free</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Re-analyse already-recorded sessions with zero new agent execution and zero API calls.</p><code style="font-size:12px;color:var(--violet)">drifter score · drifter report</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Task mining</b><span class="pill t-free">free</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">PrefixSpan over your trajectories turns recurring workflows into editable candidates you approve.</p><code style="font-size:12px;color:var(--violet)">drifter tasks mine</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Cost controls</b><span class="pill t-built">built</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Blast-radius preview before any agent spawns, and live budget and wall-time ceilings.</p><code style="font-size:12px;color:var(--violet)">--budget N · --max-wall-time</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Setup in one step</b><span class="pill t-built">built</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Scans .mcp.json, Cursor and Claude Desktop configs for stdio servers and writes a starter drifter.yaml.</p><code style="font-size:12px;color:var(--violet)">drifter init · drifter doctor</code></div>
+<div class="card"><div style="display:flex;justify-content:space-between;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:18px">Behavior verdicts</b><span class="pill t-exp">experimental</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Pre-registered interval rule against a corpus-derived baseline path. Reports UNKNOWN below the minimum valid runs.</p><code style="font-size:12px;color:var(--violet)">calibration.min_valid_runs</code></div>
+</div></div></section>
+
+<section class="sec"><div class="wrap" style="gap:32px">
+<div class="head"><span class="eyebrow">MUTATIONS</span><h2 class="h2">Three structural operators, all closed-set.</h2><p class="lead">No free-text generation anywhere. Every operator's output space is fixed and reviewable as data.</p></div>
+<div role="tablist" aria-label="Mutation operators" style="display:flex;flex-wrap:wrap;gap:8px">
+<button type="button" class="tab" role="tab" id="tab-rename" aria-controls="op-rename" aria-selected="true">parameter_rename</button>
+<button type="button" class="tab" role="tab" id="tab-desc" aria-controls="op-desc" aria-selected="false" tabindex="-1">description_update</button>
+<button type="button" class="tab" role="tab" id="tab-add" aria-controls="op-add" aria-selected="false" tabindex="-1">tool_addition</button>
+</div>
+
+<div class="panel opanel" id="op-rename" role="tabpanel" aria-labelledby="tab-rename" style="padding:28px;display:flex;flex-wrap:wrap;gap:32px">
+<div style="flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:18px">
+<p style="margin:0;font-size:16px;line-height:1.65">Renames one input parameter, snake_case to camelCase. Drifter still recognises the resulting call through inverse-mutation key resolution, so replay keeps working even though the schema changed.</p>
+<div><div class="mono" style="font-size:11px;color:var(--green);letter-spacing:.08em;margin-bottom:6px">CHANGES</div><span class="muted" style="font-size:14px">One input parameter’s name in one tool’s schema.</span></div>
+<div><div class="mono" style="font-size:11px;color:var(--red);letter-spacing:.08em;margin-bottom:6px">NEVER CHANGES</div><span class="muted" style="font-size:14px">Tool names, other parameters, other tools.</span></div>
+</div>
+<div style="flex:1 1 420px;min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px">
+<div><div class="mono" style="font-size:11px;color:var(--dim);margin-bottom:8px">BEFORE</div><pre class="code">"get_order": {
+  "properties": {
+    <span style="color:var(--red)">"order_id"</span>: { "type": "string" }
+  },
+  "required": [<span style="color:var(--red)">"order_id"</span>]
+}</pre></div>
+<div><div class="mono" style="font-size:11px;color:var(--dim);margin-bottom:8px">AFTER</div><pre class="code">"get_order": {
+  "properties": {
+    <span style="color:var(--green)">"orderId"</span>: { "type": "string" }
+  },
+  "required": [<span style="color:var(--green)">"orderId"</span>]
+}</pre></div>
+</div></div>
+
+<div class="panel opanel" id="op-desc" role="tabpanel" aria-labelledby="tab-desc" hidden style="padding:28px;display:flex;flex-wrap:wrap;gap:32px">
+<div style="flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:18px">
+<p style="margin:0;font-size:16px;line-height:1.65">Bounded synonym substitution and sentence reordering on a tool’s description.</p>
+<div><div class="mono" style="font-size:11px;color:var(--green);letter-spacing:.08em;margin-bottom:6px">CHANGES</div><span class="muted" style="font-size:14px">The wording and sentence order of one tool’s description.</span></div>
+<div><div class="mono" style="font-size:11px;color:var(--red);letter-spacing:.08em;margin-bottom:6px">NEVER CHANGES</div><span class="muted" style="font-size:14px">The tool’s name or its input schema.</span></div>
+</div>
+<div style="flex:1 1 420px;min-width:0;min-height:180px;padding:24px;background:#120C1B;border:1px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;justify-content:center;gap:10px"><code style="font-size:14px;color:var(--amber)">drifter run --operator description_update</code><span class="muted" style="font-size:14px;line-height:1.6">Tests whether your agent depends on exact description wording rather than the tool’s contract.</span></div>
+</div>
+
+<div class="panel opanel" id="op-add" role="tabpanel" aria-labelledby="tab-add" hidden style="padding:28px;display:flex;flex-wrap:wrap;gap:32px">
+<div style="flex:1 1 320px;min-width:0;display:flex;flex-direction:column;gap:18px">
+<p style="margin:0;font-size:16px;line-height:1.65">Adds a tool to the manifest, drawn from a small, fixed pool of generic tool archetypes.</p>
+<div><div class="mono" style="font-size:11px;color:var(--green);letter-spacing:.08em;margin-bottom:6px">CHANGES</div><span class="muted" style="font-size:14px">The tool list: one extra tool appears.</span></div>
+<div><div class="mono" style="font-size:11px;color:var(--red);letter-spacing:.08em;margin-bottom:6px">NEVER CHANGES</div><span class="muted" style="font-size:14px">Any existing tool’s name, description or schema.</span></div>
+</div>
+<div style="flex:1 1 420px;min-width:0;min-height:180px;padding:24px;background:#120C1B;border:1px dashed var(--line);border-radius:10px;display:flex;flex-direction:column;justify-content:center;gap:10px"><code style="font-size:14px;color:var(--amber)">drifter run --operator tool_addition</code><span class="muted" style="font-size:14px;line-height:1.6">Tests whether a new, unrelated option distracts your agent’s planning.</span></div>
+</div>
+</div></section>
+
+<section id="verdicts" class="sec"><div class="wrap">
+<div class="head"><span class="eyebrow">VERDICTS</span><h2 class="h2">Three axes. Honest about what it doesn't know.</h2>
+<p class="lead">Every verdict defaults to <span class="mono" style="color:var(--amber)">UNKNOWN</span> when there isn't enough evidence. Drifter would rather say it doesn't know than show a plausible-looking wrong answer.</p></div>
+<div class="g3">
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-family:'Space Grotesk',sans-serif;font-size:22px">Behavior</b><span class="pill t-exp">experimental</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">How often the agent stays on the path your recordings established, before and after mutation, under a pre-registered interval rule. Below a minimum of valid runs per arm: UNKNOWN, with counts.</p></div>
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-family:'Space Grotesk',sans-serif;font-size:22px">Task</b><span class="pill t-free">opt-in</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Assertions you author: tools that must be called, in what order, which must not be, and an <span class="mono">answer_matches</span> oracle on the final answer. None configured: UNKNOWN, never PASS.</p></div>
+<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><b style="font-family:'Space Grotesk',sans-serif;font-size:22px">Safety</b><span class="pill t-built">always on</span></div><p class="muted" style="margin:0;font-size:14px;line-height:1.6">Evaluated on every run, never gated by the others. Destructive calls are flagged; calls it couldn't classify are reported explicitly. Set <span class="mono">policy.max_risk</span> to cap risk.</p></div>
+</div>
+<div class="panel"><div class="panel-h">Exit codes for CI</div>
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))">
+<div class="row" style="align-items:center;gap:14px"><span class="mono" style="font-size:22px;font-weight:700;color:var(--green)">0</span><span class="muted" style="font-size:14px">Clean</span></div>
+<div class="row" style="align-items:center;gap:14px"><span class="mono" style="font-size:22px;font-weight:700;color:var(--red)">1</span><span class="muted" style="font-size:14px">Behavior regression</span></div>
+<div class="row" style="align-items:center;gap:14px"><span class="mono" style="font-size:22px;font-weight:700;color:var(--red)">2</span><span class="muted" style="font-size:14px">Assertion failure</span></div>
+<div class="row" style="align-items:center;gap:14px"><span class="mono" style="font-size:22px;font-weight:700;color:var(--pink)">3</span><span class="muted" style="font-size:14px">Safety violation</span></div>
+<div class="row" style="align-items:center;gap:14px"><span class="mono" style="font-size:22px;font-weight:700;color:var(--amber)">4</span><span class="muted" style="font-size:14px">Config / connectivity</span></div>
+<div class="row" style="align-items:center;gap:14px"><span class="mono" style="font-size:22px;font-weight:700;color:var(--amber)">5</span><span class="muted" style="font-size:14px">Budget exceeded</span></div>
+</div></div>
+</div></section>
+
+<section id="start" class="sec"><div class="wrap">
+<div class="head"><span class="eyebrow">GET STARTED</span><h2 class="h2">From install to first report.</h2></div>
+<div class="g2">
+<div class="panel" style="display:flex;flex-direction:column"><div class="panel-h" style="font-size:15px;padding:14px 20px">1 · Install and set up</div><pre style="margin:0;padding:20px;font-size:13px;line-height:1.7;color:var(--code);overflow-x:auto">uv tool install mcp-drifter
+drifter init      # finds servers in .mcp.json, Cursor, Claude Desktop
+drifter doctor    # config, connectivity, tool risk</pre></div>
+<div class="panel" style="display:flex;flex-direction:column"><div class="panel-h" style="font-size:15px;padding:14px 20px">2 · Record real sessions</div><pre style="margin:0;padding:20px;font-size:13px;line-height:1.7;color:var(--code);overflow-x:auto">drifter observe --server my-server
+# point your agent’s MCP config at this,
+# then use it normally</pre></div>
+<div class="panel" style="display:flex;flex-direction:column"><div class="panel-h" style="font-size:15px;padding:14px 20px">3 · Mine tasks (optional)</div><pre style="margin:0;padding:20px;font-size:13px;line-height:1.7;color:var(--code);overflow-x:auto">drifter tasks mine
+# write each prompt in task_candidates.yaml
+drifter tasks approve &lt;id&gt;</pre></div>
+<div class="panel" style="display:flex;flex-direction:column"><div class="panel-h" style="font-size:15px;padding:14px 20px">4 · Check coverage, then run</div><pre style="margin:0;padding:20px;font-size:13px;line-height:1.7;color:var(--code);overflow-x:auto">drifter coverage --server my-server
+drifter run --fixture .drifter/runs --server my-server \
+  --task-id my-task --operator parameter_rename --yes
+drifter report --task-id my-task</pre></div>
+</div>
+<div class="panel"><div class="panel-h">Commands</div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter init</code><span class="muted" style="flex:1 1 300px;font-size:14px">Scan existing MCP client configs and write a starter drifter.yaml.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter doctor</code><span class="muted" style="flex:1 1 300px;font-size:14px">Config and connectivity pre-flight; classifies every tool’s risk.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter observe</code><span class="muted" style="flex:1 1 300px;font-size:14px">Transparent recording proxy between your agent and a real server.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter stats</code><span class="muted" style="flex:1 1 300px;font-size:14px">Per-tool call frequency, error and fault rate, latency.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter coverage</code><span class="muted" style="flex:1 1 300px;font-size:14px">Projected replay coverage from recordings alone.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter fixture</code><span class="muted" style="flex:1 1 300px;font-size:14px">Author and maintain response fixtures from the live server (read-only tools).</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter tasks</code><span class="muted" style="flex:1 1 300px;font-size:14px">Mine recurring workflows into task candidates, then approve them.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter run</code><span class="muted" style="flex:1 1 300px;font-size:14px">Baseline plus one mutation operator in replay mode, with a verdict.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter report</code><span class="muted" style="flex:1 1 300px;font-size:14px">Re-render a prior run from stored sessions. Zero new execution.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter score</code><span class="muted" style="flex:1 1 300px;font-size:14px">Re-analyse already-recorded sessions.</span></div>
+<div class="row"><code style="flex:0 0 200px;font-size:14px;color:var(--pink2)">drifter replay-serve</code><span class="muted" style="flex:1 1 300px;font-size:14px">Serve a replayed, optionally mutated manifest for a real agent.</span></div>
+</div>
+</div></section>
+
+<section id="changelog" class="sec"><div class="wrap">
+<div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-end;gap:16px">
+<div class="head"><span class="eyebrow">CHANGELOG</span><h2 class="h2">Releases</h2></div>
+<a class="btn" href="https://github.com/Tunasmelt/Drifter-MCP/releases" style="font-size:14px">All releases on GitHub →</a></div>
+<div style="display:flex;flex-direction:column;gap:20px">
+<article style="display:flex;flex-wrap:wrap;gap:24px">
+<div style="flex:0 0 180px;display:flex;flex-direction:column;gap:8px"><h3 class="mono" style="margin:0;font-size:22px">v0.2.0</h3><time class="muted" datetime="2026-11-07" style="font-size:14px">Nov 7, 2026</time><span class="pill p-green">LATEST</span></div>
+<div class="panel" style="flex:1 1 520px;min-width:0;padding:28px;display:flex;flex-direction:column;gap:22px">
+<pre class="code" style="font-size:13px;color:var(--amber)">uv tool install --upgrade mcp-drifter</pre>
+<div style="display:flex;flex-direction:column;gap:10px"><span class="pill p-green">NEW</span>
+<ul class="list">
+<li><b>Task mining.</b> <span class="mono">drifter tasks mine</span> finds recurring workflows in your recordings and writes editable candidates to <span class="mono">task_candidates.yaml</span>; promote one with <span class="mono">drifter tasks approve &lt;id&gt;</span>.</li>
+<li><b>Safer candidates by default.</b> <span class="mono">never_calls</span> is pre-filled with destructive tools, except ones the workflow itself calls.</li>
+<li><b>Risk ceiling.</b> Set <span class="mono">policy.max_risk</span> (e.g. <span class="mono">reversible_write</span>); calls above it become safety findings.</li>
+<li><span class="mono">drifter doctor</span> now warns when the tasks file is broken.</li>
+</ul></div>
+<div style="display:flex;flex-direction:column;gap:10px"><span class="pill p-violet">FIXED</span><ul class="list"><li><span class="mono">drifter report</span> could show the older of two experiments started in the same second.</li></ul></div>
+<div style="display:flex;flex-direction:column;gap:10px"><span class="pill p-red">SECURITY</span><ul class="list"><li>Requires <span class="mono">mcp&gt;=2.2</span>. mcp 2.0.0 has four known vulnerabilities (CVE-2026-59951, CVE-2026-116684, CVE-2026-116685, CVE-2026-116686).</li></ul></div>
+<div style="display:flex;flex-direction:column;gap:10px"><span class="pill p-amber">KNOWN LIMITATION</span><ul class="list"><li><span class="mono">.drifter/raw/*.frames</span> holds a full copy of every message, tool results included; only secret-shaped strings are redacted. Don't share these files.</li></ul></div>
+</div></article>
+<article style="display:flex;flex-wrap:wrap;gap:24px">
+<div style="flex:0 0 180px;display:flex;flex-direction:column;gap:8px"><h3 class="mono" style="margin:0;font-size:22px">v0.1.0</h3><time class="muted" datetime="2026-09-23" style="font-size:14px">Sep 23, 2026</time></div>
+<div class="panel" style="flex:1 1 520px;min-width:0;padding:28px;display:flex;flex-direction:column;gap:10px">
+<span style="font-size:15px;line-height:1.6;color:var(--code)">First tagged release.</span>
+<a href="https://github.com/Tunasmelt/Drifter-MCP/commits/v0.1.0" style="font-size:14px">Full changelog: commits up to v0.1.0 →</a></div>
+</article>
+</div></div></section>
+
+<section class="sec" style="padding-bottom:112px"><div class="wrap">
+<div class="head"><span class="eyebrow">STATUS AND LIMITS</span><h2 class="h2">Alpha, and upfront about it.</h2></div>
+<div class="g2">
+<div class="card" style="padding:28px;gap:14px"><b style="color:var(--green)">What is solid</b><ul class="list">
+<li>Recording, replay, scoring and safety checks, exercised end to end.</li>
+<li>No telemetry. Recordings stay on your machine; secret-looking strings are redacted before writing.</li>
+<li>A mutated call is never forwarded to a live server.</li>
+<li>Tested on Python 3.11–3.13, over stdio and HTTP, both MCP protocol eras.</li></ul></div>
+<div class="card" style="padding:28px;gap:14px"><b style="color:var(--amber)">What to keep in mind</b><ul class="list">
+<li>Replay serves recorded response shapes; content-dependent tasks need an authored <span class="mono">--response-fixture</span>.</li>
+<li>A real agent explores, so one recording rarely covers the next run. Check coverage first.</li>
+<li>Detecting a genuine regression with a real agent is not yet separately validated. Don't use Behavior verdicts for release decisions.</li>
+<li>Keep <span class="mono">.drifter/</span> out of git. Expect the interface to change pre-1.0.</li></ul>
+<a href="https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md" style="font-size:14px">Full limitations list in the spec →</a></div>
+</div>
+<div style="background:#2B1726;border:1px solid #5A2A44;border-radius:14px;padding:32px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;justify-content:space-between">
+<div style="flex:1 1 420px;display:flex;flex-direction:column;gap:8px"><b style="font-family:'Space Grotesk',sans-serif;font-size:24px">Tried it on your own agent?</b>
+<span style="font-size:15px;color:#E5C9D6;line-height:1.6">Open a field report, even if you only got as far as <span class="mono">drifter init</span>. Paste <span class="mono">drifter coverage --server &lt;name&gt; --curve</span>.</span></div>
+<a class="btn btn-primary" href="https://github.com/Tunasmelt/Drifter-MCP/issues/new?template=field_report.yml">Open a field report</a></div>
+</div></section>
+</main>
+
+<footer style="border-top:1px solid #2A2040">
+<div class="wrap" style="display:flex;flex-wrap:wrap;gap:16px;justify-content:space-between;align-items:center;padding-top:28px;padding-bottom:28px;font-size:14px;color:var(--dim)">
+<span>drifter · MIT licensed · console command <span class="mono">drifter</span></span>
+<div style="display:flex;flex-wrap:wrap;gap:20px">
+<a href="https://github.com/Tunasmelt/Drifter-MCP">GitHub</a>
+<a href="https://pypi.org/project/mcp-drifter/">PyPI</a>
+<a href="https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md">Spec</a>
+<a href="https://github.com/Tunasmelt/Drifter-MCP/issues/new?template=bug_report.yml">Report a bug</a>
+</div></div>
+</footer>
+
+<script>
+document.querySelectorAll('[data-copy]').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var label = b.querySelector('.copy-label');
+    var done = function () { if (label) { label.textContent = 'Copied'; label.classList.add('ok'); setTimeout(function () { label.textContent = 'Copy'; label.classList.remove('ok'); }, 1600); } };
+    if (navigator.clipboard) navigator.clipboard.writeText(b.dataset.copy).then(done, function () {});
+  });
+});
+(function () {
+  var tabs = Array.prototype.slice.call(document.querySelectorAll('[role=tab]'));
+  function select(t) {
+    tabs.forEach(function (x) {
+      var on = x === t;
+      x.setAttribute('aria-selected', on ? 'true' : 'false');
+      x.tabIndex = on ? 0 : -1;
+      document.getElementById(x.getAttribute('aria-controls')).hidden = !on;
+    });
+  }
+  tabs.forEach(function (t, i) {
+    t.addEventListener('click', function () { select(t); });
+    t.addEventListener('keydown', function (e) {
+      var d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      if (!d) return;
+      var n = tabs[(i + d + tabs.length) % tabs.length]; select(n); n.focus(); e.preventDefault();
+    });
+  });
+})();
+</script>
+<style>.opanel[hidden]{display:none!important}</style>
+<style>
+:root{--ease:cubic-bezier(.2,.7,.2,1)}
+@keyframes rise{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+@keyframes panelIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@keyframes ring{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(2.6)}}
+/* Hover and press, for everyone. */
+.btn,.tab{transition:transform .15s var(--ease),background-color .2s,border-color .2s,color .2s,box-shadow .2s}
+.btn:active,.tab:active{transform:translateY(1px) scale(.98)}
+.btn-primary:hover{box-shadow:0 8px 24px rgba(255,107,154,.28)}
+.card{transition:transform .25s var(--ease),border-color .25s,box-shadow .25s}
+.card:hover{transform:translateY(-3px);border-color:#5A4A7E;box-shadow:0 14px 34px rgba(0,0,0,.35)}
+.step,.row{transition:background-color .2s}
+.step:hover,.row:hover{background-color:#20172E}
+.node{transition:transform .2s var(--ease),border-color .2s}
+.node:hover{transform:translateY(-2px)}
+.copy-label{display:inline-block;transition:transform .2s var(--ease),background-color .2s}
+.copy-label.ok{transform:scale(1.08);background:rgba(22,15,33,.32)!important}
+/* Current section in the nav. */
+.navlink{position:relative;transition:color .2s}
+.navlink::after{content:"";position:absolute;left:4px;right:4px;bottom:6px;height:2px;border-radius:2px;background:var(--pink);transform:scaleX(0);transform-origin:left;transition:transform .25s var(--ease)}
+.navlink.is-active{color:var(--text)}.navlink.is-active::after{transform:scaleX(1)}
+/* Status dot. */
+.dot{position:relative}
+.motion .dot::after{content:"";position:absolute;inset:0;border-radius:50%;background:var(--green);animation:ring 2.4s var(--ease) infinite}
+/* Hero entrance on load. */
+.motion .hero>div:first-child>*{animation:rise .7s var(--ease) backwards}
+.motion .hero>div:first-child>:nth-child(2){animation-delay:.08s}
+.motion .hero>div:first-child>:nth-child(3){animation-delay:.16s}
+.motion .hero>div:first-child>:nth-child(4){animation-delay:.24s}
+.motion .hero>div:first-child>:nth-child(5){animation-delay:.3s}
+.motion .hero>.panel{animation:rise .8s var(--ease) .2s backwards}
+.motion .gate>div:nth-child(n+4){animation:fade .45s var(--ease) backwards}
+.motion .gate>div:nth-child(n+4):nth-child(-n+6){animation-delay:.55s}
+.motion .gate>div:nth-child(n+7):nth-child(-n+9){animation-delay:.7s}
+.motion .gate>div:nth-child(n+10){animation-delay:.85s}
+.motion .hero>.panel>div:last-child{animation:fade .5s var(--ease) 1.05s backwards}
+/* Scroll reveal. Hidden only until revealed, so hover still works afterwards. */
+.motion :is(.sec .head,.g3>*,.g2>*,.step,#changelog article,.sec [role=tablist],.sec>.wrap>div.panel:not(.opanel)):not(.in){opacity:0}
+.motion .in{animation:rise .6s var(--ease) var(--d,0ms) backwards}
+/* Operator tabs crossfade. */
+.motion .opanel:not([hidden]){animation:panelIn .3s var(--ease)}
+@media (prefers-reduced-motion:reduce){
+*,*::before,*::after{transition-duration:0s!important;animation:none!important}
+.card:hover,.node:hover,.btn:active,.tab:active,.copy-label.ok{transform:none}
+}
+</style>
+<script>
+(function () {
+  var root = document.documentElement;
+  /* Scroll reveal, staggered among siblings. */
+  if (root.classList.contains('motion')) {
+    var sel = '.sec .head,.g3>*,.g2>*,.step,#changelog article,.sec [role=tablist],.sec>.wrap>div.panel:not(.opanel)';
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.08 });
+    document.querySelectorAll(sel).forEach(function (el) {
+      var i = Array.prototype.indexOf.call(el.parentNode.children, el);
+      el.style.setProperty('--d', (i % 4) * 70 + 'ms');
+      io.observe(el);
+    });
+  }
+  /* Highlight the nav link for the section in view. */
+  if ('IntersectionObserver' in window) {
+    var links = {};
+    document.querySelectorAll('.navlink').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+    var spy = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        /* Back in the hero, or in a section with no nav link: nothing is current. */
+        Object.keys(links).forEach(function (k) { links[k].classList.toggle('is-active', k === e.target.id); });
+      });
+    }, { rootMargin: '-45% 0px -50% 0px' });
+    document.querySelectorAll('main > section').forEach(function (s) { spy.observe(s); });
+  }
+})();
+</script>
+</body>
 </html>
