@@ -6,6 +6,23 @@ not just a diff.
 
 ---
 
+## Published: mcp-drifter 0.2.0 is on PyPI
+
+Released by the user as GitHub Release `v0.2.0` on `e7f0f30`. `publish.yml`'s `build` job
+passed and `publish-pypi` ran behind the `pypi` reviewer approval; `publish-testpypi` was
+skipped, as designed for a release trigger. Verified from a clean venv outside the
+checkout: `uv pip install --no-cache mcp-drifter==0.2.0` resolves with `mcp` 2.3.0
+(installed metadata requires `mcp>=2.2`), `drifter tasks --help` lists `mine` and
+`approve`, `drifter init` in an empty directory exits 4 with its actionable message, and
+`pip-audit` finds no known vulnerabilities in the 29 installed dependencies.
+
+The GitHub Release was published marked as a pre-release. That affects only GitHub's
+"Latest" badge: PyPI treats `0.2.0` as a final version, so `pip install mcp-drifter`
+already resolves to it. README's Install section gains upgrade steps from 0.1.0 and a
+`.gitignore` step for `.drifter/`, since `drifter init` adds none.
+
+---
+
 ## Release 0.2.0 prepared
 
 Version bumped from 0.1.0 to 0.2.0. Minor rather than patch because it adds commands:

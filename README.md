@@ -131,11 +131,34 @@ drifter --help
 ```
 
 Then generate a starter config and calibration file in the directory you want to work
-in:
+in, and keep recordings out of git (`drifter init` doesn't do this for you, and
+recordings hold your agent's arguments and your tools' results):
 
 ```
 drifter init
+echo ".drifter/" >> .gitignore
 ```
+
+### Upgrading from 0.1.0
+
+```
+uv tool upgrade mcp-drifter    # or: pip install -U mcp-drifter
+```
+
+Your existing `drifter.yaml` and recordings work unchanged. What 0.2.0 adds:
+
+- **Task mining**: `drifter tasks mine` and `drifter tasks approve`, described in
+  [Finding tasks in your own recordings](#finding-tasks-in-your-own-recordings). Approved
+  tasks are read from `task_candidates.yaml`, or from the file named by `tasks_file:`.
+  A project with no such file behaves exactly as before.
+- **A risk ceiling**: set `policy.max_risk` (for example `reversible_write`) and any call
+  to a tool classified above it becomes a safety finding. Off unless you set it.
+- **`drifter doctor`** warns when the tasks file is broken.
+- **A fix**: `drifter report` could show the older of two runs started in the same second.
+- **Security**: requires `mcp>=2.2`, because `mcp` 2.0.0 has four known vulnerabilities.
+  Upgrading Drifter upgrades `mcp` with it.
+
+Full notes are on the [v0.2.0 release](https://github.com/Tunasmelt/Drifter-MCP/releases/tag/v0.2.0).
 
 > **This is an alpha release.** The recording, replay, scoring and safety paths are
 > exercised end to end and independently validated, including a full release-gate run
