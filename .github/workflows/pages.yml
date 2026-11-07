@@ -1,6 +1,6 @@
 name: Website (GitHub Pages)
 
-# Builds website/ (Vite + React) and deploys it to GitHub Pages. Requires the repo's
+# Builds website/ (a static index.html, bundled by Vite) and deploys it to GitHub Pages. Requires the repo's
 # Settings -> Pages -> Source to be "GitHub Actions". The site uses relative asset
 # URLs (vite base "./"), so it works at the project-site path
 # https://<owner>.github.io/<repo>/ without any per-host configuration; the same
