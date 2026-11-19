@@ -53,6 +53,21 @@ filesystem and network access. The relevant boundaries are:
   `instead of`) and rejected if it matches, so a mutation can't accidentally produce
   something that reads as a prompt injection. Every mutation is logged with an exact
   before/after and an inverse mapping.
+- **Upstream credentials (planned for 0.3.0, NOT built — docs/SPEC.md §5.2).** Today a
+  `url` server is reached with no authentication at all. When OAuth lands: Drifter
+  authenticates as its own OAuth client and never forwards or stores an agent's token;
+  tokens live in a usable OS keyring (optional extra) or a private file in the platform
+  user config directory (`~/.config/drifter/` on POSIX, `%LOCALAPPDATA%/drifter/` on
+  Windows), never inside the project or `.drifter/`. Files require POSIX `0600`/`0700`
+  permissions or verified user-private Windows ACLs; unsafe storage is refused.
+  `drifter.yaml` holds only
+  environment-variable NAMES, and a literal secret there is rejected at load; recordings
+  hold the auth type and granted scopes, never a token, code or secret; the login
+  callback binds `127.0.0.1` only and checks `state`; an authorization server without
+  PKCE S256 is refused. A canary-token test (F-47) fails the build if a token appears in
+  any record, log or error message. If the CIMD option is used, Drifter's client identity
+  is a document on the project website — whoever controls that domain controls the
+  identity authorization servers see.
 - **Dependencies.** `pip-audit` runs in CI on every push and pull request, failing the
   build on known high/critical-severity vulnerabilities in the dependency tree.
 

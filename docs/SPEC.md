@@ -180,6 +180,80 @@ criterion. These are two separable features sharing infrastructure, not one feat
 keep them scoped apart the way F-16/F-17's own "Schema Immunity" boundary was kept
 apart from tool_addition's synthesis concerns.
 
+### 5.2 Upstream authorization (0.3.0 scope — F-41–F-47, NOT built)
+
+**The gap.** `record/proxy.py`'s `connect_to_server` opens `streamable_http_client(url)`
+with no `http_client`, so no `Authorization` header is ever sent. Any OAuth-protected
+Streamable HTTP server fails at `initialize` (§15 limitation 23, "What Drifter can
+front"). Only the **Drifter ↔ real server** axis needs authorization: the agent always
+reaches `drifter observe` over stdio (§5.1 axis 1), and every replay path is offline.
+
+**Current spec, confirmed before planning ([2026-07-28 authorization page](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization), not an older
+revision):** OAuth-protected MCP servers MUST implement OAuth 2.0 Protected Resource Metadata (RFC 9728)
+and clients MUST use it for authorization-server discovery; clients MUST send the RFC
+8707 `resource` parameter; PKCE is required; Client ID Metadata Documents (CIMD) are
+the SHOULD-level registration method, Dynamic Client Registration (RFC 7591) is MAY
+and deprecated in favor of CIMD.
+
+**Design constraint 1 — Drifter is its own OAuth client. It never forwards the agent's
+token.** Token passthrough is structurally impossible under the spec, not merely
+discouraged: a token is audience-bound (RFC 8707) to the resource the client validated
+in protected resource metadata. A token the agent obtained for `localhost` is rejected
+upstream; metadata naming the upstream URL fails the agent's own resource check. And
+under stdio there is no agent token to forward at all. Drifter therefore authenticates
+as itself, with its own client identity and its own stored tokens.
+
+**Design constraint 2 — login is a separate command, never inside `observe`.**
+`drifter observe`'s stdout IS the MCP protocol channel to the agent (§5, F-01); it
+cannot pause mid-`initialize` to run an interactive browser flow. Interactive login is
+`drifter auth login <server>`, run beforehand. `observe` and `doctor` use stored tokens
+and refresh them silently; when no usable token exists they fail fast with exit `4` and
+the exact command to run — never a raw traceback, never a hang waiting for a browser.
+
+**Design constraint 3 — use the SDK's OAuth client, do not hand-roll one.** Confirmed
+against the installed SDK (`mcp==2.3.0`, `mcp/client/auth/oauth2.py`), not assumed:
+`OAuthClientProvider(server_url, client_metadata, storage, redirect_handler,
+callback_handler, client_metadata_url=...)` is an `httpx2.Auth` implementing
+authorization code + PKCE (S256), RFC 9728 discovery from `WWW-Authenticate`, RFC 8707
+resource handling, issuer validation of authorization-server metadata, automatic
+refresh, a 403 `insufficient_scope` path, and CIMD via `client_metadata_url`. A
+`TokenStorage` protocol (`get_tokens`/`set_tokens`/`get_client_info`/`set_client_info`)
+is the only persistence seam. `mcp.client.auth.extensions.client_credentials` adds
+`ClientCredentialsOAuthProvider` and `PrivateKeyJWTOAuthProvider` for non-interactive
+use. `streamable_http_client(url, http_client=...)` accepts a pre-configured client, so
+F-39's `connect_to_server` change is one argument. Two things the SDK was NOT seen to
+do, so Drifter must: refuse an authorization server whose metadata omits `S256` from
+`code_challenge_methods_supported` (the SDK sends S256 unconditionally), and keep every
+token out of Drifter's own records, logs and error text (F-47).
+
+**Client identity, tried in order:** (1) a pre-registered `client_id` in `drifter.yaml`;
+(2) CIMD, when the authorization server advertises
+`client_id_metadata_document_supported` — Drifter's document is hosted at a fixed HTTPS
+URL on the project website (DEC-030, proposed); (3) Dynamic Client Registration, when a
+`registration_endpoint` is advertised; (4) otherwise an actionable error naming options
+1 and `bearer_env`.
+
+**Token storage:** OS keyring when the optional `keyring` extra has a usable backend,
+else a private file in the platform user config directory (`~/.config/drifter/` on
+POSIX, `%LOCALAPPDATA%/drifter/` on Windows). Require POSIX `0600` files/`0700`
+directories or verified user-private Windows ACLs; fail closed if unavailable.
+Never inside the project or `.drifter/` (DEC-029, proposed; F-42).
+
+**Recording consequence:** a server may list different tools depending on granted
+scopes. The session fingerprint (F-05) therefore records the auth type and the GRANTED
+scope set — never a token, client secret or authorization code — so corpora recorded
+under different scopes are distinguishable (F-46). F-46 must specify schema/hash
+evolution before writing new fields: legacy missing auth stays unknown, old hashes
+and legacy comparisons remain stable, and comparison/cohort logic must handle auth
+explicitly. Grant comparisons cannot infer per-tool scope requirements.
+
+**Replay is unchanged:** offline, no authorization, no network. `replay/` must not
+import anything from the auth module; locked in by an import-inspection test, the same
+way F-20 locks out live forwarding.
+
+**Agent-facing authorization stays out of scope.** The F-38 loopback listener's
+unauthenticated, loopback-only, Origin-validated design (SECURITY.md) is unchanged.
+
 ## 6. Record schema
 
 One JSONL file per session, `schema_version` on every line, raw JSON-RPC frames mirrored
@@ -473,6 +547,12 @@ servers:
   - name: remote-crm            # v1 (F-39) — a real server reached over HTTP instead
     url: "https://mcp.example.com/mcp"   # of a spawned local subprocess; mutually
                                           # exclusive with `command` on the same entry
+    auth:                       # 0.3.0 (F-41, NOT built) — url entries only; default none
+      type: oauth               # oauth | bearer_env | client_credentials | none
+      scopes: ["crm.read"]      # optional; default: what the server's metadata advertises
+      # client_id: "..."        # optional pre-registered client (identity order, §5.2)
+      # token_env: CRM_TOKEN    # type: bearer_env — env var NAME, never the value
+      # secret_env: CRM_SECRET  # type: client_credentials — env var NAME, never the value
 
 # everything below optional, sane defaults
 record: {dir: .drifter/runs, redact: shape}
@@ -526,7 +606,20 @@ drifter run             baseline + mutations + evaluate
 drifter score           re-evaluate stored records                  [zero API cost]
 drifter report          render report from records
 drifter doctor          connectivity, config, classification sanity
+drifter coverage        corpus coverage and optional coverage curve
+drifter fixture capture capture approved read-only response fixtures
+drifter fixture check   check response fixtures against the real server
+drifter replay-serve    serve a recorded manifest over stdio
+drifter auth login      interactive OAuth login for one url server      [0.3.0, F-43]
+drifter auth status     stored-token state per server (never the token) [0.3.0, F-43]
+drifter auth logout     delete stored tokens for one server             [0.3.0, F-43]
+drifter --version       print the installed version                     [1.0.0, F-49]
 ```
+
+*1.0.0 contract (F-49, not yet in force):* from 1.0.0 the commands, flags and exit codes
+in this section are public API under semver. F-49 first inventories all commands and
+flags from `cli/app.py` into this reference. Removal or incompatible changes require
+a major release and a deprecation warning for at least one minor release first.
 
 Exit codes: `0` clean · `1` behavior regression · `2` assertion failure ·
 `3` safety violation · `4` config/connectivity error · `5` budget exceeded.
@@ -1378,7 +1471,9 @@ when*.
 
     **What Drifter can front.** Local stdio servers and unauthenticated Streamable HTTP
     endpoints. `url` mode sends no authentication, so the claude.ai-authenticated
-    connectors cannot be proxied. Several of them are also write-capable (email,
+    connectors cannot be proxied. (Planned fix: §5.2, 0.3.0. Even then, connectors
+    authenticated through claude.ai stay out of reach — Drifter gets its own token by
+    logging in itself, it cannot borrow claude.ai's.) Several of them are also write-capable (email,
     payments, deploys) and were deliberately not used.
 
     **S1, `mcp-server-time` (local; non-strict schema).** Pre-registered. `parameter_rename`

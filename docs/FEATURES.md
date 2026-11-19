@@ -5,7 +5,7 @@ Organized by module. Cross-reference SPEC.md for the invariants each feature mus
 
 ---
 
-## Build status (as of 2026-09-06, `.drifter/GATE_STATUS`: `gate: v1`)
+## Build status (as of 2026-11-19, `.drifter/GATE_STATUS`: `gate: v1`; 0.2.0 published, 0.3.0/1.0.0 planned)
 
 This table is the living answer to "what's actually built, what needs building, and
 what's left in something already built" — updated in place as gates close and features
@@ -55,6 +55,15 @@ table and docs/PHASES.md for gate-level narrative.
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
 | F-40 | `parameter_rename` mutation operator | ✅ Built | `mutate/parameter_rename.py` — the third Level 0/1 operator, added specifically to give F-12 a real inverse to resolve against (neither F-16 nor F-17 can: schema-immune / no prior recording respectively). Closed-set, deterministic snake_case→camelCase, exactly one property per tool |
+| F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ❌ Not built — 0.3.0 | docs/SPEC.md §5.2/§11. Smallest useful slice: a static token from an env var NAME |
+| F-42 | Token storage (`TokenStorage`) | ❌ Not built — 0.3.0 | Usable keyring extra, else private platform storage (POSIX modes / Windows ACLs) outside the project (DEC-029, proposed) |
+| F-43 | `drifter auth login` / `status` / `logout` | ❌ Not built — 0.3.0 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR |
+| F-44 | Authenticated upstream connection | ❌ Not built — 0.3.0 | `observe`/`doctor` pass an authed `http_client` to `streamable_http_client`; silent refresh; fail fast (exit 4) with no interactive flow |
+| F-45 | Non-interactive auth (client credentials / private-key JWT) | ❌ Not built — 0.3.0, conditional | Only if DEC-031 (proposed) keeps it in 0.3.0 |
+| F-46 | Auth-aware fingerprint + `doctor` auth checks | ❌ Not built — 0.3.0 | Fingerprint records auth type + GRANTED scopes, never a token; doctor walks PRM → AS metadata → S256 → token → scopes |
+| F-47 | Token non-disclosure guarantee | ❌ Not built — 0.3.0, red-test-first | Canary token must never reach JSONL, raw frames, logs, exception text or `.drifter/`. Same discipline as F-04 |
+| F-48 | Record + config schema freeze | ❌ Not built — 1.0.0 | Record `schema_version` "0.1" → "1.0", reader keeps reading "0.1"; `drifter.yaml` `version: 1` enforced |
+| F-49 | CLI public-API contract | ❌ Not built — 1.0.0 | `drifter --version`; commands, flags, exit codes documented as semver API; deprecation policy |
 
 **Priority order for what to build next**, per docs/PHASES.md's own v1 ordering and the
 dependency chain above (not a re-ranking, just made explicit in one place):
@@ -103,6 +112,13 @@ dependency chain above (not a re-ranking, just made explicit in one place):
    docs/SPEC.md §15 limitation 16).
 10. **F-27** (adaptive scheduling) — lower urgency, no blocking dependents. All other
     v1 priority-list items are now built.
+11. **F-47 → F-41 → F-42 → F-43 → F-44 → F-46 → (F-45)** — 0.3.0, upstream
+    authorization (docs/SPEC.md §5.2, docs/PHASES.md "0.3.0"). F-47's red test and the
+    local OAuth fixture come first, before any auth code, exactly as F-04 preceded the
+    recorder.
+12. **F-48 → F-49 + the 1.0.0 gap fixes (F-05, F-09, F-33)** — 1.0.0, the stability
+    freeze (docs/PHASES.md "1.0.0"). Starts only after 0.3.0 has been dogfooded, because
+    new surface area is what forces format changes, and 1.0.0 promises there will be none.
 
 ---
 
@@ -994,6 +1010,189 @@ on a broken config.
 **Depends on:** F-33, F-26.
 **Done when:** every category of common misconfiguration (bad server command, missing
 task assertions, unclassified destructive tool) produces a specific, actionable error.
+
+---
+
+## Module: `auth/` (0.3.0 — none built)
+
+All of this module is the **Drifter ↔ real server** axis only (docs/SPEC.md §5.2). The
+agent never authenticates to Drifter, and nothing in `replay/` may import from `auth/`.
+
+### F-41 Upstream auth config (`servers[].auth`) + `bearer_env`
+
+**Technical:** `ServerConfig` gains an optional `auth` block (docs/SPEC.md §11):
+`type: oauth | bearer_env | client_credentials | none` (default `none`), `scopes`,
+`client_id`, `token_env`, `secret_env`. Valid only on `url` entries — `auth` on a
+`command` entry is a config error with an actionable message (stdio servers take
+credentials from their own environment). Fields ending `_env` hold an environment
+variable NAME; a value that looks like a secret (F-04's patterns) is rejected at load,
+so a token pasted into `drifter.yaml` fails loudly instead of being committed.
+`bearer_env` sends `Authorization: Bearer <value of token_env>` on every upstream
+request and nothing else.
+
+**Simple:** tell Drifter how a remote server wants you to log in. The simplest option —
+"read my API token from this environment variable" — works on its own, before any
+OAuth exists.
+
+**Depends on:** F-39, F-47.
+**Done when:** `bearer_env` records a real session against the local OAuth fixture's
+static-token mode; `auth` on a `command` entry and a literal secret in any `_env` field
+are both rejected with exit `4`.
+
+### F-42 Token storage (`TokenStorage`)
+
+**Technical:** One implementation of the SDK's `TokenStorage` protocol, keyed by server
+`name` + canonical `url`. Backend: OS keyring when the optional `mcp-drifter[keyring]`
+extra has a usable backend, else a JSON file in the platform's user config directory
+(`~/.config/drifter/tokens/<key>.json` on POSIX; `%LOCALAPPDATA%/drifter/tokens/<key>.json`
+on Windows). POSIX requires `0600` files in a `0700` directory; Windows requires a
+verified user-private ACL, not a chmod approximation. Refuse storage if these protections
+cannot be established (DEC-029, proposed). Never under the project directory or
+`.drifter/`. Stores tokens and client registration info only; never the authorization
+code or PKCE verifier. A file with wider permissions is refused, not silently used.
+
+**Simple:** where Drifter keeps your login so you don't sign in every time — in the
+system keychain if you have one, otherwise in a private file only you can read, and
+never anywhere that could end up in git.
+
+**Depends on:** none (pure persistence).
+**Done when:** round-trip tests on both backends; an unavailable keyring uses the secure
+fallback; a `0644` POSIX file and a broadly readable Windows ACL are refused; a test
+asserts no storage path resolves inside the project root.
+
+### F-43 `drifter auth login` / `status` / `logout`
+
+**Technical:** `login <server>` builds an `OAuthClientProvider` with F-42's storage, a
+`redirect_handler` that prints the authorization URL and opens a browser, and a
+`callback_handler` serving one request on `127.0.0.1` at an OS-assigned port, checking
+`state`, timing out (default 300 s). It triggers the flow by opening a session and
+calling `initialize`. Client identity order (docs/SPEC.md §5.2): pre-registered →
+CIMD → DCR → actionable error. Before redirecting, it refuses authorization-server
+metadata that omits `S256` from `code_challenge_methods_supported`. `status` prints per
+server: auth type, token present, expiry, refreshable, granted scopes — never token
+material. `logout` deletes that server's stored tokens and client info.
+
+**Simple:** sign in to a remote server once, in your browser, before you start
+recording. `status` shows whether you're still signed in; `logout` forgets the login.
+
+**Depends on:** F-41, F-42.
+**Done when:** a full login against the local OAuth fixture in each identity mode
+(pre-registered, CIMD-only, DCR-only); a mismatched `state` and a no-S256 authorization
+server are both refused; the callback listener is confirmed loopback-only.
+
+### F-44 Authenticated upstream connection
+
+**Technical:** `connect_to_server` passes an `httpx2.AsyncClient(auth=...)` to
+`streamable_http_client(url, http_client=...)` for any `url` entry with `auth`. The
+provider used by `observe` and `doctor` has NO redirect or callback handler: if a usable token or refresh is unavailable, it raises, and the CLI
+maps that to exit `4` with "run `drifter auth login <server>`". A refresh happens
+silently. A 401 after one refresh attempt → exit `4`; a 403 `insufficient_scope` →
+exit `4` naming the missing scope. Nothing interactive ever writes to stdout.
+
+**Simple:** recording a login-protected server now just works once you've signed in,
+and when the login has expired Drifter tells you exactly what to run instead of
+crashing or hanging.
+
+**Depends on:** F-41, F-42, F-43.
+**Done when:** `observe` records a real session through the fixture with a stored
+token; expired-but-refreshable succeeds; expired-unrefreshable, wrong-audience and
+insufficient-scope each fail with exit `4` and a specific message; a test proves the
+non-interactive provider is constructed with no redirect/callback handler.
+
+### F-45 Non-interactive auth (client credentials / private-key JWT)
+
+**Technical:** `type: client_credentials` builds the SDK's
+`ClientCredentialsOAuthProvider` (secret from `secret_env`) or
+`PrivateKeyJWTOAuthProvider`. No browser, no stored refresh token required — for CI.
+
+**Simple:** a way to log in from a CI pipeline, where nobody can click "Allow" in a
+browser.
+
+**Depends on:** F-41, F-44. **Conditional:** in 0.3.0 only if DEC-031 (proposed) keeps it.
+**Done when:** a CI-style run against the fixture's client-credentials mode records a
+session with no TTY.
+
+### F-46 Auth-aware fingerprint + `doctor` auth checks
+
+**Technical:** F-05's environment fingerprint gains `auth_type` and `granted_scopes`
+(sorted, from the effective token grant, including the SDK's omitted-scope handling) —
+never token, secret or code. Historical missing fields remain null/unknown, never
+silently `none` or an empty grant. Before adding fields, specify record-version and
+hash evolution in §6, retain old hashes, and test a pre-change corpus. Update
+`record/fingerprint.py`, `evaluate/baseline.py`'s cohort key and
+`evaluate/effect_size.py` comparison paths together. Unknown legacy auth must remain
+explicit; it must not be treated as evidence of equal grants. Preserve existing
+legacy-to-legacy comparisons and unchanged unauthenticated workflows.
+
+`drifter doctor` checks OAuth discovery, S256 support, usable token/refresh, then
+current grants against scopes stamped on recorded sessions. MCP tools expose no
+per-tool required-scope list: this is a grant-drift check, not proof of authorization
+for every recorded tool. Legacy or opaque bearer grants are unknown. Static bearer
+checks validate the configured environment variable and connectivity, skipping OAuth
+discovery and refresh; client-credentials checks skip interactive PKCE. Each failure
+is a specific `[FAIL]`/`[WARN]` with the next command to run.
+
+**Simple:** recordings remember which permissions they were made with (a server can
+show different tools to different permission levels), and `doctor` tells you which
+step of the login chain is broken.
+
+**Depends on:** F-05, F-37, F-44.
+**Done when:** two sessions recorded under different scope sets carry different
+fingerprints; legacy corpora retain their hashes and comparison results; mixed
+unknown/known grants cannot silently match; each applicable doctor check fails in
+isolation against a deliberately broken fixture with its own message.
+
+### F-47 Token non-disclosure guarantee
+
+**Technical:** A fixed canary token (`drifter-canary-<uuid>`) issued by the fixture.
+Red test first: after `auth login`, `observe`, a forced refresh, a forced 401 and a
+forced 403, the canary and the refresh token must not appear in any file under
+`.drifter/`, any captured log line, any exception message or traceback text, or
+`auth status` output. Also an import-inspection test: no module under `replay/`
+imports `auth/`.
+
+**Simple:** a planted fake token that the tests hunt for everywhere Drifter writes or
+prints. If it ever shows up, the build fails.
+
+**Depends on:** none — written before F-41, the way F-04's redaction test preceded the
+recorder.
+**Done when:** the test exists, fails against a deliberately leaky stub, and passes
+against F-41–F-46.
+
+## Module: stability (1.0.0 — none built)
+
+### F-48 Record + config schema freeze
+
+**Technical:** `record/schema.py`'s `SCHEMA_VERSION` moves from the 0.x format → "1.0"; every record
+type's `Literal` accepts the version it writes; `record/reader.py` reads both "0.1" and
+"1.0", plus any intermediate version introduced by F-46 (new fields absent in old
+records retain their documented unknowns, e.g. a null `fault_code` stays unknown).
+`drifter.yaml` already requires and validates `version: 1` since R5; preserve the
+existing errors for missing or unsupported versions. The written
+schema reference lives in docs/SPEC.md §6.
+
+**Simple:** from 1.0, recordings and config files made by one version keep working
+with the next, and old 0.x recordings still open.
+
+**Depends on:** F-46 (the last planned record-shape change lands first).
+**Done when:** the committed 0.x fixtures under `tests/fixtures/experiments/` still load
+and re-render byte-identically; a "2.0" record is rejected with a clear message.
+
+### F-49 CLI public-API contract
+
+**Technical:** `drifter --version`; docs/SPEC.md §12's commands, flags and exit codes
+declared semver public API after inventorying every command and flag from
+`cli/app.py`, including `coverage`, `fixture capture|check`, and `replay-serve`;
+a deprecation helper prints a one-line warning to stderr for a deprecated flag for
+at least one minor release, with removal or incompatible changes only in a major release. A test
+snapshots `--help` for every command so an accidental flag removal fails CI.
+
+**Simple:** from 1.0, a script that calls `drifter` won't break on an upgrade without
+a warning first.
+
+**Depends on:** F-48.
+**Done when:** `drifter --version` matches `importlib.metadata`; the help-snapshot test
+fails on a removed flag.
 
 ---
 

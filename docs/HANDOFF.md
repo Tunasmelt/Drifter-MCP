@@ -19,7 +19,7 @@ claim.
    design (the one genuinely hard technical problem, now solved), the claims ledger.
    This is the source of truth for *what Drifter is*. Amend only with a CHANGELOG
    entry and a reason.
-2. **FEATURES.md** — every feature (F-01 through F-37), what it does, why, its
+2. **FEATURES.md** — every feature (F-01 through F-49; F-41–F-49 are planned for 0.3.0/1.0.0), what it does, why, its
    dependencies, and what "done" means for it. This is the source of truth for
    *what gets built*.
 3. **PHASES.md** — the gated build order with exit tests and kill criteria. This is
@@ -41,18 +41,27 @@ reasoning along the way (e.g. the O4 operator correction, v1.0.3).
 
 - **The package name is `mcp-drifter`, not `drifter`.** Bare `drifter` is taken on
   PyPI (verified directly, not assumed). Brand name stays "Drifter."
-- **v0 (Gates 1–3) is stdio-only.** The "just change one URL line" onboarding pitch
-  applies to HTTP transport, which doesn't exist until v1. Don't let marketing copy
-  get ahead of what's actually built.
+- **HTTP exists (F-38/F-39), but authentication does not.** `url` servers are reached
+  unauthenticated; OAuth is planned for 0.3.0 (SPEC.md §5.2, F-41–F-47). Don't let
+  marketing copy get ahead of what's actually built.
+- **Drifter is its own OAuth client; it never forwards the agent's token.** Tokens are
+  audience-bound, so passthrough can't work, and under stdio there's no agent token
+  anyway. Login is `drifter auth login`, run before `observe` — `observe`'s stdout is the
+  protocol channel and must never block on a browser flow.
+- **Use the SDK's `OAuthClientProvider`; don't write an OAuth client.** Confirmed in
+  `mcp` 2.3.0. Drifter adds only storage, CLI, the S256 refusal and token non-disclosure.
+- **No token ever reaches `.drifter/`, logs or error text.** F-47's canary test is
+  written before any auth code, the same way F-04's redaction test preceded the recorder.
 - **Replay is the default even during Gate 3 mutation testing.** Live-server mode
   never exists before v1, and even then it never runs under a mutated schema. This
   isn't a corner that got cut for time — it's DEC-005/DEC-... level, a core safety
   invariant.
-- **Only two mutation operators ship before v1**: `description_update` and
-  `tool_addition`. They're not arbitrary — they're the two empirically worst
-  operators in the MCPEvol-Bench research (C5 in the claims ledger). Resist the urge
-  to add a third "just to be thorough" before Gate 3's exit test has passed with just
-  these two.
+- **Three mutation operators exist**: `description_update` and `tool_addition` (the two
+  empirically worst in MCPEvol-Bench, C5) plus `parameter_rename` (F-40, added to give
+  F-12 a real inverse). No new operators are planned for 0.3.0 or 1.0.0.
+- **1.0.0 is a stability promise, not a validation claim.** Gate 4 closed by override with
+  no second user. 1.0.0 freezes the record schema, config and CLI (F-48/F-49); it says
+  nothing about outside adoption.
 - **Every number in the calibration register is a guess**, not a research finding.
   SPEC.md §9 lists them explicitly so nobody mistakes `fidelity_floor: 0.70` for
   something measured. They get re-derived from real data at Gate 2 — don't defend
@@ -65,7 +74,7 @@ reasoning along the way (e.g. the O4 operator correction, v1.0.3).
 
 ```
 SPEC.md      →  what is true (architecture, invariants, schema, claims)
-FEATURES.md  →  what gets built (37 features, dependencies, done-criteria)
+FEATURES.md  →  what gets built (49 features, dependencies, done-criteria)
 PHASES.md    →  when it gets built, and when to stop and reconsider
 CHANGELOG.md →  why it looks like this now (corrections, retracted claims)
 ```

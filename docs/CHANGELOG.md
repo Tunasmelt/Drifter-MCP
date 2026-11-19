@@ -6,6 +6,88 @@ not just a diff.
 
 ---
 
+## Planned: 0.3.0 (upstream authorization) and 1.0.0 (stability freeze)
+
+Added in place to SPEC.md (§5.2 new; §11, §12, §15 limitation 23 amended), FEATURES.md
+(F-41–F-49, status table, priority items 11–12), PHASES.md (two new sections, failure-mode
+rows), HANDOFF.md and SECURITY.md. No new planning document, per DEC-026. Nothing here is
+built.
+
+**Review corrections (2026-11-20).** Applied the archive patch after updating to
+current master, then checked the repository and locked `mcp==2.3.0` source:
+
+1. F-48 preserves R5's already-required config version; no missing-version fallback.
+2. F-46 requires schema/hash evolution, nullable legacy auth and cohort/comparison
+   updates before adding auth fields; old corpora must keep working.
+3. F-19's remaining limitation is older handshakes; R5 tests prove the cache fields
+   on 2026-07-28 sessions.
+4. F-49 includes coverage, fixture and replay-serve, inventories flags before the
+   freeze, and reserves incompatible changes for major releases.
+5. Doctor compares recorded session grants, not nonexistent per-tool scope lists,
+   and distinguishes unknown grants from empty grants.
+6. Doctor branches by auth type; bearer and machine credentials do not require an
+   interactive OAuth discovery/PKCE/refresh chain.
+7. Token storage requires a usable keyring backend or platform-specific private
+   files, including verified Windows ACLs; POSIX mode bits alone are insufficient.
+
+The installed SDK was synchronized from the existing lockfile before review. These
+are documentation changes only; runtime behavior and package version remain 0.2.0.
+
+**Why now.** §15 limitation 23 found that `url` mode sends no authentication, so any
+OAuth-protected server is out of reach. That is the largest remaining gap between
+Drifter's "point it at your real server" pitch and what it can do.
+
+**Correction to the planning conversation.** A first scoping pass named F-39 (HTTP
+upstream) as a prerequisite and listed F-13, `policy/` and `mine/` as deferrable. All
+four were already built (FEATURES.md status table). That pass was written from a stale
+summary instead of the repository. This entry and the docs it changes were written
+after reading `master` and the installed `mcp` 2.3.0 source.
+
+**What reading the code established:**
+- The agent always reaches `drifter observe` over stdio, so only Drifter ↔ server needs
+  authorization. Agent-facing auth is out of scope.
+- `connect_to_server` calls `streamable_http_client(url)` with no `http_client`, which
+  is why no header is ever sent; the SDK signature accepts one.
+- `mcp` 2.3.0 ships `OAuthClientProvider` (PKCE S256, RFC 9728 discovery, RFC 8707
+  resource, issuer validation, refresh, 403 `insufficient_scope`, CIMD via
+  `client_metadata_url`), a `TokenStorage` protocol, client-credentials and
+  private-key-JWT providers, and server-side auth (`mcp.server.auth`) usable for a local
+  test fixture. Drifter wraps these rather than implementing OAuth.
+- The SDK was not seen to refuse an authorization server lacking S256, so Drifter adds
+  that check itself.
+- `record/schema.py` already stamps `schema_version` and `record/reader.py` already
+  rejects unknown versions, so the 1.0.0 freeze extends existing plumbing.
+
+**Design decisions recorded as constraints (SPEC.md §5.2), not proposals:** Drifter is
+its own OAuth client and never forwards an agent token (audience binding makes
+passthrough fail by design); interactive login is a separate `drifter auth login`
+because `observe`'s stdout is the protocol channel; granted scopes go in the fingerprint
+because `tools/list` can vary by scope; `replay/` may not import `auth/`.
+
+**Decisions PROPOSED, pending the user's confirmation:**
+- **DEC-028 — 0.3.0 first, then 1.0.0.** OAuth is new surface; shipping it inside the
+  release that promises format stability risks breaking that promise in 1.0.1. The
+  alternative (both in 1.0.0) is faster and riskier.
+- **DEC-029 — token storage: usable optional keyring, platform-private file fallback.** A
+  hard `keyring` dependency fails on headless Linux and CI; file-only is simpler but
+  weaker on desktops.
+- **DEC-030 — host the CIMD document on the project website.** CIMD is the spec's
+  preferred registration path and needs a stable HTTPS URL, which the website already
+  provides. Cost: control of that domain becomes control of Drifter's client identity.
+  Rejecting it leaves pre-registered client IDs and DCR (deprecated) only.
+- **DEC-031 — F-45 (non-interactive CI auth) in 0.3.0.** The SDK makes it cheap; the
+  open question is only whether to grow 0.3.0's surface. Default if unanswered: defer.
+
+**Gap fixes chosen for 1.0.0:** F-05 (limitation 14), F-09 (limitation 9), F-33. Kept as
+documented limitations: F-07, F-16, F-19 (older-handshake clients only; R5 verified
+the 2026-07-28 cache guarantees), limitation 16.
+
+**Explicitly out of both releases:** an auth-drift mutation operator (replaying 403
+step-up challenges), agent-facing OAuth, enterprise identity-assertion login, new
+mutation operators, F-19.
+
+---
+
 ## Published: mcp-drifter 0.2.0 is on PyPI
 
 Released by the user as GitHub Release `v0.2.0` on `e7f0f30`. `publish.yml`'s `build` job

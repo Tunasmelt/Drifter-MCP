@@ -15,6 +15,8 @@ under which the current approach is wrong and should stop, decided now rather th
 under sunk-cost pressure later.
 
 No new specification documents are written after this file. The next artifact is code.
+(0.3.0 and 1.0.0 below were added to this file and to SPEC/FEATURES in place, per
+DEC-026 — not as new documents.)
 
 ---
 
@@ -1652,6 +1654,108 @@ pre-releases by default).
       point ran; `drifter init` in an empty directory exited 4 with its actionable
       message. README's Install section now leads with `uv tool install mcp-drifter`.
 
+## 0.3.0 — Upstream authorization (F-41–F-47)
+
+Retires §15 limitation 23's "`url` mode sends no authentication." Design: docs/SPEC.md
+§5.2. Versioning: 0.3.0 first, 1.0.0 later (DEC-028, proposed) — OAuth is new surface
+area, and new surface area is what forces format changes; 1.0.0 promises none.
+
+**Decisions this phase rests on — all PROPOSED, confirm before P2 starts:**
+DEC-028 (0.3.0 then 1.0.0), DEC-029 (usable keyring + platform-private file fallback), DEC-030
+(CIMD document hosted on the project website), DEC-031 (F-45 in 0.3.0 or deferred). See
+docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
+
+#### Tasks
+
+**P1 — red tests and fixture before any auth code**
+- [ ] Local OAuth fixture under `tests/fixtures/oauth/`: a Streamable HTTP MCP server
+      protected by the SDK's own server-side auth (`mcp.server.auth`:
+      `create_auth_routes`, `TokenVerifier`) with an in-memory authorization server.
+      Switchable modes: pre-registered client, CIMD-only, DCR-only, static bearer,
+      client credentials, no-S256 metadata, issuer mismatch, short-lived tokens,
+      refresh disabled, scope-dependent `tools/list`. No network, no third party.
+- [ ] F-47 canary test written and failing against a deliberately leaky stub.
+- [ ] Import-inspection test: nothing under `replay/` imports `auth/`.
+
+**P2 — config, storage, static token**
+- [ ] F-41 `servers[].auth` + `bearer_env`.
+- [ ] F-42 `TokenStorage` (usable keyring extra, POSIX modes / Windows ACL file fallback).
+
+**P3 — interactive login**
+- [ ] F-43 `drifter auth login|status|logout`, identity order pre-registered → CIMD →
+      DCR, S256 refusal, loopback callback with `state` check and timeout.
+- [ ] CIMD document published on the website at a fixed URL, loopback `redirect_uris`
+      (only if DEC-030 is confirmed). Verify at least one real authorization server
+      accepts a loopback redirect on an arbitrary port before relying on it — an
+      assumption until checked.
+
+**P4 — wiring, errors, fingerprint**
+- [ ] F-44 authed `http_client` in `connect_to_server`; refresh; exit-4 paths.
+- [ ] F-46 schema/hash compatibility first, then fingerprint `auth_type` +
+      `granted_scopes`, cohort/comparison updates and auth-type-specific doctor checks.
+- [ ] F-45 client credentials / private-key JWT (only if DEC-031 keeps it).
+
+**P5 — dogfood and release**
+- [ ] One real, public, OAuth-protected MCP server, chosen and its metadata checked
+      against the 2026-07-28 spec before use. Read-only tools only (same rule as §15
+      limitation 23: write-capable servers are not used). One `observe` session, one
+      `drifter run` with `parameter_rename`, evidence bundled under
+      `tests/fixtures/experiments/` like limitations 22/23.
+- [ ] SECURITY.md "Upstream credentials" moves from planned to current state; README
+      auth section; website changelog.
+- [ ] Release 0.3.0: same fresh-wheel smoke test and `pip-audit` as 0.2.0; published by
+      the user through `publish.yml`.
+
+#### Exit test
+
+From a fresh wheel: `drifter auth login` against the fixture in each identity mode,
+then `drifter observe` records a session through an OAuth-protected server, then
+`drifter run` replays it offline with no network — and the F-47 canary test passes
+across all of it. Then the same `observe` + `run` against the real dogfood server.
+
+#### Kill criterion
+
+If the real dogfood server cannot be recorded without Drifter needing to intercept or
+forward the AGENT's credentials, stop: that means §5.2's "Drifter is its own client"
+model doesn't fit how real OAuth MCP servers are deployed, and the design — not the
+code — needs revisiting. Also stop if F-47 cannot be made to pass without disabling a
+log or error path users rely on: a token leak is not an acceptable trade for a feature.
+
+## 1.0.0 — Stability freeze (F-48, F-49 + gap fixes)
+
+Starts only after 0.3.0 has been used for real (DEC-028). 1.0.0 is a promise that
+formats and the CLI won't break without warning. It is NOT a claim of outside
+validation: Gate 4 closed by override with no second user, and the README and website
+must not imply otherwise.
+
+#### Tasks
+
+- [ ] F-48 record schema "1.0" with all supported 0.x read-compat; preserve existing
+      required `drifter.yaml` `version: 1` validation.
+- [ ] F-49 `drifter --version`, CLI help-snapshot test, deprecation helper, §12 declared
+      public API.
+- [ ] Fix F-05: null `tool_manifest_hash` when `list_tools()` isn't called first
+      (§15 limitation 14).
+- [ ] Fix F-09: Ctrl+C must terminate the spawned real server (§15 limitation 9).
+- [ ] Fix F-33: `drifter init` runs F-26 classification.
+- [ ] Re-confirm as documented, NOT fixed: F-07 (limitation 8), F-16 (limitation 13),
+      F-19 (limitation 15, older-handshake clients only: R5 verified `ttlMs: 0` and
+      private `cacheScope` on 2026-07-28 sessions), limitation 16. README states each.
+- [ ] SECURITY.md "Supported versions" rewritten for a 1.x line.
+- [ ] Release 1.0.0 with the same fresh-wheel checks.
+
+#### Exit test
+
+Every committed fixture under `tests/fixtures/experiments/` (recorded by 0.x) loads and
+re-renders byte-identically under 1.0.0; the help-snapshot and `--version` tests pass;
+the three gap fixes each have a regression test that failed before the fix.
+
+#### Kill criterion
+
+If freezing the record schema requires a breaking change to read the 0.x fixtures,
+ship that change as 0.4.0 first and restart this phase — 1.0.0 must not open with a
+migration that loses data.
+
 ## v1.5
 
 Plan-only screening mode, ~~HTTP agent adapter (unless pulled forward by a Gate 4 kill
@@ -1681,3 +1785,5 @@ Fastest lookup:
 | 2 | Analysis secretly coupled to live execution (the whole cost model breaks) |
 | 3 | A mutation engine that either finds nothing, or reports synthetic noise as fact |
 | 4 | A tool that only ever works for its own author |
+| 0.3.0 | A token leaked to disk, or a login model that only works by borrowing the agent's credentials |
+| 1.0.0 | A "stable" release whose first upgrade breaks users' recordings or scripts |
