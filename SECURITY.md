@@ -60,9 +60,9 @@ filesystem and network access. The relevant boundaries are:
   user config directory (`~/.config/drifter/` on POSIX, `%LOCALAPPDATA%/drifter/` on
   Windows), never inside the project or `.drifter/`. Files require POSIX `0600`/`0700`
   permissions or verified user-private Windows ACLs; unsafe storage is refused.
-  `drifter.yaml` holds only
-  environment-variable NAMES, and a literal secret there is rejected at load; recordings
-  hold the auth type and granted scopes, never a token, code or secret; the login
+  `drifter.yaml` holds only environment-variable NAMES, and a literal secret there is
+  rejected at load; recordings of authenticated servers hold the auth type and granted
+  scopes, never a token, code or secret; the login
   callback binds `127.0.0.1` only and checks `state`; an authorization server without
   PKCE S256 is refused. A canary-token test (F-47) fails the build if a token appears in
   any record, log or error message. If the CIMD option is used, Drifter's client identity

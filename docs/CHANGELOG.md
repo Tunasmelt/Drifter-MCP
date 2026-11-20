@@ -30,6 +30,17 @@ current master, then checked the repository and locked `mcp==2.3.0` source:
 7. Token storage requires a usable keyring backend or platform-specific private
    files, including verified Windows ACLs; POSIX mode bits alone are insufficient.
 
+**Follow-up corrections (2026-11-20, second review):**
+8. Pre-0.3.0 sessions are provably unauthenticated (limitation 23), not "unknown";
+   sessions without an `auth` block write no auth fields, so upgrading users' old and
+   new unauthenticated recordings keep identical fingerprints and still compare.
+9. FEATURES' F-19 status row, stale since R5, now matches item 3.
+10. F-43 gains a timed Ctrl+C test for the browser-callback wait (CLAUDE.md's
+    async-shutdown-hang rule).
+11. DEC-030 must name one canonical origin: the CIMD `client_id` is the document URL
+    and the site is deployed to both GitHub Pages and Vercel.
+12. SECURITY.md's broken line rejoined.
+
 The installed SDK was synchronized from the existing lockfile before review. These
 are documentation changes only; runtime behavior and package version remain 0.2.0.
 

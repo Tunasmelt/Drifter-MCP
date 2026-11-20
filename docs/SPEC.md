@@ -229,7 +229,9 @@ token out of Drifter's own records, logs and error text (F-47).
 **Client identity, tried in order:** (1) a pre-registered `client_id` in `drifter.yaml`;
 (2) CIMD, when the authorization server advertises
 `client_id_metadata_document_supported` — Drifter's document is hosted at a fixed HTTPS
-URL on the project website (DEC-030, proposed); (3) Dynamic Client Registration, when a
+URL on the project website (DEC-030, proposed). The `client_id` IS that URL and the
+site is deployed to both GitHub Pages and Vercel, so DEC-030 must name ONE canonical
+origin and never change it; (3) Dynamic Client Registration, when a
 `registration_endpoint` is advertised; (4) otherwise an actionable error naming options
 1 and `bearer_env`.
 
@@ -243,8 +245,9 @@ Never inside the project or `.drifter/` (DEC-029, proposed; F-42).
 scopes. The session fingerprint (F-05) therefore records the auth type and the GRANTED
 scope set — never a token, client secret or authorization code — so corpora recorded
 under different scopes are distinguishable (F-46). F-46 must specify schema/hash
-evolution before writing new fields: legacy missing auth stays unknown, old hashes
-and legacy comparisons remain stable, and comparison/cohort logic must handle auth
+evolution before writing new fields: sessions with no `auth` block write no auth
+fields (pre-0.3.0 sessions are provably unauthenticated, so absent means `none`, not
+unknown), old hashes and legacy comparisons remain stable, and comparison/cohort logic must handle auth
 explicitly. Grant comparisons cannot infer per-tool scope requirements.
 
 **Replay is unchanged:** offline, no authorization, no network. `replay/` must not

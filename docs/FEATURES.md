@@ -33,7 +33,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-16 | `description_update` | ⚠️ Built, one known gap (one fixed) | §15 limitation 13 — 5-pattern injection check is closed-set, a real published description slips past it, still open. The other known gap (ALL-CAPS source words losing case class, e.g. "GET" → "Obtain" instead of "OBTAIN") is fixed — case class (all-caps/title-case/lowercase) is now preserved, not just the first letter |
 | F-17 | `tool_addition` | ✅ Built | Gate 3, safety-reviewed |
 | F-18 | Mutation audit log | ⚠️ Minimal shared shape, deliberate | Not F-18's own eventual general log format — see `description_update.py`'s docstring |
-| F-19 | Cache-busting on mutated responses | ❌ Not built — real-protocol gap | §15 limitation 15 — `ttlMs`/`cacheScope` exist only in a draft, not-yet-real MCP protocol version; no real client speaks it |
+| F-19 | Cache-busting on mutated responses | ⚠️ Holds on 2026-07-28 only | §15 limitation 15 as re-tested in R5 (docs/CHANGELOG.md): replay responses carry `ttlMs: 0`/`cacheScope: "private"` for clients negotiating 2026-07-28 (`mode="auto"`), locked in by a wire-capture test; absent for clients on the older `initialize()` handshake, which strips the fields. Nothing left to fix on Drifter's side |
 | F-20 | Header integrity on live forwards | ✅ Built | Gate 3 — stronger than planned: the originally-designed `Mcp-Method`/`Mcp-Name` header-stripping was never implemented in `src/`, but `replay/replay_proxy.py` structurally has no live-forwarding code path at all, now locked in by an import-inspection regression test |
 | F-21 | Baseline calibration | ✅ Built | Gate 2 |
 | F-22 | Baseline fidelity gating | ✅ Built | Gate 2 |
@@ -1078,7 +1078,9 @@ recording. `status` shows whether you're still signed in; `logout` forgets the l
 **Depends on:** F-41, F-42.
 **Done when:** a full login against the local OAuth fixture in each identity mode
 (pre-registered, CIMD-only, DCR-only); a mismatched `state` and a no-S256 authorization
-server are both refused; the callback listener is confirmed loopback-only.
+server are both refused; the callback listener is confirmed loopback-only; and, per
+CLAUDE.md's async-shutdown-hang rule, a TIMED test shows Ctrl+C while waiting for the
+browser callback closes the listener and exits promptly, not after the 300 s timeout.
 
 ### F-44 Authenticated upstream connection
 
@@ -1116,13 +1118,18 @@ session with no TTY.
 
 **Technical:** F-05's environment fingerprint gains `auth_type` and `granted_scopes`
 (sorted, from the effective token grant, including the SDK's omitted-scope handling) —
-never token, secret or code. Historical missing fields remain null/unknown, never
-silently `none` or an empty grant. Before adding fields, specify record-version and
+never token, secret or code. Sessions with no `auth` block (every pre-0.3.0 session,
+and every 0.3.0+ session against an unauthenticated server) write NO auth fields, so
+their fingerprints stay byte-identical to 0.2.0's. Pre-0.3.0 sessions are not
+"unknown" auth: 0.2.0 and earlier cannot authenticate at all (SPEC §15 limitation 23),
+so their absent fields mean `none`, and they keep comparing with new unauthenticated
+recordings. "Unknown" applies only to a grant that is genuinely unrecorded, e.g. an
+opaque bearer token. Before adding fields, specify record-version and
 hash evolution in §6, retain old hashes, and test a pre-change corpus. Update
 `record/fingerprint.py`, `evaluate/baseline.py`'s cohort key and
 `evaluate/effect_size.py` comparison paths together. Unknown legacy auth must remain
 explicit; it must not be treated as evidence of equal grants. Preserve existing
-legacy-to-legacy comparisons and unchanged unauthenticated workflows.
+legacy-to-legacy comparisons, and legacy-to-new comparisons for unauthenticated servers.
 
 `drifter doctor` checks OAuth discovery, S256 support, usable token/refresh, then
 current grants against scopes stamped on recorded sessions. MCP tools expose no
@@ -1138,8 +1145,9 @@ step of the login chain is broken.
 
 **Depends on:** F-05, F-37, F-44.
 **Done when:** two sessions recorded under different scope sets carry different
-fingerprints; legacy corpora retain their hashes and comparison results; mixed
-unknown/known grants cannot silently match; each applicable doctor check fails in
+fingerprints; legacy corpora retain their hashes and comparison results; a 0.2.0
+session and a 0.3.0 session of the same unauthenticated environment have identical
+fingerprints and still compare; mixed unknown/known grants cannot silently match; each applicable doctor check fails in
 isolation against a deliberately broken fixture with its own message.
 
 ### F-47 Token non-disclosure guarantee
