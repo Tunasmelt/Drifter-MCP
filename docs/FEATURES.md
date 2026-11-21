@@ -56,10 +56,10 @@ table and docs/PHASES.md for gate-level narrative.
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
 | F-40 | `parameter_rename` mutation operator | ✅ Built | `mutate/parameter_rename.py` — the third Level 0/1 operator, added specifically to give F-12 a real inverse to resolve against (neither F-16 nor F-17 can: schema-immune / no prior recording respectively). Closed-set, deterministic snake_case→camelCase, exactly one property per tool |
 | F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ❌ Not built — 0.3.0 | docs/SPEC.md §5.2/§11. Smallest useful slice: a static token from an env var NAME |
-| F-42 | Token storage (`TokenStorage`) | ❌ Not built — 0.3.0 | Usable keyring extra, else private platform storage (POSIX modes / Windows ACLs) outside the project (DEC-029, proposed) |
+| F-42 | Token storage (`TokenStorage`) | ❌ Not built — 0.3.0 | Usable keyring extra, else private platform storage (POSIX modes / Windows ACLs) outside the project (DEC-029, confirmed) |
 | F-43 | `drifter auth login` / `status` / `logout` | ❌ Not built — 0.3.0 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR |
 | F-44 | Authenticated upstream connection | ❌ Not built — 0.3.0 | `observe`/`doctor` pass an authed `http_client` to `streamable_http_client`; silent refresh; fail fast (exit 4) with no interactive flow |
-| F-45 | Non-interactive auth (client credentials / private-key JWT) | ❌ Not built — 0.3.0, conditional | Only if DEC-031 (proposed) keeps it in 0.3.0 |
+| F-45 | Non-interactive auth (client credentials / private-key JWT) | ❌ Not built — 0.3.0 | In 0.3.0 per DEC-031 (confirmed) |
 | F-46 | Auth-aware fingerprint + `doctor` auth checks | ❌ Not built — 0.3.0 | Fingerprint records auth type + GRANTED scopes, never a token; doctor walks PRM → AS metadata → S256 → token → scopes |
 | F-47 | Token non-disclosure guarantee | ❌ Not built — 0.3.0, red-test-first | Canary token must never reach JSONL, raw frames, logs, exception text or `.drifter/`. Same discipline as F-04 |
 | F-48 | Record + config schema freeze | ❌ Not built — 1.0.0 | Record `schema_version` "0.1" → "1.0", reader keeps reading "0.1"; `drifter.yaml` `version: 1` enforced |
@@ -1047,7 +1047,7 @@ extra has a usable backend, else a JSON file in the platform's user config direc
 (`~/.config/drifter/tokens/<key>.json` on POSIX; `%LOCALAPPDATA%/drifter/tokens/<key>.json`
 on Windows). POSIX requires `0600` files in a `0700` directory; Windows requires a
 verified user-private ACL, not a chmod approximation. Refuse storage if these protections
-cannot be established (DEC-029, proposed). Never under the project directory or
+cannot be established (DEC-029, confirmed). Never under the project directory or
 `.drifter/`. Stores tokens and client registration info only; never the authorization
 code or PKCE verifier. A file with wider permissions is refused, not silently used.
 
@@ -1110,7 +1110,7 @@ non-interactive provider is constructed with no redirect/callback handler.
 **Simple:** a way to log in from a CI pipeline, where nobody can click "Allow" in a
 browser.
 
-**Depends on:** F-41, F-44. **Conditional:** in 0.3.0 only if DEC-031 (proposed) keeps it.
+**Depends on:** F-41, F-44. In 0.3.0 per DEC-031 (confirmed 2026-11-21).
 **Done when:** a CI-style run against the fixture's client-credentials mode records a
 session with no TTY.
 

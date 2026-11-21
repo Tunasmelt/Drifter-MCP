@@ -1657,12 +1657,12 @@ pre-releases by default).
 ## 0.3.0 — Upstream authorization (F-41–F-47)
 
 Retires §15 limitation 23's "`url` mode sends no authentication." Design: docs/SPEC.md
-§5.2. Versioning: 0.3.0 first, 1.0.0 later (DEC-028, proposed) — OAuth is new surface
+§5.2. Versioning: 0.3.0 first, 1.0.0 later (DEC-028, confirmed) — OAuth is new surface
 area, and new surface area is what forces format changes; 1.0.0 promises none.
 
-**Decisions this phase rests on — all PROPOSED, confirm before P2 starts:**
+**Decisions this phase rests on — all CONFIRMED by the user on 2026-11-21:**
 DEC-028 (0.3.0 then 1.0.0), DEC-029 (usable keyring + platform-private file fallback), DEC-030
-(CIMD document hosted on the project website), DEC-031 (F-45 in 0.3.0 or deferred). See
+(CIMD document hosted on the project website), DEC-031 (F-45 in 0.3.0). See
 docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
 
 #### Tasks
@@ -1685,7 +1685,7 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
 - [ ] F-43 `drifter auth login|status|logout`, identity order pre-registered → CIMD →
       DCR, S256 refusal, loopback callback with `state` check and timeout.
 - [ ] CIMD document published on the website at a fixed URL, loopback `redirect_uris`
-      (only if DEC-030 is confirmed). One canonical origin (Pages or Vercel, not both),
+      (DEC-030 confirmed). One canonical origin (Pages or Vercel, not both),
       served as a static file from `website/public/`, which Vite copies verbatim. Verify at least one real authorization server
       accepts a loopback redirect on an arbitrary port before relying on it — an
       assumption until checked.
@@ -1694,7 +1694,7 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
 - [ ] F-44 authed `http_client` in `connect_to_server`; refresh; exit-4 paths.
 - [ ] F-46 schema/hash compatibility first, then fingerprint `auth_type` +
       `granted_scopes`, cohort/comparison updates and auth-type-specific doctor checks.
-- [ ] F-45 client credentials / private-key JWT (only if DEC-031 keeps it).
+- [ ] F-45 client credentials / private-key JWT (DEC-031: in 0.3.0).
 
 **P5 — dogfood and release**
 - [ ] One real, public, OAuth-protected MCP server, chosen and its metadata checked

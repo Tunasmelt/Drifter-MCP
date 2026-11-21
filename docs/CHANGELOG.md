@@ -6,6 +6,17 @@ not just a diff.
 
 ---
 
+## DEC-028–031 confirmed
+
+The user confirmed all four planning decisions as proposed (2026-11-21): DEC-028 0.3.0
+ships before 1.0.0; DEC-029 tokens in a usable keyring with a platform-private file
+fallback; DEC-030 the CIMD document is hosted on the project website from one canonical
+origin (still to be named before P3); DEC-031 F-45 (client credentials / private-key
+JWT) is in 0.3.0. FEATURES, PHASES and SPEC updated from "proposed" to "confirmed". This
+unblocks 0.3.0 P2.
+
+---
+
 ## Planned: 0.3.0 (upstream authorization) and 1.0.0 (stability freeze)
 
 Added in place to SPEC.md (§5.2 new; §11, §12, §15 limitation 23 amended), FEATURES.md
@@ -75,7 +86,7 @@ passthrough fail by design); interactive login is a separate `drifter auth login
 because `observe`'s stdout is the protocol channel; granted scopes go in the fingerprint
 because `tools/list` can vary by scope; `replay/` may not import `auth/`.
 
-**Decisions PROPOSED, pending the user's confirmation:**
+**Decisions CONFIRMED by the user (2026-11-21), as proposed below:**
 - **DEC-028 — 0.3.0 first, then 1.0.0.** OAuth is new surface; shipping it inside the
   release that promises format stability risks breaking that promise in 1.0.1. The
   alternative (both in 1.0.0) is faster and riskier.
