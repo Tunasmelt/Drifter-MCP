@@ -1685,7 +1685,8 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
 - [ ] F-43 `drifter auth login|status|logout`, identity order pre-registered → CIMD →
       DCR, S256 refusal, loopback callback with `state` check and timeout.
 - [ ] CIMD document published on the website at a fixed URL, loopback `redirect_uris`
-      (only if DEC-030 is confirmed). Verify at least one real authorization server
+      (only if DEC-030 is confirmed). One canonical origin (Pages or Vercel, not both),
+      served as a static file from `website/public/`, which Vite copies verbatim. Verify at least one real authorization server
       accepts a loopback redirect on an arbitrary port before relying on it — an
       assumption until checked.
 
