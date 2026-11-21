@@ -229,7 +229,7 @@ token out of Drifter's own records, logs and error text (F-47).
 **Client identity, tried in order:** (1) a pre-registered `client_id` in `drifter.yaml`;
 (2) CIMD, when the authorization server advertises
 `client_id_metadata_document_supported` — Drifter's document is hosted at a fixed HTTPS
-URL on the project website (DEC-030, proposed). The `client_id` IS that URL and the
+URL on the project website (DEC-030, confirmed). The `client_id` IS that URL and the
 site is deployed to both GitHub Pages and Vercel, so DEC-030 must name ONE canonical
 origin and never change it; (3) Dynamic Client Registration, when a
 `registration_endpoint` is advertised; (4) otherwise an actionable error naming options
@@ -239,7 +239,7 @@ origin and never change it; (3) Dynamic Client Registration, when a
 else a private file in the platform user config directory (`~/.config/drifter/` on
 POSIX, `%LOCALAPPDATA%/drifter/` on Windows). Require POSIX `0600` files/`0700`
 directories or verified user-private Windows ACLs; fail closed if unavailable.
-Never inside the project or `.drifter/` (DEC-029, proposed; F-42).
+Never inside the project or `.drifter/` (DEC-029, confirmed; F-42).
 
 **Recording consequence:** a server may list different tools depending on granted
 scopes. The session fingerprint (F-05) therefore records the auth type and the GRANTED
