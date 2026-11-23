@@ -231,7 +231,17 @@ token out of Drifter's own records, logs and error text (F-47).
 `client_id_metadata_document_supported` — Drifter's document is hosted at a fixed HTTPS
 URL on the project website (DEC-030, confirmed). The `client_id` IS that URL and the
 site is deployed to both GitHub Pages and Vercel, so DEC-030 must name ONE canonical
-origin and never change it; (3) Dynamic Client Registration, when a
+origin and never change it. The document targets CIMD **draft -03**, not the -00 the
+2026-07-28 spec cites: the MCP draft revision already moves its MUST to -03, and a
+-03-shaped document is also valid under -00. Under -03 that means: the URL has a
+non-root path and is written in RFC 3986 §6.2.2–6.2.3 normalized form, because
+authorization servers compare it by exact string; the document carries neither
+`token_endpoint_auth_method` nor `token_endpoint_auth_methods_supported`, which -03
+reads as `none` (Drifter is a public client, so this is correct, and RFC 7591's
+`client_secret_basic` default no longer applies); `redirect_uris` are loopback
+(`http://127.0.0.1/callback`), and -03 now explicitly lets the port vary for loopback
+redirects (RFC 9700 §4.1.3). A malformed document is a terminal failure under -03, not
+a retry; (3) Dynamic Client Registration, when a
 `registration_endpoint` is advertised; (4) otherwise an actionable error naming options
 1 and `bearer_env`.
 

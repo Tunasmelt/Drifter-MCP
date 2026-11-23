@@ -1077,8 +1077,10 @@ recording. `status` shows whether you're still signed in; `logout` forgets the l
 
 **Depends on:** F-41, F-42.
 **Done when:** a full login against the local OAuth fixture in each identity mode
-(pre-registered, CIMD-only, DCR-only); a mismatched `state` and a no-S256 authorization
-server are both refused; the callback listener is confirmed loopback-only; and, per
+(pre-registered, CIMD-only, DCR-only); the published CIMD document passes a -03 shape
+check (its `client_id` exactly equals its own canonical URL, non-root path, loopback
+`redirect_uris`, no token-endpoint auth properties); a mismatched `state` and a no-S256
+authorization server are both refused; the callback listener is confirmed loopback-only; and, per
 CLAUDE.md's async-shutdown-hang rule, a TIMED test shows Ctrl+C while waiting for the
 browser callback closes the listener and exits promptly, not after the 300 s timeout.
 

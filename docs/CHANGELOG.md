@@ -6,6 +6,27 @@ not just a diff.
 
 ---
 
+## CIMD document targets draft -03 (newer upstream docs checked 2026-11-23)
+
+The 0.3.0 plan was re-checked against the newest upstream docs before any auth code.
+`mcp` 2.3.0 is still the latest SDK on PyPI, and 2026-07-28 is still the latest
+released MCP revision, so §5.2's SDK and spec claims stand. One change affects the
+plan: the MCP **draft** changelog moves the CIMD reference from
+`draft-ietf-oauth-client-id-metadata-document-00` to `-03`, and makes -03 a MUST for
+implementations that support CIMD. What -03 changes for Drifter's document (DEC-030):
+the client should normalize its URL, because servers compare it by exact string; a root
+path `/` is not allowed (the SDK's `is_valid_client_metadata_url` already refuses one);
+leaving out both token-endpoint auth properties now means `none`, which is right for a
+public client; `private_key_jwt` needs `jwks`/`jwks_uri` (both SDK providers F-45 uses
+take an explicit pre-registered `client_id`, so F-45 is unaffected); a malformed document is a terminal failure; and
+loopback redirect URIs may use any port (RFC 9700 §4.1.3). That last point settles at
+the draft level what P3 called "an assumption until checked". P3 still checks a real
+server, because deployed servers may still implement -00. Edited in place: SPEC.md
+§5.2 (client identity), PHASES.md 0.3.0 P3, FEATURES.md F-43's done criterion. No
+decision changes, and no code exists yet.
+
+---
+
 ## DEC-028–031 confirmed
 
 The user confirmed all four planning decisions as proposed (2026-11-21): DEC-028 0.3.0
