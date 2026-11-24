@@ -232,6 +232,23 @@ def test_status_never_prints_credentials_embedded_in_a_servers_url(tmp_path):
     assert "a.example.com" in result.stdout
 
 
+@pytest.mark.anyio
+@pytest.mark.parametrize("expires_in", [10**15, 10**300, -(10**15), 0])
+async def test_status_survives_whatever_expiry_a_server_sent_and_never_prints_its_escape_sequences(tmp_path, expires_in):
+    """Found auditing P3: a server returning an absurd `expires_in` made `status` crash with a traceback on
+    every run (the stored value is permanent), and the stored `scope` was printed unsanitized."""
+    from mcp.shared.auth import OAuthToken
+
+    config = _oauth_config(tmp_path, "https://a.example.com/mcp")
+    store = TokenStore("remote-crm", "https://a.example.com/mcp", base_dir=_config_base(tmp_path), backend="file")
+    await store.set_tokens(OAuthToken(access_token="a", expires_in=expires_in, scope="read \x1b[2J\x1b[31mPWNED admin"))
+    result = _run(tmp_path, "status", config=config)
+    assert result.returncode == 0, result.stderr
+    assert "Traceback" not in result.stderr
+    assert not any(ord(c) < 0x20 and c not in "\n\r\t" for c in result.stdout), repr(result.stdout)
+    assert re.search(r"expires\s*:", result.stdout) and re.search(r"scopes\s*:\s*read", result.stdout)
+
+
 @pytest.mark.parametrize("value", ["0", "-5", "nan", "inf"])
 def test_a_timeout_that_cannot_work_is_refused_up_front(tmp_path, value):
     config = _oauth_config(tmp_path, "http://127.0.0.1:9/mcp")

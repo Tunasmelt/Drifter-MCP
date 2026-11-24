@@ -244,8 +244,7 @@ async def run_login(
                 if auth.client_id
                 else "cimd" if client_metadata_url and memory.client_info.client_id == client_metadata_url else "dcr"
             )
-            await store.set_client_info(memory.client_info)
-            await store.set_tokens(tokens, issued_at=memory.issued_at)
+            await store.save_login(memory.client_info, tokens, issued_at=memory.issued_at)
             return LoginResult(identity, tokens.scope, await store.get_expiry(), store.backend_name)
     finally:
         sdk_logger.setLevel(previous_level)

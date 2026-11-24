@@ -139,7 +139,10 @@ class CallbackListener:
             if head is None:
                 await self._respond(stream, 431, "Request Header Fields Too Large", _PAGE_BAD)
                 return
-            status, reason, page, outcome = self._judge(head)
+            try:
+                status, reason, page, outcome = self._judge(head)
+            except Exception:  # noqa: BLE001 - nothing a client sends may take the listener, and so the login, down
+                status, reason, page, outcome = 400, "Bad Request", _PAGE_BAD, None
             await self._respond(stream, status, reason, page)
             # Only after the browser has its answer: finishing first would let the caller tear the
             # listener down mid-response.

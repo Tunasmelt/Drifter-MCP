@@ -157,12 +157,17 @@ class TokenStore:
         self._resolved: str | None = None
         self._sid: str | None = None
         self._last_source = "file"
-        if project_root is not None and _is_inside(self._base_dir, project_root):
-            raise InsecureStorageError(
-                f"token storage at {self._base_dir} would be inside the project {Path(project_root)}; tokens "
-                "must never be stored where they could be committed or shared. Use the default "
-                "location (your user config directory)"
-            )
+        if project_root is not None:
+            # An EXPLICIT location may not be anywhere in the project. The DEFAULT location (the user's own
+            # config directory) is not part of a project even when the project is their home directory, so it
+            # is refused only if it lands inside the project's `.drifter/` (for example via XDG_CONFIG_HOME).
+            forbidden = Path(project_root) if base_dir is not None else Path(project_root) / ".drifter"
+            if _is_inside(self._base_dir, forbidden):
+                raise InsecureStorageError(
+                    f"token storage at {self._base_dir} would be inside the project {Path(project_root)}; tokens "
+                    "must never be stored where they could be committed or shared. Use the default "
+                    "location (your user config directory)"
+                )
 
     # -- backend choice ------------------------------------------------------------------------------
 
@@ -197,6 +202,21 @@ class TokenStore:
         moment = issued_at if issued_at is not None else time.time()
 
         def update(record: dict[str, Any]) -> None:
+            record["tokens"] = tokens.model_dump(mode="json", exclude_none=True)
+            record["expires_at"] = moment + tokens.expires_in if tokens.expires_in is not None else None
+
+        await self._run(lambda: self._update(update))
+
+    async def save_login(
+        self, client_info: OAuthClientInformationFull | None, tokens: OAuthToken, *, issued_at: float | None = None
+    ) -> None:
+        """A finished login in ONE write: the registration and the tokens go together or not at all, so a
+        crash cannot leave tokens that belong to a different registration than the one on file."""
+        moment = issued_at if issued_at is not None else time.time()
+
+        def update(record: dict[str, Any]) -> None:
+            if client_info is not None:
+                record["client_info"] = client_info.model_dump(mode="json", exclude_none=True)
             record["tokens"] = tokens.model_dump(mode="json", exclude_none=True)
             record["expires_at"] = moment + tokens.expires_in if tokens.expires_in is not None else None
 

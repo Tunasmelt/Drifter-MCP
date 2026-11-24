@@ -22,6 +22,7 @@ import anyio
 from mcp_drifter.auth.errors import LoginRefused
 from mcp_drifter.auth.identity import CANONICAL_CLIENT_METADATA_URL
 from mcp_drifter.auth.login import DEFAULT_LOGIN_TIMEOUT_S, default_open_browser, run_login
+from mcp_drifter.auth.text import clean_server_text
 from mcp_drifter.auth.storage import StorageError, TokenStore, canonical_server_url
 from mcp_drifter.cli.config import ConfigError, DrifterConfig, ServerConfig, load_config
 
@@ -68,11 +69,20 @@ def _login_target(config: DrifterConfig, name: str) -> ServerConfig:
 def _when(timestamp: float | None) -> str:
     if timestamp is None:
         return "unknown (the server did not say)"
-    moment = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    try:
+        moment = datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    except (ValueError, OverflowError, OSError):
+        # `expires_in` is the server's number and is stored as-is, so an absurd one must not crash every `status`.
+        return "unknown (the server sent an expiry that is out of range)"
     delta = timestamp - time.time()
     minutes = int(abs(delta) // 60)
     span = f"{minutes} min" if minutes < 120 else f"{minutes // 60} h"
     return f"{moment} ({'in ' + span if delta >= 0 else 'expired ' + span + ' ago'})"
+
+
+def _scopes(scope: str | None) -> str:
+    """Scopes as the server stored them, reduced to ordinary token characters (they reach a terminal)."""
+    return clean_server_text(scope, 300) or "none reported"
 
 
 def _where(backend: str) -> str:
@@ -108,7 +118,7 @@ def run_auth_login(config_path: Path, server_name: str, *, no_browser: bool, tim
         raise ConfigError(str(exc)) from None
     _emit()
     _emit(f"Logged in to {server.name!r}.")
-    _emit(f"  scopes    : {result.scope or 'none reported'}")
+    _emit(f"  scopes    : {_scopes(result.scope)}")
     _emit(f"  expires   : {_when(result.expires_at)}")
     _emit(f"  stored in : {_where(result.backend)}")
 
@@ -141,7 +151,7 @@ def run_auth_status(config_path: Path, server_name: str | None) -> int:
                 _emit("  logged in   : yes")
                 _emit(f"  expires     : {_when(summary.expires_at)}")
                 _emit(f"  refreshable : {'yes' if summary.refreshable else 'no'}")
-                _emit(f"  scopes      : {summary.scope or 'none reported'}")
+                _emit(f"  scopes      : {_scopes(summary.scope)}")
                 _emit(f"  stored in   : {_where(summary.backend)}")
         _emit()
     return exit_code

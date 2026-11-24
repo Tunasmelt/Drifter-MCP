@@ -285,3 +285,73 @@ async def test_the_port_is_released_when_the_context_exits_normally():
     with pytest.raises(OSError):
         with socket.create_connection(("127.0.0.1", port), timeout=2):
             pass
+
+
+# --- found auditing P3: nothing a client sends may kill the listener ---------------------------------------------------
+#
+# The invariant above ("a forged request must not cancel the login") was tested only for well-formed
+# requests. `GET http://[ HTTP/1.1` made the request parser raise inside the connection handler, which took
+# the whole listener, and so the login, down with it.
+
+HOSTILE_TARGETS = [
+    b"GET http://[ HTTP/1.1",
+    b"GET //[::1 HTTP/1.1",
+    b"GET http://x:99999999/ HTTP/1.1",
+    b"GET /callback?%ZZ=1&state=WRONG&code=\xff\xfe HTTP/1.1",
+    b"GET /\x00callback HTTP/1.1",
+    b"GET  HTTP/1.1",
+    b"\x00\x01\x02 \xff\xfe HTTP/1.1",
+    b"GET / HTTP/9.9",
+]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("request_line", HOSTILE_TARGETS)
+async def test_a_malformed_request_gets_a_refusal_and_the_real_login_still_completes(request_line):
+    async with CallbackListener() as listener:
+        listener.expect(STATE)
+        results = []
+
+        async def waiter():
+            results.append(await listener.wait(timeout=10))
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(waiter)
+            reply = await _raw(listener, request_line + f"\r\nHost: 127.0.0.1:{listener.port}\r\nConnection: close\r\n\r\n".encode())
+            assert reply == b"" or reply.startswith(b"HTTP/1.1 4"), reply[:60]
+            assert results == []
+            await _get(listener, f"/callback?code=REAL&state={STATE}")
+        assert results[0].code == "REAL"
+
+
+@pytest.mark.anyio
+async def test_a_burst_of_random_garbage_cannot_end_the_login():
+    """Fixed seed, so a failure reproduces. Random bytes, random request lines, random headers."""
+    import random
+
+    rng = random.Random(20261124)
+    async with CallbackListener() as listener:
+        listener.expect(STATE)
+        results = []
+
+        async def waiter():
+            results.append(await listener.wait(timeout=20))
+
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(waiter)
+            for _ in range(150):
+                kind = rng.randrange(3)
+                if kind == 0:
+                    junk = bytes(rng.randrange(256) for _ in range(rng.randrange(1, 300))) + b"\r\n\r\n"
+                elif kind == 1:
+                    target = "".join(rng.choice("/:?&=%[]@#abcXYZ019 .\x00\x7f") for _ in range(rng.randrange(1, 60)))
+                    junk = f"GET {target} HTTP/1.1\r\nHost: 127.0.0.1:{listener.port}\r\n\r\n".encode("latin-1")
+                else:
+                    junk = f"GET /callback?state={STATE}&code=C{'&' * rng.randrange(5)} HTTP/1.1\r\nHost\x00: x\r\n: \r\n\r\n".encode("latin-1")
+                try:
+                    await _raw(listener, junk)
+                except OSError:
+                    pass
+            assert results == []  # not one of them counted as a login
+            await _get(listener, f"/callback?code=REAL&state={STATE}")
+        assert results[0].code == "REAL"

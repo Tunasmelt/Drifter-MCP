@@ -361,6 +361,74 @@ def test_a_location_beside_the_project_is_fine(tmp_path):
     TokenStore("remote-crm", URL, base_dir=tmp_path / "project-tokens", project_root=project, backend="file")
 
 
+def test_a_project_in_the_users_home_directory_still_gets_the_default_token_location(tmp_path, monkeypatch):
+    """Found auditing P3: with drifter.yaml in $HOME, the default ~/.config/drifter counted as "inside the
+    project" and `auth status` refused. The user's own config directory is not part of a project, even when
+    the project is their home; what is refused is an EXPLICIT location inside the project, and anything
+    inside the project's `.drifter/`."""
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("LOCALAPPDATA", str(home / "AppData" / "Local"))
+    monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+    store = TokenStore("remote-crm", URL, project_root=home, backend="file")  # no explicit base_dir: the default
+    assert home in store.file_path.parents
+
+
+def test_an_explicit_location_inside_a_project_in_the_home_directory_is_still_refused(tmp_path):
+    home = tmp_path / "home"
+    (home / "work").mkdir(parents=True)
+    with pytest.raises(InsecureStorageError, match="inside the project"):
+        TokenStore("remote-crm", URL, base_dir=home / "work" / "tokens", project_root=home, backend="file")
+
+
+def test_a_default_location_that_lands_inside_the_projects_drifter_directory_is_refused(tmp_path, monkeypatch):
+    project = tmp_path / "project"
+    (project / ".drifter").mkdir(parents=True)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(project / ".drifter"))
+    monkeypatch.setenv("LOCALAPPDATA", str(project / ".drifter"))
+    with pytest.raises(InsecureStorageError, match="inside the project"):
+        TokenStore("remote-crm", URL, project_root=project, backend="file")
+
+
+@pytest.mark.anyio
+async def test_a_login_is_saved_in_one_atomic_write_so_a_crash_cannot_leave_a_mixed_one(tmp_path, monkeypatch):
+    old_client = _client_info()
+    store = _file_store(tmp_path)
+    await store.set_client_info(old_client)
+    await store.set_tokens(_token(access_token="access-OLD"))
+
+    replaced: list[str] = []
+    real_replace = os.replace
+    monkeypatch.setattr(os, "replace", lambda src, dst: (replaced.append(str(dst)), real_replace(src, dst))[1])
+    new_client = _client_info().model_copy(update={"client_id": "client-NEW"})
+    await store.save_login(new_client, _token(access_token="access-NEW"), issued_at=1_000_000.0)
+
+    assert len(replaced) == 1, replaced  # tokens and client registration are written together, or not at all
+    fresh = _file_store(tmp_path)
+    assert (await fresh.get_tokens()).access_token == "access-NEW"
+    assert (await fresh.get_client_info()).client_id == "client-NEW"
+    assert await fresh.get_expiry() == 1_003_600.0
+
+
+@pytest.mark.anyio
+async def test_a_failed_save_leaves_the_previous_login_exactly_as_it_was(tmp_path, monkeypatch):
+    store = _file_store(tmp_path)
+    await store.save_login(_client_info(), _token(access_token="access-OLD"), issued_at=1.0)
+    before = store.file_path.read_bytes()
+
+    def boom(src, dst):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(os, "replace", boom)
+    with pytest.raises(OSError):
+        await store.save_login(_client_info(), _token(access_token="access-NEW"), issued_at=2.0)
+    monkeypatch.undo()
+    assert store.file_path.read_bytes() == before
+    assert sorted(p.name for p in store.file_path.parent.iterdir()) == [store.file_path.name]  # no temp file left
+
+
 # --- the keyring backend ------------------------------------------------------------------------------------
 
 keyring = pytest.importorskip("keyring", reason="the optional keyring extra")
