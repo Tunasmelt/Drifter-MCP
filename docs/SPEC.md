@@ -560,7 +560,7 @@ servers:
   - name: remote-crm            # v1 (F-39) — a real server reached over HTTP instead
     url: "https://mcp.example.com/mcp"   # of a spawned local subprocess; mutually
                                           # exclusive with `command` on the same entry
-    auth:                       # 0.3.0 (F-41: bearer_env built; oauth/client_credentials parse but are refused until F-43–F-45) — url entries only; default none
+    auth:                       # 0.3.0 (F-41/F-43/F-44: bearer_env and oauth built; client_credentials parses but is refused until F-45) — url entries only; default none
       type: oauth               # oauth | bearer_env | client_credentials | none
       scopes: ["crm.read"]      # optional; default: what the server's metadata advertises
       # client_id: "..."        # optional pre-registered client (identity order, §5.2)
