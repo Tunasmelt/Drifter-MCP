@@ -72,10 +72,10 @@ async def upstream_http_client(
     if auth.type == "oauth":
         if store is None:
             try:
-                store = TokenStore(server.name, server.url, project_root=project_root)
+                store = TokenStore(server.name, server.url, project_root=project_root or server.project_root)
             except StorageError as exc:
                 raise ConfigError(str(exc)) from None
-        client = create_mcp_http_client(auth=StoredLoginProvider(server.url, store, server_name=server.name))
+        client = create_mcp_http_client(auth=StoredLoginProvider(server.url, store, server_name=server.name, on_rejected=on_rejected))
         client.event_hooks = {
             "request": [],
             "response": [

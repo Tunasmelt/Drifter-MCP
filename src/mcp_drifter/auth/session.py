@@ -18,6 +18,8 @@ reaches this class: the SDK would discover, register and authorize, so the respo
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from mcp.client.auth import OAuthClientProvider
 from mcp.shared.auth import OAuthClientMetadata
 from pydantic import AnyUrl
@@ -27,7 +29,14 @@ from mcp_drifter.auth.storage import StorageError, TokenStore
 
 
 class StoredLoginProvider(OAuthClientProvider):
-    def __init__(self, server_url: str, store: TokenStore, *, server_name: str) -> None:
+    def __init__(
+        self,
+        server_url: str,
+        store: TokenStore,
+        *,
+        server_name: str,
+        on_rejected: Callable[[UpstreamAuthRejected], None] | None = None,
+    ) -> None:
         metadata = OAuthClientMetadata(
             redirect_uris=[AnyUrl("http://127.0.0.1/callback")],  # required by the model, never used: no login happens here
             grant_types=["authorization_code", "refresh_token"],
@@ -37,9 +46,13 @@ class StoredLoginProvider(OAuthClientProvider):
         super().__init__(server_url, metadata, store)  # deliberately no redirect_handler or callback_handler
         self._server_name = server_name
         self._store = store
+        self._on_rejected = on_rejected
 
     def _login_needed(self, reason: str, advice: str | None = None) -> UpstreamAuthRejected:
-        return UpstreamAuthRejected.login_needed(self._server_name, reason, advice)
+        error = UpstreamAuthRejected.login_needed(self._server_name, reason, advice)
+        if self._on_rejected is not None:
+            self._on_rejected(error)  # may not return: `observe` must exit the process, see rejection_hook
+        return error
 
     async def _initialize(self) -> None:
         try:
