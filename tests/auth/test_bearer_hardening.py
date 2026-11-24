@@ -189,10 +189,21 @@ async def test_doctor_passes_with_a_good_token_and_names_the_problem_otherwise(m
 
 
 @pytest.mark.anyio
-async def test_doctor_reports_an_auth_type_that_cannot_log_in_yet(monkeypatch):
+async def test_doctor_reports_an_oauth_server_with_no_stored_login_and_says_what_to_run(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "cfg"))
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "cfg"))
     server = ServerConfig.model_validate({"name": "remote-crm", "url": "https://mcp.example.com/mcp", "auth": {"type": "oauth"}})
     check = await _check_server(server, timeout_seconds=5)
-    assert not check.ok and "oauth" in check.detail, check
+    assert not check.ok and "drifter auth login remote-crm" in check.detail, check
+
+
+@pytest.mark.anyio
+async def test_doctor_reports_a_client_credentials_server_as_not_usable_yet():
+    server = ServerConfig.model_validate(
+        {"name": "ci", "url": "https://mcp.example.com/mcp", "auth": {"type": "client_credentials", "client_id": "c", "secret_env": "S"}}
+    )
+    check = await _check_server(server, timeout_seconds=5)
+    assert not check.ok and "client_credentials" in check.detail, check
 
 
 # --- 4 (end to end). a plain 403 does not end the session ---------------------------------------------------------

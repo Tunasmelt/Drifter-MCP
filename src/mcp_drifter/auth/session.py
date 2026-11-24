@@ -70,6 +70,12 @@ class StoredLoginProvider(OAuthClientProvider):
         if not context.is_token_valid() and not context.can_refresh_token():
             raise self._login_needed("the stored login has expired and cannot be refreshed")
 
+    async def check_usable(self) -> None:
+        """Fails now, before anything is sent, if there is no stored login or it cannot be used; `observe`
+        calls this before it reads a byte of the agent's stdin, so a missing login exits 4 at once."""
+        if not self._initialized:
+            await self._initialize()
+
     async def _handle_refresh_response(self, response) -> bool:
         refreshed = await super()._handle_refresh_response(response)
         if not refreshed:
