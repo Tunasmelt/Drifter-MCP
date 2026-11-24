@@ -1709,8 +1709,14 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
       every platform; the real `icacls` calls run only on Windows CI.
 
 **P3 — interactive login**
-- [ ] F-43 `drifter auth login|status|logout`, identity order pre-registered → CIMD →
+- [x] F-43 `drifter auth login|status|logout`, identity order pre-registered → CIMD →
       DCR, S256 refusal, loopback callback with `state` check and timeout.
+      `auth/login.py`, `auth/callback.py`, `cli/auth_cmd.py`. A real `drifter auth login`
+      subprocess, with this test as the browser, logs in against the fixture; `status` and
+      `logout` follow. A timed SIGINT test ends a login in ~0.13 s (the wait is 300 s).
+      The CIMD identity path is built and tested against the fixture, but
+      `auth/identity.py` leaves `CANONICAL_CLIENT_METADATA_URL` unset, so real servers fall
+      through to dynamic registration until DEC-030 is decided.
 - [ ] CIMD document published on the website at a fixed URL, loopback `redirect_uris`
       (DEC-030 confirmed). One canonical origin (Pages or Vercel, not both),
       served as a static file from `website/public/`, which Vite copies verbatim.

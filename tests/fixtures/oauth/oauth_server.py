@@ -98,10 +98,13 @@ DEFAULT_TOOLS = (
 
 @dataclass(frozen=True)
 class FixtureConfig:
-    protection: Literal["oauth", "static_bearer"] = "oauth"
+    protection: Literal["oauth", "static_bearer", "open"] = "oauth"  # "open": a server that never asks for credentials
     registration: Literal["preregistered", "cimd", "dcr"] = "dcr"
     client_credentials: bool = False
     advertise_s256: bool = True
+    # Serve a different authorization / token endpoint in the metadata (for example a cleartext one on a remote host).
+    authorization_endpoint_override: str | None = None
+    token_endpoint_override: str | None = None
     issuer_mismatch: bool = False
     access_token_ttl_s: int = 3600  # how long the SERVER accepts an access token
     # What the token response's `expires_in` CLAIMS; None means the same as the ttl. Setting it
@@ -498,7 +501,7 @@ def _build_app(state: FixtureState):
     transport_security = TransportSecuritySettings(
         enable_dns_rebinding_protection=True, allowed_hosts=["127.0.0.1:*"], allowed_origins=[]
     )
-    if config.protection == "static_bearer":
+    if config.protection in ("static_bearer", "open"):
         app = server.streamable_http_app(streamable_http_path=MCP_PATH, host="127.0.0.1", transport_security=transport_security)
         return _FixtureMiddleware(app, state)
 
@@ -526,6 +529,10 @@ def _build_app(state: FixtureState):
     document["issuer"] = state.issuer  # compared as a plain string; see FixtureState.issuer
     if not config.advertise_s256:
         document["code_challenge_methods_supported"] = ["plain"]
+    if config.authorization_endpoint_override:
+        document["authorization_endpoint"] = config.authorization_endpoint_override
+    if config.token_endpoint_override:
+        document["token_endpoint"] = config.token_endpoint_override
     if config.issuer_mismatch:
         document["issuer"] = ISSUER_MISMATCH_VALUE
     if config.registration == "cimd":

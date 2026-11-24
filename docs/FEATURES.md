@@ -57,7 +57,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-40 | `parameter_rename` mutation operator | ✅ Built | `mutate/parameter_rename.py` — the third Level 0/1 operator, added specifically to give F-12 a real inverse to resolve against (neither F-16 nor F-17 can: schema-immune / no prior recording respectively). Closed-set, deterministic snake_case→camelCase, exactly one property per tool |
 | F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ✅ Built (P2) | Typed, strict `auth` block; `bearer_env` works end to end; `oauth` / `client_credentials` parse but are refused (exit 4) until F-43–F-45 exist, never run unauthenticated |
 | F-42 | Token storage (`TokenStorage`) | ✅ Built (P2), not yet used | Usable keyring extra, else private file (POSIX modes / verified Windows ACL) outside the project (DEC-029). Also stores the absolute token expiry, which F-44 needs |
-| F-43 | `drifter auth login` / `status` / `logout` | ❌ Not built — 0.3.0 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR |
+| F-43 | `drifter auth login` / `status` / `logout` | ✅ Built (P3), CIMD URL pending DEC-030 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR. Nothing uses the stored login until F-44 |
 | F-44 | Authenticated upstream connection | ❌ Not built — 0.3.0 | `observe`/`doctor` pass an authed `http_client` to `streamable_http_client`; silent refresh; fail fast (exit 4) with no interactive flow |
 | F-45 | Non-interactive auth (client credentials / private-key JWT) | ❌ Not built — 0.3.0 | In 0.3.0 per DEC-031 (confirmed) |
 | F-46 | Auth-aware fingerprint + `doctor` auth checks | ❌ Not built — 0.3.0 | Fingerprint records auth type + GRANTED scopes, never a token; doctor walks PRM → AS metadata → S256 → token → scopes |
@@ -1082,7 +1082,9 @@ from exiting. Windows privacy is verified by reading the ACL back through `icacl
 **Depends on:** none (pure persistence).
 **Done when:** round-trip tests on both backends; an unavailable keyring uses the secure
 fallback; a `0644` POSIX file and a broadly readable Windows ACL are refused; a test
-asserts no storage path resolves inside the project root.
+asserts no explicit storage path resolves inside the project root, and the default
+location never resolves inside `<project>/.drifter/` (the default user-config directory stays usable
+even when the project is the user's home directory).
 
 ### F-43 `drifter auth login` / `status` / `logout`
 
@@ -1111,6 +1113,24 @@ check (its `client_id` exactly equals its own canonical URL, non-root path, loop
 authorization server are both refused; the callback listener is confirmed loopback-only; and, per
 CLAUDE.md's async-shutdown-hang rule, a TIMED test shows Ctrl+C while waiting for the
 browser callback closes the listener and exits promptly, not after the 300 s timeout.
+
+**Built (P3), and what it added beyond the text above.** The callback listener answers only
+`GET /callback` with the expected `state` and a loopback `Host`; a forged, stale, oversized or
+idle request gets an error and does NOT end the login, so a hostile page cannot cancel it. The SDK
+checks `state` too, but only after the callback was consumed. Configured `scopes` are pinned (the
+SDK would overwrite them, and for dynamic registration that has to hold from the registration on).
+Refused before the authorization endpoint is touched: a server that does not advertise PKCE
+`S256`, a mismatched issuer, and authorization or token endpoints that are cleartext `http://` on
+a remote host (only the resource URL was checked before). The login runs against in-memory storage
+and is saved only on success, so a failed login never damages a working one, and a second login
+registers afresh (a registered redirect URI includes the loopback port, which changes each time).
+`status` shows facts (logged in, expiry, refreshable, scopes, where stored), never a token, and
+prints the canonical URL, so a `user:password@` typed into a URL is not echoed.
+
+**Known limits.** The redirect URI always uses an OS-assigned loopback port, so a server that
+requires a pre-registered redirect URI with an exact port cannot be used with a pre-registered
+`client_id` (dynamic registration registers the port it will use); there is no `--callback-port`
+yet. The CIMD document is not published until DEC-030 names the origin.
 
 ### F-44 Authenticated upstream connection
 

@@ -40,3 +40,9 @@ class UpstreamAuthRejected(Exception):
         else:
             advice = f"the credentials were understood but are not permitted to do this; check {self.source} and its scopes"
         return f"{self.server!r} {verb} the credentials from {self.source} ({', '.join(detail)}): {advice}"
+
+
+class LoginRefused(Exception):
+    """An interactive login did not complete, or was refused on purpose (an authorization server
+    that does not advertise PKCE S256, a wrong issuer, a user who said no, a timeout). The CLI turns
+    it into exit 4. Messages name the server and the reason, never a token, a code or a state value."""
