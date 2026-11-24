@@ -53,8 +53,11 @@ filesystem and network access. The relevant boundaries are:
   `instead of`) and rejected if it matches, so a mutation can't accidentally produce
   something that reads as a prompt injection. Every mutation is logged with an exact
   before/after and an inverse mapping.
-- **Upstream credentials (planned for 0.3.0, NOT built — docs/SPEC.md §5.2).** Today a
-  `url` server is reached with no authentication at all. When OAuth lands: Drifter
+- **Upstream credentials (partly built, docs/SPEC.md §5.2).** A `url` server can be sent a
+  static token read from a named environment variable (`auth.type: bearer_env`); the token is
+  never written to `.drifter/`, a log or an error message, a literal secret in `drifter.yaml`
+  is rejected at load without being echoed, and the OAuth items below are NOT built yet.
+  When OAuth lands: Drifter
   authenticates as its own OAuth client and never forwards or stores an agent's token;
   tokens live in a usable OS keyring (optional extra) or a private file in the platform
   user config directory (`~/.config/drifter/` on POSIX, `%LOCALAPPDATA%/drifter/` on

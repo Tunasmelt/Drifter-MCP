@@ -41,8 +41,10 @@ reasoning along the way (e.g. the O4 operator correction, v1.0.3).
 
 - **The package name is `mcp-drifter`, not `drifter`.** Bare `drifter` is taken on
   PyPI (verified directly, not assumed). Brand name stays "Drifter."
-- **HTTP exists (F-38/F-39), but authentication does not.** `url` servers are reached
-  unauthenticated; OAuth is planned for 0.3.0 (SPEC.md §5.2, F-41–F-47). Don't let
+- **HTTP exists (F-38/F-39); authentication is partly built.** `url` servers can use a static
+  token (`auth: {type: bearer_env, token_env: NAME}`, F-41) and token storage exists (F-42), but
+  there is no OAuth login yet: `oauth` and `client_credentials` are accepted by the config and
+  refused at connect time (exit 4). Planned for 0.3.0 (SPEC.md §5.2, F-43–F-47). Don't let
   marketing copy get ahead of what's actually built.
 - **Drifter is its own OAuth client; it never forwards the agent's token.** Tokens are
   audience-bound, so passthrough can't work, and under stdio there's no agent token

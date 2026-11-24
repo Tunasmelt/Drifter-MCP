@@ -54,6 +54,13 @@ dependencies = [
     "httpx2>=2.12",
 ]
 
+[project.optional-dependencies]
+# F-42 (docs/SPEC.md §5.2, DEC-029): where OAuth tokens live. With this extra and a usable backend
+# (macOS Keychain, Windows Credential Manager, a running Secret Service) tokens go to the OS
+# keyring; without it, or on a headless machine with no backend, they go to a private file in the
+# user's config directory. Optional because a hard dependency fails on headless Linux and CI.
+keyring = ["keyring>=25"]
+
 [project.urls]
 Homepage = "https://github.com/Tunasmelt/Drifter-MCP"
 Repository = "https://github.com/Tunasmelt/Drifter-MCP"
@@ -97,4 +104,5 @@ packages = [
     "mcp_drifter.mine",
     "mcp_drifter.policy",
     "mcp_drifter.cli",
+    "mcp_drifter.auth",
 ]

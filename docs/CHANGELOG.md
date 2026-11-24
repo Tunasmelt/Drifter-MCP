@@ -6,6 +6,65 @@ not just a diff.
 
 ---
 
+## 0.3.0 P2 done: F-41 `bearer_env` and F-42 token storage
+
+Both built, test-first, in `src/mcp_drifter/auth/` (new package, listed in `pyproject.toml`).
+Package version is still 0.2.0. `bearer_env` works end to end against the fixture; token storage
+is built and tested but nothing calls it until F-43. What building them established:
+
+1. **Config errors echoed rejected values.** pydantic prints `input_value=...` for every invalid
+   field, so a literal token in `auth.token_env` would have been rejected AND printed to stderr,
+   which an agent's MCP log captures. `hide_input_in_errors` is now set on the root config model;
+   this also stops any other invalid value (a `--api-key` in a `command`) being echoed. Messages
+   keep the field and the rule. (A YAML syntax error can still quote its line; not addressed.)
+2. **An `auth:` block used to be silently ignored** (`ServerConfig` allows extra keys), so a user
+   who wrote one got no authentication and no warning. It is now typed and strict: unknown keys
+   and fields that do not belong to the chosen `type` are errors, and `oauth` /
+   `client_credentials` parse but are refused (exit 4) until they can log in, never run
+   unauthenticated.
+3. **The SDK hides HTTP status.** A non-2xx reply without a JSON-RPC body becomes a generic
+   "Server returned an error response". An httpx response hook now keeps the 401/403 status and
+   the challenge's `error` and `scope`, so an expired token is a specific message, not silence.
+4. **`observe` hangs when the upstream fails and the agent keeps stdin open.** Found by the first
+   end-to-end run; the same root cause as `handle_sigint` (the SDK's stdin read sits in a thread
+   cancellation cannot interrupt). For a rejected `bearer_env` token it is fixed the same way
+   (`exit_on_upstream_rejection`: flush the recording, exit 4). **Pre-existing and NOT fixed:** an
+   unreachable `url` upstream hangs identically (reproduced: still running after 20 s). It needs
+   its own change and test.
+5. **anyio's worker threads are not daemons.** `to_thread.run_sync(abandon_on_cancel=True)` frees
+   the event loop but a keyring call stuck on an unlock prompt would still keep the process from
+   exiting. Storage runs blocking calls on its own daemon thread; proven with a real subprocess,
+   and the test fails against the old approach.
+6. **The SDK never restores a stored token's expiry** (F-44 constraint 3), so the store keeps the
+   absolute `expires_at`.
+
+Windows: the ACL check reads the ACL back through `icacls /save` (locale-independent SDDL) and
+fails closed. Its judge is a pure function tested everywhere; the real `icacls` calls were
+written without a Windows machine and are verified only by Windows CI. A new optional extra,
+`mcp-drifter[keyring]`, was added (lockfile updated, `pip-audit` clean). No calibration constants
+were added: the deliberate absence of a keyring timeout is documented in `storage.py`. The code
+does contain a few structural limits (variable names at most 64 characters, hex runs of 32+
+refused, challenge text capped at 80 characters); they are format and safety limits with their
+reasons next to them, not tuned thresholds.
+
+**Audit fixes (same PR).** A review of P2 found and fixed: a bearer token could be configured for
+plain `http://` to a remote host and sent in cleartext (now refused at load; loopback allowed); any
+403 ended the whole `observe` session, where only a 401 or an `insufficient_scope` 403 is a
+credential failure; the server's `WWW-Authenticate` text was printed unbounded and unescaped; a
+malformed port in a server URL crashed storage with a raw ValueError; a rejected variable name
+gave no hint how to proceed; and `doctor`'s new branches had no tests. Confirmed rather than
+assumed: the SDK does not follow a redirect to another origin, so the bearer cannot leave with
+one (tested with a second server that must receive nothing).
+
+Windows CI then found one more, the only failure in 1,247 tests: SDDL prints the built-in
+Administrator account as `LA` (and Guest as `LG`) instead of by SID, and the runner's user IS the
+built-in Administrator, so the privacy check judged the user's own ACL entry a stranger's and
+refused to store anything. The check now recognizes those two aliases, but only when they name the
+current user; for anyone else they remain a problem. Everything else about the `icacls` approach
+(the `/save` output format, the parsing, the commands) worked first time on a real Windows machine.
+
+---
+
 ## 0.3.0 P1 done: fixture, canary detector, replay-isolation guard
 
 All three P1 tasks are checked in PHASES.md; no auth code exists yet and the package is
