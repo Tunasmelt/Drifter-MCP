@@ -17,7 +17,10 @@ Modes (`FixtureConfig`), one per PHASES.md bullet:
   client credentials ......... client_credentials=True
   no-S256 metadata ........... advertise_s256=False
   issuer mismatch ............ issuer_mismatch=True
-  short-lived tokens ......... access_token_ttl_s=N, plus `state.expire_access_tokens()`
+  short-lived tokens ......... advertised_expires_in_s=N (the client thinks the token is
+                               stale; the server still accepts it, so a slow machine
+                               cannot race the server's own clock), or access_token_ttl_s=N
+                               (the server really expires it), plus `state.expire_access_tokens()`
   refresh disabled ........... refresh_tokens=False
   scope-dependent tools/list . `FixtureConfig.tools` (the default set already is)
 
@@ -100,7 +103,11 @@ class FixtureConfig:
     client_credentials: bool = False
     advertise_s256: bool = True
     issuer_mismatch: bool = False
-    access_token_ttl_s: int = 3600
+    access_token_ttl_s: int = 3600  # how long the SERVER accepts an access token
+    # What the token response's `expires_in` CLAIMS; None means the same as the ttl. Setting it
+    # below the ttl makes the client's own clock say "stale" while the server still accepts the
+    # token: a deterministic way to force a client-side refresh with no race between two clocks.
+    advertised_expires_in_s: int | None = None
     refresh_tokens: bool = True
     rotate_refresh_tokens: bool = True
     loopback_any_port: bool = True  # CIMD -03 / RFC 9700 §4.1.3: loopback redirects may vary the port
@@ -179,9 +186,11 @@ class FixtureState:
         return value
 
     def all_secrets(self) -> list[str]:
-        """Every secret this fixture has handed out so far -- what the F-47 detector hunts for."""
+        """Every secret this fixture has handed out so far -- what the F-47 detector hunts for.
+        The bare canary comes first: every secret starts with it, so a token that was truncated
+        or masked after the prefix still contains it and is caught."""
         fixed = [self.machine_client_secret, self.static_bearer]
-        return [*fixed, *self.issued_secrets]
+        return [self.canary, *fixed, *self.issued_secrets]
 
     def expire_access_tokens(self) -> None:
         """Server-side expiry: every access token issued so far now gets a 401, without
@@ -289,7 +298,7 @@ class FixtureProvider:
         return OAuthToken(
             access_token=access,
             token_type="Bearer",
-            expires_in=ttl,
+            expires_in=state.config.advertised_expires_in_s if state.config.advertised_expires_in_s is not None else ttl,
             scope=" ".join(scopes) or None,
             refresh_token=refresh,
         )
@@ -617,11 +626,28 @@ async def serve_oauth_fixture(config: FixtureConfig | None = None) -> AsyncItera
         sock.close()
 
 
+class AuthorizationRefused(Exception):
+    """The authorization endpoint answered with an error instead of redirecting to the client.
+    Typed so a test can assert it got THIS refusal (status, error code), not just "something raised"."""
+
+    def __init__(self, status: int, error: str | None, description: str | None) -> None:
+        super().__init__(f"authorization refused ({status}): {error}: {description}")
+        self.status = status
+        self.error = error
+        self.description = description
+
+
 async def follow_authorization(authorization_url: str) -> tuple[str, str | None]:
     """Plays the user's browser: GETs the authorization URL, does not follow the redirect,
-    and returns `(code, state)` from the redirect target's query string."""
+    and returns `(code, state)` from the redirect target's query string. Raises
+    `AuthorizationRefused` if the server refuses instead of redirecting."""
     async with httpx2.AsyncClient(follow_redirects=False) as client:
         response = await client.get(authorization_url)
-    assert response.status_code in (302, 303, 307), (response.status_code, response.text)
+    if response.status_code not in (302, 303, 307):
+        try:
+            body = response.json()
+        except ValueError:
+            body = {}
+        raise AuthorizationRefused(response.status_code, body.get("error"), body.get("error_description"))
     query = parse_qs(urlparse(response.headers["location"]).query)
     return query["code"][0], (query.get("state") or [None])[0]

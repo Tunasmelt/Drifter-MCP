@@ -16,6 +16,16 @@ Two checks, because "does not import auth" has two honest readings:
      stayed green. A lazy import inside the authenticated branch (or a separate module)
      passes; a top-level one fails here with the path that caused it.
 
+Dynamic imports are covered too, because `importlib.import_module("mcp_drifter.auth")` is
+the obvious way around an import-statement check (found in the P1 audit):
+  - a literal name is treated exactly like an import statement;
+  - in `replay/`, a dynamic import whose name is NOT a literal is itself a failure (it cannot
+    be shown to avoid auth/), and so is any string that is exactly an auth module name;
+  - `replay/` currently has no dynamic imports at all.
+Known limit: this is a static check. `getattr`, `eval`/`exec` or building a module name from
+pieces and importing it through something other than `importlib`/`__import__` is invisible to
+it. Nothing in `replay/` does any of that, and review would notice if it started to.
+
 The analysis is tested against synthetic source first, because a guard that was never
 shown to catch anything proves nothing.
 """
@@ -51,12 +61,53 @@ def _walk(node: ast.AST, include_nested: bool):
         yield from _walk(child, include_nested)
 
 
-def imported_candidates(module: str, is_package: bool, source: str, include_nested: bool) -> set[str]:
+DYNAMIC_IMPORTERS = frozenset({"import_module", "__import__", "run_module"})
+
+
+def _dynamic_names(tree: ast.AST) -> frozenset[str]:
+    """Names that call a dynamic importer in this source, including `from importlib import
+    import_module as im` style aliases."""
+    names = set(DYNAMIC_IMPORTERS)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module in ("importlib", "runpy", "builtins"):
+            names.update(alias.asname for alias in node.names if alias.name in DYNAMIC_IMPORTERS and alias.asname)
+    return frozenset(names)
+
+
+def _is_dynamic_import(node: ast.AST, names: frozenset[str]) -> bool:
+    if not isinstance(node, ast.Call):
+        return False
+    func = node.func
+    return (isinstance(func, ast.Name) and func.id in names) or (isinstance(func, ast.Attribute) and func.attr in names)
+
+
+def _literal(node: ast.AST) -> str | None:
+    return node.value if isinstance(node, ast.Constant) and isinstance(node.value, str) else None
+
+
+def non_literal_dynamic_imports(source: str) -> list[int]:
+    """Line numbers of dynamic imports whose module name is not a string literal."""
+    tree = ast.parse(source)
+    names = _dynamic_names(tree)
+    return sorted(
+        node.lineno
+        for node in ast.walk(tree)
+        if _is_dynamic_import(node, names) and not (node.args and _literal(node.args[0]) is not None)
+    )
+
+
+def imported_candidates(
+    module: str, is_package: bool, source: str, include_nested: bool, include_strings: bool = False
+) -> set[str]:
     """Every module name this source could be importing, relative imports resolved.
-    `from pkg import name` yields both `pkg` and `pkg.name` (name may be a submodule)."""
+    `from pkg import name` yields both `pkg` and `pkg.name` (name may be a submodule). A dynamic
+    import with a literal name counts like an import statement; with `include_strings`, so does
+    any string that is exactly a module name (`MODULE = "mcp_drifter.auth.client"`)."""
     found: set[str] = set()
     package = module if is_package else module.rpartition(".")[0]
-    for node in _walk(ast.parse(source), include_nested):
+    tree = ast.parse(source)
+    dynamic = _dynamic_names(tree)
+    for node in _walk(tree, include_nested):
         if isinstance(node, ast.Import):
             found.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
@@ -68,6 +119,14 @@ def imported_candidates(module: str, is_package: bool, source: str, include_nest
                 base = node.module or ""
             found.add(base)
             found.update(f"{base}.{alias.name}" for alias in node.names if alias.name != "*")
+        elif _is_dynamic_import(node, dynamic):
+            name = _literal(node.args[0]) if node.args else None
+            if name:
+                found.add(name)
+        elif include_strings:
+            value = _literal(node)
+            if value and _is_auth(value):
+                found.add(value)
     return found
 
 
@@ -77,13 +136,18 @@ def _with_parents(name: str) -> list[str]:
 
 
 def direct_auth_imports(sources: Sources, modules: list[str]) -> list[str]:
-    """`module -> auth name` for every mention of auth/ in these modules' OWN source, lazy
-    imports included. Does not follow imports into other modules."""
+    """`module -> auth name` for every mention of auth/ in these modules' OWN source: lazy
+    imports, literal dynamic imports and exact module-name strings included, and any dynamic
+    import whose name cannot be read. Does not follow imports into other modules."""
     hits: set[str] = set()
     for module in modules:
         text, is_package = sources[module]
-        for candidate in imported_candidates(module, is_package, text, include_nested=True):
+        for candidate in imported_candidates(module, is_package, text, include_nested=True, include_strings=True):
             hits.update(f"{module} -> {name}" for name in _with_parents(candidate) if _is_auth(name))
+        hits.update(
+            f"{module} -> <dynamic import with a non-literal name, line {line}>"
+            for line in non_literal_dynamic_imports(text)
+        )
     return sorted(hits)
 
 
@@ -226,6 +290,63 @@ def test_a_class_body_import_runs_at_import_time_so_it_counts():
     source = "class Loader:\n    from mcp_drifter.auth import build\n"
     sources: Sources = {REPLAY_MODULE: (source, False)}
     assert find_auth_paths(sources, [REPLAY_MODULE])
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'import importlib\nimportlib.import_module("mcp_drifter.auth")\n',
+        'import importlib\nimportlib.import_module("mcp_drifter.auth.client")\n',
+        '__import__("mcp_drifter.auth.client")\n',
+        'from importlib import import_module as load\nload("mcp_drifter.auth")\n',
+        'import runpy\nrunpy.run_module("mcp_drifter.auth")\n',
+    ],
+)
+def test_a_dynamic_import_with_a_literal_auth_name_is_caught_by_both_checks(source):
+    sources: Sources = {REPLAY_MODULE: (source, False)}
+    assert direct_auth_imports(sources, [REPLAY_MODULE]), source
+    assert find_auth_paths(sources, [REPLAY_MODULE]), source
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'import importlib\nname = "mcp_drifter." + "auth"\nimportlib.import_module(name)\n',
+        "import importlib\nimportlib.import_module(some_config_value)\n",
+        "__import__(chosen)\n",
+        "from importlib import import_module as load\nload(f'mcp_drifter.{x}')\n",
+        "import importlib\nimportlib.import_module()\n",
+    ],
+)
+def test_a_dynamic_import_whose_name_cannot_be_read_fails_the_direct_check(source):
+    """It cannot be shown to avoid auth/, so replay/ may not contain one at all."""
+    sources: Sources = {REPLAY_MODULE: (source, False)}
+    hits = direct_auth_imports(sources, [REPLAY_MODULE])
+    assert hits and "non-literal" in hits[0], hits
+
+
+def test_an_exact_auth_module_name_as_a_string_fails_the_direct_check_but_prose_does_not():
+    flagged: Sources = {REPLAY_MODULE: ('MODULE = "mcp_drifter.auth.client"\n', False)}
+    assert direct_auth_imports(flagged, [REPLAY_MODULE])
+    prose: Sources = {
+        REPLAY_MODULE: ('"""Replay never touches mcp_drifter.auth: see SPEC 5.2."""\nNOTE = "run `drifter auth login`"\n', False)
+    }
+    assert direct_auth_imports(prose, [REPLAY_MODULE]) == []
+
+
+def test_dynamic_imports_of_unrelated_modules_with_literal_names_are_not_flagged_transitively():
+    sources: Sources = {REPLAY_MODULE: ('import importlib\nimportlib.import_module("json")\n', False)}
+    assert find_auth_paths(sources, [REPLAY_MODULE]) == []
+    assert direct_auth_imports(sources, [REPLAY_MODULE]) == []
+
+
+def test_the_real_replay_package_contains_no_dynamic_imports_at_all():
+    sources = load_sources()
+    offenders = {m: non_literal_dynamic_imports(sources[m][0]) for m in _replay_modules(sources)}
+    assert {m: lines for m, lines in offenders.items() if lines} == {}
+    for module in _replay_modules(sources):
+        tree = ast.parse(sources[module][0])
+        assert not [n for n in ast.walk(tree) if _is_dynamic_import(n, _dynamic_names(tree))], module
 
 
 def test_the_back_door_is_found_through_an_intermediate_module_with_its_path():

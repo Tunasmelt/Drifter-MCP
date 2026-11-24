@@ -17,6 +17,12 @@ Channels scanned, because each one is a place a token has leaked in real clients
 A secret is searched for in the forms a leak usually takes, not just verbatim: raw,
 URL-encoded, and base64 -- at all three byte alignments, since `Authorization: Basic
 base64(client_id:secret)` puts the secret at an arbitrary offset inside the encoding.
+
+Callers should pass the BARE canary (`state.canary`) along with the full tokens
+(`FixtureState.all_secrets()` already does): every secret starts with it, so a token that
+was truncated or masked AFTER the prefix still contains it. Known limit, by construction:
+a mask that cuts INSIDE the 47-character prefix (say, the first 12 characters of a token)
+reveals too little to distinguish from any other text, and no scan can find it.
 """
 
 from __future__ import annotations
@@ -82,7 +88,8 @@ def _scan_bytes(channel: str, where: str, data: bytes, secrets: Iterable[str]) -
             if needle and needle not in seen and needle in data:
                 leaks.append(Leak(channel, where, form))
             seen.add(needle)
-    return leaks
+    # The bare canary and a full token both match the same text; report each place once.
+    return list(dict.fromkeys(leaks))
 
 
 def scan_text(label: str, text: str, secrets: Iterable[str], channel: str = "text") -> list[Leak]:

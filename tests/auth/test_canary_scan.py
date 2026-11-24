@@ -172,6 +172,33 @@ def test_a_url_encoded_token_is_found():
     assert scan_text("redirect url", f"http://127.0.0.1/cb?access_token={encoded}", [odd])
 
 
+# --- truncated and masked tokens ---------------------------------------------------------------
+
+
+def test_a_token_cut_off_after_the_canary_prefix_is_found_only_if_the_bare_canary_is_scanned():
+    canary = new_canary()
+    full = canary + "-access-7"
+    for cut in (canary + "-acc", canary + "-", canary):
+        assert scan_text("log", f"token={cut}...", [full]) == [], "a full-token scan cannot see a truncated one"
+        assert scan_text("log", f"token={cut}...", [canary, full]), cut
+
+
+def test_the_scan_list_a_fixture_hands_out_leads_with_the_bare_canary():
+    from oauth_server import FixtureConfig, FixtureState
+
+    state = FixtureState(config=FixtureConfig(), origin="http://127.0.0.1:1")
+    state.mint("access")
+    secrets = state.all_secrets()
+    assert secrets[0] == state.canary
+    assert all(secret.startswith(state.canary) for secret in secrets)
+
+
+def test_one_leak_is_reported_once_even_when_several_secrets_match_the_same_text():
+    canary = new_canary()
+    leaks = scan_text("log", f"Bearer {canary}-access-1", [canary, canary + "-access-1"])
+    assert [str(leak) for leak in leaks] == ["text:log (raw)"]
+
+
 # --- no false positives -------------------------------------------------------------------
 
 

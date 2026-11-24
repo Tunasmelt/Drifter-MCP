@@ -29,6 +29,16 @@ advertised identically in protected-resource and authorization-server metadata (
 client compares them as exact strings; the fixture uses the trailing-slash form).
 Not decided here: how F-43 applies configured scopes. Calibration constants: none added.
 
+**Audit follow-ups (same PR).** A review of P1 found five weaknesses in its own tests, fixed
+before merge: the refresh test raced the server's clock against the client's (the fixture now
+separates what the token response claims, `advertised_expires_in_s`, from what the server
+enforces, so no wall-clock race remains); three tests caught any exception instead of the
+specific one (the authorization helper now raises a typed `AuthorizationRefused`, and tests
+assert on the real error and on server state); the import guard missed `importlib.import_module`
+and `__import__` (literal dynamic imports now count, and `replay/` may contain no unreadable
+one); the canary scan did not include the bare canary; and nothing checked that a new package is
+listed for the wheel (`tests/test_packaging.py`, which P2's `auth/` package must satisfy).
+
 ---
 
 ## CIMD document targets draft -03 (newer upstream docs checked 2026-11-23)

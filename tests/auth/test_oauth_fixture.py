@@ -17,6 +17,7 @@ import time
 import anyio
 import httpx2
 import pytest
+from mcp.client.auth.exceptions import OAuthFlowError, OAuthTokenError
 from mcp.client.auth.extensions.client_credentials import ClientCredentialsOAuthProvider
 from mcp.shared.auth import OAuthClientInformationFull
 from pydantic import AnyUrl
@@ -28,10 +29,11 @@ from oauth_server import (
     MACHINE_CLIENT_ID,
     MCP_PATH,
     PREREGISTERED_CLIENT_ID,
+    AuthorizationRefused,
     FixtureConfig,
     serve_oauth_fixture,
 )
-from sdk_client import MemoryStorage, initialized_session, sdk_provider, tool_names
+from sdk_client import MemoryStorage, initialized_session, leaf_exceptions, sdk_provider, tool_names
 
 
 @pytest.fixture
@@ -134,12 +136,20 @@ async def test_cimd_mode_uses_the_document_url_as_client_id_and_never_registers(
 
 @pytest.mark.anyio
 async def test_cimd_mode_refuses_a_document_whose_client_id_is_not_its_own_url():
-    """CIMD -03: a malformed document is a terminal failure at the authorization server."""
+    """CIMD -03: a malformed document is a terminal failure at the authorization server. The
+    assertion is the server's own refusal (400 invalid_request, client not found), not "something
+    raised": a valid document with an unusable client URL fails differently and must NOT pass this."""
     async with serve_oauth_fixture(FixtureConfig(registration="cimd")) as handle:
         handle.state.published_documents[CIMD_CLIENT_URL]["client_id"] = CIMD_CLIENT_URL + "/"
-        with pytest.raises(BaseException):
+        with pytest.raises(BaseException) as failure:
             async with initialized_session(handle, sdk_provider(handle, MemoryStorage(), client_metadata_url=CIMD_CLIENT_URL)):
                 pass
+        refusals = [e for e in leaf_exceptions(failure.value) if isinstance(e, AuthorizationRefused)]
+        assert len(refusals) == 1, leaf_exceptions(failure.value)
+        assert (refusals[0].status, refusals[0].error) == (400, "invalid_request")
+        assert "not found" in (refusals[0].description or "")
+        assert handle.state.authorize_requests == 0  # the provider was never asked to authorize
+        assert handle.state.access_tokens == {}
 
 
 # --- other protection modes -------------------------------------------------
@@ -177,7 +187,7 @@ async def test_client_credentials_mode_issues_a_token_with_no_browser_step():
 
 
 @pytest.mark.anyio
-async def test_client_credentials_with_a_wrong_secret_is_rejected():
+async def test_client_credentials_with_a_wrong_secret_is_rejected_by_the_server():
     async with serve_oauth_fixture(FixtureConfig(client_credentials=True)) as handle:
         provider = ClientCredentialsOAuthProvider(
             server_url=handle.mcp_url,
@@ -186,9 +196,15 @@ async def test_client_credentials_with_a_wrong_secret_is_rejected():
             client_secret="not-the-secret",
             issuer=handle.issuer,
         )
-        with pytest.raises(BaseException):
+        with pytest.raises(BaseException) as failure:
             async with initialized_session(handle, provider):
                 pass
+        rejections = [e for e in leaf_exceptions(failure.value) if isinstance(e, OAuthTokenError)]
+        assert len(rejections) == 1, leaf_exceptions(failure.value)
+        assert "401" in str(rejections[0]) and "invalid_client" in str(rejections[0])
+        # The server really saw the grant and refused it: not a client-side failure before sending.
+        assert handle.state.token_grants == ["client_credentials"]
+        assert handle.state.access_tokens == {}
 
 
 # --- deliberately broken metadata -------------------------------------------
@@ -210,9 +226,12 @@ async def test_no_s256_mode_advertises_only_plain_and_the_sdk_does_not_notice():
 async def test_issuer_mismatch_mode_makes_the_sdk_stop_before_authorizing():
     async with serve_oauth_fixture(FixtureConfig(issuer_mismatch=True)) as handle:
         assert (await _metadata(handle))["issuer"] == ISSUER_MISMATCH_VALUE
-        with pytest.raises(BaseException):
+        with pytest.raises(BaseException) as failure:
             async with initialized_session(handle, sdk_provider(handle, MemoryStorage())):
                 pass
+        mismatches = [e for e in leaf_exceptions(failure.value) if isinstance(e, OAuthFlowError)]
+        assert len(mismatches) == 1, leaf_exceptions(failure.value)
+        assert "issuer mismatch" in str(mismatches[0])
         assert handle.state.authorize_requests == 0
         assert handle.state.registrations == 0
 
@@ -222,8 +241,14 @@ async def test_issuer_mismatch_mode_makes_the_sdk_stop_before_authorizing():
 
 @pytest.mark.anyio
 async def test_a_locally_expired_access_token_is_refreshed_and_the_rotated_refresh_token_is_stored():
-    """Short-lived tokens: `expires_in` is 1 s, so the client's OWN clock says expired."""
-    async with serve_oauth_fixture(FixtureConfig(access_token_ttl_s=1)) as handle:
+    """Short-lived tokens, from the CLIENT's point of view: the response says `expires_in: 1`
+    but the server keeps accepting the token for an hour. Only the client's own clock decides
+    when to refresh, so a slow machine cannot make the server reject a token the client still
+    thought valid (found in the P1 audit: with a real 1 s server-side ttl, 0.7 s of added
+    latency per request turned this into three logins). The assertions are therefore about
+    ORDER and ABSENCE of a second login, not an exact request count."""
+    config = FixtureConfig(access_token_ttl_s=3600, advertised_expires_in_s=1)
+    async with serve_oauth_fixture(config) as handle:
         storage = MemoryStorage()
         async with initialized_session(handle, sdk_provider(handle, storage)) as session:
             first = storage.tokens
@@ -233,12 +258,16 @@ async def test_a_locally_expired_access_token_is_refreshed_and_the_rotated_refre
             await anyio.sleep(1.5)
             assert await tool_names(session) == ["get_item", "list_items"]
 
-            assert handle.state.token_grants == ["authorization_code", "refresh_token"]
+            grants = handle.state.token_grants
+            assert grants[0] == "authorization_code"
+            assert grants.count("authorization_code") == 1  # one login, ever
+            assert set(grants[1:]) == {"refresh_token"} and len(grants) >= 2  # then only refreshes
+            assert handle.state.authorize_requests == 1
             second = storage.tokens
             assert second is not None
             assert second.access_token != first.access_token
             assert second.refresh_token != first.refresh_token  # rotated, and persisted
-            assert handle.state.authorize_requests == 1  # no second login
+            assert storage.set_tokens_calls == len(grants)  # every issued token pair was stored
 
 
 @pytest.mark.anyio
@@ -367,7 +396,7 @@ async def test_fixture_shutdown_is_prompt_after_a_real_session():
 @pytest.mark.anyio
 async def test_fixture_shutdown_is_prompt_even_if_a_client_is_still_connected():
     started = None
-    with pytest.raises(BaseException):  # the still-open client is cut off mid-session; that is the point
+    with pytest.raises(BaseException) as failure:  # the still-open client is cut off mid-session
         async with serve_oauth_fixture() as handle:
             async with initialized_session(handle, sdk_provider(handle, MemoryStorage())) as session:
                 assert await tool_names(session)
@@ -375,4 +404,9 @@ async def test_fixture_shutdown_is_prompt_even_if_a_client_is_still_connected():
                 raise RuntimeError("leave while connected")
     assert started is not None
     elapsed = time.monotonic() - started
+    # The only thing that went wrong is the deliberate exit: nothing in the setup failed
+    # (a broad raises() would also have swallowed an AssertionError from `tool_names`).
+    leaves = leaf_exceptions(failure.value)
+    assert [str(e) for e in leaves if isinstance(e, RuntimeError)] == ["leave while connected"], leaves
+    assert not [e for e in leaves if isinstance(e, AssertionError)], leaves
     assert elapsed < 4.0, f"teardown with a live client took {elapsed:.2f}s"

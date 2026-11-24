@@ -93,5 +93,14 @@ async def initialized_session(handle: FixtureHandle, auth: httpx2.Auth | None = 
                 yield session
 
 
+def leaf_exceptions(exc: BaseException) -> list[BaseException]:
+    """The real errors inside however many ExceptionGroups anyio/the SDK wrapped them in.
+    Tests assert on these, not on "something raised": a broad `raises(BaseException)` passes for
+    ANY failure, including a bug in the test's own setup."""
+    if isinstance(exc, BaseExceptionGroup):
+        return [leaf for inner in exc.exceptions for leaf in leaf_exceptions(inner)]
+    return [exc]
+
+
 async def tool_names(session: ClientSession) -> list[str]:
     return sorted(tool.name for tool in (await session.list_tools()).tools)

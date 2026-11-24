@@ -1681,7 +1681,9 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
       `tests/fixtures/oauth/canary_scan.py` is the detector (files and file names, log
       records and tracebacks, exceptions with causes and groups, plain text; raw, URL-
       encoded and base64 at all three alignments). `tests/auth/test_canary_scan.py` shows
-      it catches a stub that leaks on every channel and stays quiet on clean output. The
+      it catches a stub that leaks on every channel and stays quiet on clean output. It scans
+      for the bare canary as well as each full token, so a token truncated after the prefix is
+      still found (a mask that cuts inside the prefix cannot be). The
       end-to-end F-47 test (login, observe, forced refresh/401/403) needs F-41–F-46 and
       is written when they land.
 - [x] Import-inspection test: nothing under `replay/` imports `auth/`.
@@ -1691,6 +1693,9 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
       the transitive check, a lazy one passes, a direct one in `replay/` fails both.
 
 **P2 — config, storage, static token**
+- [ ] Create `src/mcp_drifter/auth/` and add `mcp_drifter.auth` to `pyproject.toml`'s explicit
+      `[tool.setuptools].packages` in the same change. `tests/test_packaging.py` fails if
+      it is left off, because the wheel would otherwise ship without it.
 - [ ] F-41 `servers[].auth` + `bearer_env`.
 - [ ] F-42 `TokenStorage` (usable keyring extra, POSIX modes / Windows ACL file fallback).
 
