@@ -1082,7 +1082,9 @@ from exiting. Windows privacy is verified by reading the ACL back through `icacl
 **Depends on:** none (pure persistence).
 **Done when:** round-trip tests on both backends; an unavailable keyring uses the secure
 fallback; a `0644` POSIX file and a broadly readable Windows ACL are refused; a test
-asserts no storage path resolves inside the project root.
+asserts no explicit storage path resolves inside the project root, and the default
+location never resolves inside `<project>/.drifter/` (the default user-config directory stays usable
+even when the project is the user's home directory).
 
 ### F-43 `drifter auth login` / `status` / `logout`
 

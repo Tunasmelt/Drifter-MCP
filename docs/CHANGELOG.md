@@ -28,6 +28,17 @@ login yet (F-44, P4), so `observe` still refuses an `oauth` server. What buildin
 6. **Ctrl+C**: the wait is 300 s, so it was timed with a real SIGINT on a real process, not assumed:
    about 0.13 s to exit 130, port released. The browser is opened on a daemon thread, because
    `webbrowser.open` blocks on terminal browsers.
+7. **Audit findings, fixed test-first.** (a) A malformed request target (`GET http://[ HTTP/1.1`)
+   raised inside the listener's handler and killed the login, contradicting item 1; every request
+   is now judged inside a catch-all that answers 400 and keeps waiting, covered by a hostile-request
+   table and a seeded 150-request fuzz burst after which the real redirect still completes.
+   (b) With `drifter.yaml` in `$HOME`, the default `~/.config/drifter` counted as "inside the project"
+   and `auth status` exited 4. Interpretation of DEC-029 "never inside the project or `.drifter/`":
+   an EXPLICIT location may not be anywhere in the project; the DEFAULT user-config location is
+   refused only if it lands inside `<project>/.drifter/`. (c) `status` crashed with a traceback on an
+   absurd server-supplied `expires_in` and printed the stored `scope` unsanitized; both fixed.
+   (d) `set_client_info` then `set_tokens` were two writes; a login is now saved by one atomic
+   `TokenStore.save_login`, so a crash cannot leave tokens belonging to a different registration.
 
 **DEC-030 is still open** (which website origin hosts the CIMD document). `website/index.html`
 already declares `https://drifter-mcp.vercel.app/` as the site's canonical URL (`og:url`), which
