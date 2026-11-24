@@ -55,8 +55,8 @@ table and docs/PHASES.md for gate-level narrative.
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
 | F-40 | `parameter_rename` mutation operator | ✅ Built | `mutate/parameter_rename.py` — the third Level 0/1 operator, added specifically to give F-12 a real inverse to resolve against (neither F-16 nor F-17 can: schema-immune / no prior recording respectively). Closed-set, deterministic snake_case→camelCase, exactly one property per tool |
-| F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ❌ Not built — 0.3.0 | docs/SPEC.md §5.2/§11. Smallest useful slice: a static token from an env var NAME |
-| F-42 | Token storage (`TokenStorage`) | ❌ Not built — 0.3.0 | Usable keyring extra, else private platform storage (POSIX modes / Windows ACLs) outside the project (DEC-029, confirmed) |
+| F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ✅ Built (P2) | Typed, strict `auth` block; `bearer_env` works end to end; `oauth` / `client_credentials` parse but are refused (exit 4) until F-43–F-45 exist, never run unauthenticated |
+| F-42 | Token storage (`TokenStorage`) | ✅ Built (P2), not yet used | Usable keyring extra, else private file (POSIX modes / verified Windows ACL) outside the project (DEC-029). Also stores the absolute token expiry, which F-44 needs |
 | F-43 | `drifter auth login` / `status` / `logout` | ❌ Not built — 0.3.0 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR |
 | F-44 | Authenticated upstream connection | ❌ Not built — 0.3.0 | `observe`/`doctor` pass an authed `http_client` to `streamable_http_client`; silent refresh; fail fast (exit 4) with no interactive flow |
 | F-45 | Non-interactive auth (client credentials / private-key JWT) | ❌ Not built — 0.3.0 | In 0.3.0 per DEC-031 (confirmed) |
@@ -1039,6 +1039,16 @@ OAuth exists.
 static-token mode; `auth` on a `command` entry and a literal secret in any `_env` field
 are both rejected with exit `4`.
 
+**Built (P2), and what it added beyond the text above.** The block rejects unknown keys and
+fields that do not belong to the chosen `type`. The secret check is: shaped like a variable
+name, not tripping F-04's patterns, not a long run of hex digits; a secret that is also a
+plausible variable name gets through, which is why the docs say to export the secret and name
+the variable. `hide_input_in_errors` is set on the root config model, because pydantic
+otherwise prints `input_value=...` for every invalid field and a rejected secret would have
+been echoed to stderr (an agent's MCP log). The upstream's 401/403 is reported as a specific
+error naming the variable and status (the SDK drops the status); with the agent still
+connected `observe` must hard-exit rather than unwind, see F-44.
+
 ### F-42 Token storage (`TokenStorage`)
 
 **Technical:** One implementation of the SDK's `TokenStorage` protocol, keyed by server
@@ -1054,6 +1064,15 @@ code or PKCE verifier. A file with wider permissions is refused, not silently us
 **Simple:** where Drifter keeps your login so you don't sign in every time — in the
 system keychain if you have one, otherwise in a private file only you can read, and
 never anywhere that could end up in git.
+
+**Built (P2).** Also stores the ABSOLUTE expiry (`expires_at`): the SDK loads stored tokens
+with no expiry, so a token that expired hours ago looks valid to a new process, and F-44 needs
+the stored value to refresh instead of failing. A value the keyring will not hold (Windows
+Credential Manager's size cap is below some JWTs) falls back to the private file, removing the
+stale keyring entry. Blocking storage calls run on a daemon thread, since anyio's worker
+threads are not daemons and a keyring call stuck on an unlock prompt would keep the process
+from exiting. Windows privacy is verified by reading the ACL back through `icacls /save`
+(locale-independent SDDL), failing closed.
 
 **Depends on:** none (pure persistence).
 **Done when:** round-trip tests on both backends; an unavailable keyring uses the secure
@@ -1105,7 +1124,13 @@ but-refreshable" in the done criterion means stale by the stored expiry. (2)
 `replay/replay_proxy.py` imports `record/proxy.py`, which is where this feature lives, so
 `auth/` must be imported lazily inside the authenticated branch of `connect_to_server`
 (or live in its own module `replay/` does not import). An eager import there makes
-replay depend on auth and fails `tests/auth/test_replay_isolation.py`.
+replay depend on auth and fails `tests/auth/test_replay_isolation.py`. (3) The SDK also never
+restores a stored token's expiry: `_initialize` loads tokens with no expiry, so a token that
+expired hours ago is sent as-is and a stale one gets a login, not a refresh. F-44's provider
+must restore `token_expiry_time` from `TokenStore.get_expiry()`. (4) An upstream 401 while the
+agent is connected must end the process directly (flush the recording, exit 4), not unwind:
+the SDK's stdin read cannot be cancelled, so unwinding hangs. `observe` already does this for
+`bearer_env` (`exit_on_upstream_rejection`); F-44 reuses it.
 
 **Simple:** recording a login-protected server now just works once you've signed in,
 and when the login has expired Drifter tells you exactly what to run instead of

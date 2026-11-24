@@ -44,6 +44,7 @@ import yaml
 from mcp.client.stdio import StdioServerParameters
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from mcp_drifter.auth.config import AuthConfig
 from mcp_drifter.evaluate.assertions import TaskAssertions
 from mcp_drifter.mine.candidates import CandidateFileError, approved_entries, read_candidates
 
@@ -62,6 +63,10 @@ class ServerConfig(BaseModel):
     # "field required" that doesn't explain the exclusivity rule.
     command: list[str] | None = None
     url: str | None = None
+    # F-41 (docs/SPEC.md §5.2/§11): how to authenticate to a `url` server. Typed and validated:
+    # while this was only `extra="allow"`, an `auth:` block was silently accepted and ignored.
+    # None means "no auth block"; `auth: {type: none}` is the explicit spelling of the same.
+    auth: AuthConfig | None = None
 
     @field_validator("command")
     @classmethod
@@ -101,6 +106,15 @@ class ServerConfig(BaseModel):
             raise ValueError(
                 f"server {self.name!r} must declare exactly one of `command` (local, stdio) or "
                 "`url` (a real, network-reachable Streamable HTTP endpoint), not both or neither"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _auth_applies_only_to_url_servers(self) -> "ServerConfig":
+        if self.auth is not None and self.command is not None:
+            raise ValueError(
+                f"server {self.name!r} has an `auth` block but runs a local `command`; `auth` applies only "
+                "to `url` servers (a stdio server takes its credentials from its own environment)"
             )
         return self
 
@@ -296,7 +310,11 @@ def assertions_for(tasks: list[TaskConfig], task_id: str) -> TaskAssertions:
 
 
 class DrifterConfig(BaseModel):
-    model_config = ConfigDict(extra="allow")
+    # hide_input_in_errors: pydantic otherwise prints `input_value=...` for every invalid field, and
+    # drifter.yaml values can be secrets (a literal token in an `auth.*_env` field, a `--api-key` in a
+    # `command`). `observe` is launched unattended by an agent, so stderr ends up in the agent's logs.
+    # The message still names the field and the rule; it just no longer repeats the value (F-47).
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
 
     version: int
     servers: list[ServerConfig]

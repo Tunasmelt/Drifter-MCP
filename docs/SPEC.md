@@ -180,7 +180,7 @@ criterion. These are two separable features sharing infrastructure, not one feat
 keep them scoped apart the way F-16/F-17's own "Schema Immunity" boundary was kept
 apart from tool_addition's synthesis concerns.
 
-### 5.2 Upstream authorization (0.3.0 scope — F-41–F-47, NOT built)
+### 5.2 Upstream authorization (0.3.0 scope — F-41–F-47; F-41 `bearer_env` and F-42 built, F-43–F-47 not)
 
 **The gap.** `record/proxy.py`'s `connect_to_server` opens `streamable_http_client(url)`
 with no `http_client`, so no `Authorization` header is ever sent. Any OAuth-protected
@@ -560,7 +560,7 @@ servers:
   - name: remote-crm            # v1 (F-39) — a real server reached over HTTP instead
     url: "https://mcp.example.com/mcp"   # of a spawned local subprocess; mutually
                                           # exclusive with `command` on the same entry
-    auth:                       # 0.3.0 (F-41, NOT built) — url entries only; default none
+    auth:                       # 0.3.0 (F-41: bearer_env built; oauth/client_credentials parse but are refused until F-43–F-45) — url entries only; default none
       type: oauth               # oauth | bearer_env | client_credentials | none
       scopes: ["crm.read"]      # optional; default: what the server's metadata advertises
       # client_id: "..."        # optional pre-registered client (identity order, §5.2)

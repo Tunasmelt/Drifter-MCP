@@ -6,6 +6,46 @@ not just a diff.
 
 ---
 
+## 0.3.0 P2 done: F-41 `bearer_env` and F-42 token storage
+
+Both built, test-first, in `src/mcp_drifter/auth/` (new package, listed in `pyproject.toml`).
+Package version is still 0.2.0. `bearer_env` works end to end against the fixture; token storage
+is built and tested but nothing calls it until F-43. What building them established:
+
+1. **Config errors echoed rejected values.** pydantic prints `input_value=...` for every invalid
+   field, so a literal token in `auth.token_env` would have been rejected AND printed to stderr,
+   which an agent's MCP log captures. `hide_input_in_errors` is now set on the root config model;
+   this also stops any other invalid value (a `--api-key` in a `command`) being echoed. Messages
+   keep the field and the rule. (A YAML syntax error can still quote its line; not addressed.)
+2. **An `auth:` block used to be silently ignored** (`ServerConfig` allows extra keys), so a user
+   who wrote one got no authentication and no warning. It is now typed and strict: unknown keys
+   and fields that do not belong to the chosen `type` are errors, and `oauth` /
+   `client_credentials` parse but are refused (exit 4) until they can log in, never run
+   unauthenticated.
+3. **The SDK hides HTTP status.** A non-2xx reply without a JSON-RPC body becomes a generic
+   "Server returned an error response". An httpx response hook now keeps the 401/403 status and
+   the challenge's `error` and `scope`, so an expired token is a specific message, not silence.
+4. **`observe` hangs when the upstream fails and the agent keeps stdin open.** Found by the first
+   end-to-end run; the same root cause as `handle_sigint` (the SDK's stdin read sits in a thread
+   cancellation cannot interrupt). For a rejected `bearer_env` token it is fixed the same way
+   (`exit_on_upstream_rejection`: flush the recording, exit 4). **Pre-existing and NOT fixed:** an
+   unreachable `url` upstream hangs identically (reproduced: still running after 20 s). It needs
+   its own change and test.
+5. **anyio's worker threads are not daemons.** `to_thread.run_sync(abandon_on_cancel=True)` frees
+   the event loop but a keyring call stuck on an unlock prompt would still keep the process from
+   exiting. Storage runs blocking calls on its own daemon thread; proven with a real subprocess,
+   and the test fails against the old approach.
+6. **The SDK never restores a stored token's expiry** (F-44 constraint 3), so the store keeps the
+   absolute `expires_at`.
+
+Windows: the ACL check reads the ACL back through `icacls /save` (locale-independent SDDL) and
+fails closed. Its judge is a pure function tested everywhere; the real `icacls` calls were
+written without a Windows machine and are verified only by Windows CI. A new optional extra,
+`mcp-drifter[keyring]`, was added (lockfile updated, `pip-audit` clean). No calibration constants
+were added: the deliberate absence of a keyring timeout is documented in `storage.py`.
+
+---
+
 ## 0.3.0 P1 done: fixture, canary detector, replay-isolation guard
 
 All three P1 tasks are checked in PHASES.md; no auth code exists yet and the package is

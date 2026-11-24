@@ -35,7 +35,9 @@ from typing import TextIO
 import anyio
 import httpx2
 
+from mcp_drifter.auth.errors import UpstreamAuthRejected
 from mcp_drifter.cli.config import ConfigError, DrifterConfig, ServerConfig, load_config, server_target
+from mcp_drifter.cli.upstream import upstream_http_client
 from mcp_drifter.cli.stats import anchor_relative_to_config, resolve_runs_dir
 from mcp_drifter.record.proxy import Direction, run_passthrough_proxy
 from mcp_drifter.record.writer import SessionRecorder
@@ -182,6 +184,42 @@ def handle_sigint(
     exit_fn(0)
 
 
+async def _proxy_through_upstream(server: ServerConfig, target, on_message, on_rejected) -> None:
+    """`run_passthrough_proxy` with the credentials `server.auth` calls for (F-41). A config
+    problem (variable unset, auth type not yet supported) raises here, before the proxy reads
+    a byte of the agent's stdin, so it exits 4 immediately instead of hanging."""
+    async with upstream_http_client(server, on_rejected) as http_client:
+        await run_passthrough_proxy(target, on_message, http_client)
+
+
+def exit_on_upstream_rejection(
+    recorder: SessionRecorder,
+    status: LiveStatus,
+    status_stream: TextIO,
+    error: UpstreamAuthRejected,
+    exit_fn=os._exit,
+) -> None:
+    """The upstream refused our credentials (401/403): say why, flush the recording, exit 4.
+
+    A plain function for the same reason as `handle_sigint`, and for the same root cause: the
+    exception the response hook raises cancels the proxy's task group, but `stdio_server()`'s
+    stdin read is parked in a worker thread that cancellation cannot interrupt, so with the
+    agent connected and idle the process would hang instead of ever reaching the `except*` in
+    `run_observe` (found by F-41's first end-to-end run; a dead upstream hangs identically and
+    predates this change). `recorder.close()` is synchronous file I/O with no dependency on
+    the task tree unwinding.
+
+    Idempotent, like `handle_sigint`: several in-flight requests can each be refused.
+    """
+    if recorder.closed:
+        return
+    status_stream.write(f"\ndrifter observe: {error}\n")
+    status_stream.flush()
+    recorder.close()
+    status.finish()
+    exit_fn(4)  # docs/SPEC.md §12: exit code 4 = config/connectivity error
+
+
 def run_observe(
     config_path: Path | None = None,
     server_name: str | None = None,
@@ -212,6 +250,9 @@ def run_observe(
         recorder.observe(direction, message)
         status.update(recorder)
 
+    def on_rejected(error: UpstreamAuthRejected) -> None:
+        exit_on_upstream_rejection(recorder, status, status_stream, error)
+
     target = server_target(server)
     description = server.url if server.url is not None else " ".join(server.command)
 
@@ -222,7 +263,14 @@ def run_observe(
         status_stream.write(f"drifter observe — proxying {server.name!r} ({description})\n")
         status_stream.flush()
         try:
-            anyio.run(run_passthrough_proxy, target, on_message)
+            anyio.run(_proxy_through_upstream, server, target, on_message, on_rejected)
+        except* UpstreamAuthRejected as eg:
+            # F-41/F-44: the SDK reports a 401/403 as an opaque "Server returned an error
+            # response"; the response hook in cli/upstream.py kept the status and the
+            # challenge. This is the fallback for when the proxy unwinds on its own (the agent
+            # closed stdin); with the agent still connected, `exit_on_upstream_rejection`
+            # (called from the hook) is what ends the process, since unwinding would hang.
+            raise ConfigError(str(eg.exceptions[0])) from None
         except* (OSError, httpx2.TransportError) as eg:
             # Found empirically, not assumed: a bad server command
             # previously crashed here with a raw ~40-line Python

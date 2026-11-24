@@ -1693,11 +1693,20 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
       the transitive check, a lazy one passes, a direct one in `replay/` fails both.
 
 **P2 — config, storage, static token**
-- [ ] Create `src/mcp_drifter/auth/` and add `mcp_drifter.auth` to `pyproject.toml`'s explicit
+- [x] Create `src/mcp_drifter/auth/` and add `mcp_drifter.auth` to `pyproject.toml`'s explicit
       `[tool.setuptools].packages` in the same change. `tests/test_packaging.py` fails if
       it is left off, because the wheel would otherwise ship without it.
-- [ ] F-41 `servers[].auth` + `bearer_env`.
-- [ ] F-42 `TokenStorage` (usable keyring extra, POSIX modes / Windows ACL file fallback).
+- [x] F-41 `servers[].auth` + `bearer_env`. `observe`, `doctor` and `fixture` all connect
+      through `cli/upstream.py`; `record/proxy.py` only takes an optional ready-made `httpx2`
+      client, so `replay/` still cannot reach `auth/`. Done-when met end to end: a real
+      `drifter observe` subprocess records a session through the fixture's static-bearer mode,
+      the fixture's own log shows the bearer on every request, the F-47 canary is nowhere
+      Drifter wrote or printed, and `auth` on a command entry, a literal secret in `token_env`,
+      a missing variable, a rejected token and an `oauth` type (not buildable yet) each exit 4
+      with a specific message that does not contain the secret.
+- [x] F-42 `TokenStorage` (usable keyring extra, POSIX modes / Windows ACL file fallback).
+      `auth/storage.py` + `auth/winacl.py`. The Windows ACL logic is a pure parser tested on
+      every platform; the real `icacls` calls run only on Windows CI.
 
 **P3 — interactive login**
 - [ ] F-43 `drifter auth login|status|logout`, identity order pre-registered → CIMD →

@@ -33,6 +33,7 @@ from contextlib import AbstractAsyncContextManager
 from enum import Enum
 
 import anyio
+import httpx2
 from anyio.abc import CancelScope, ObjectSendStream
 from mcp.client.stdio import StdioServerParameters, stdio_client
 from mcp.client.streamable_http import streamable_http_client
@@ -59,7 +60,7 @@ MessageObserver = Callable[[Direction, "SessionMessage | Exception"], None]
 ServerTarget = StdioServerParameters | str
 
 
-def connect_to_server(server: ServerTarget) -> AbstractAsyncContextManager:
+def connect_to_server(server: ServerTarget, http_client: httpx2.AsyncClient | None = None) -> AbstractAsyncContextManager:
     """Picks the transport by the target's own type — a `str` is always a
     URL (Streamable HTTP), never mistaken for anything else, since
     `StdioServerParameters` is never itself a string. No sniffing of URL
@@ -68,15 +69,24 @@ def connect_to_server(server: ServerTarget) -> AbstractAsyncContextManager:
     Public (not `_`-prefixed): `cli/doctor.py`'s connectivity check needs
     the identical transport-selection logic `run_passthrough_proxy` uses
     below, not a second, separately-maintained copy of the same branch.
+
+    `http_client` (URL targets only) is a ready-made client, carrying
+    credentials, built by the caller (`cli/upstream.py`). It is a parameter
+    rather than something this module builds so that `record/` -- which
+    `replay/` imports -- never has to import the auth package (docs/SPEC.md
+    §5.2). `None` keeps the SDK's own default client, i.e. exactly the
+    unauthenticated behavior that existed before F-41. The caller owns the
+    client and closes it.
     """
     if isinstance(server, str):
-        return streamable_http_client(server)
+        return streamable_http_client(server, http_client=http_client)
     return stdio_client(server)
 
 
 async def run_passthrough_proxy(
     server: ServerTarget,
     on_message: MessageObserver | None = None,
+    http_client: httpx2.AsyncClient | None = None,
 ) -> None:
     """Connects to `server` (spawned locally over stdio, or a Streamable
     HTTP URL) and pipes frames to/from our own stdio, unmodified.
@@ -86,7 +96,7 @@ async def run_passthrough_proxy(
     the child process if it hasn't already exited, via the chosen
     transport's own shutdown sequence.
     """
-    async with connect_to_server(server) as (server_read, server_write):
+    async with connect_to_server(server, http_client) as (server_read, server_write):
         async with stdio_server() as (agent_read, agent_write):
             async with anyio.create_task_group() as tg:
                 tg.start_soon(_pump, agent_read, server_write, tg.cancel_scope, Direction.AGENT_TO_SERVER, on_message)

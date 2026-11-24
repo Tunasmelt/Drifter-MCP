@@ -55,13 +55,13 @@ from mcp_drifter.cli.config import (
     PolicyConfig,
     ServerConfig,
     load_config,
-    server_target,
     tasks_file_problem,
 )
+from mcp_drifter.auth.errors import UpstreamAuthRejected
 from mcp_drifter.cli.stats import resolve_runs_dir
+from mcp_drifter.cli.upstream import connect_upstream
 from mcp_drifter.policy.classify import Classification, classify_manifest
 from mcp_drifter.record.calibration import Calibration, load_calibration
-from mcp_drifter.record.proxy import connect_to_server
 from mcp_drifter.record.schema import ToolDescriptor
 from mcp_drifter.replay.coverage import estimate_coverage
 
@@ -102,16 +102,24 @@ async def _check_server(server: ServerConfig, timeout_seconds: float) -> ServerC
     # ExceptionGroup, not bare — confirmed empirically before writing this,
     # not assumed — since streamable_http_client only actually attempts a
     # connection once a real request is sent, deep inside the task group
-    # `connect_to_server`/`ClientSession.initialize` opens; `except*`
+    # `connect_upstream`/`ClientSession.initialize` opens; `except*`
     # handles both that and a plain (stdio-case) exception uniformly. PEP
     # 654 forbids `return` inside an `except*` block, so each clause sets
     # `failure` instead, returned once, after the try/except finishes.
     failure: ServerCheck | None = None
     try:
         with anyio.fail_after(timeout_seconds):
-            async with connect_to_server(server_target(server)) as (read, write):
+            async with connect_upstream(server) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
+    except* UpstreamAuthRejected as eg:
+        # F-41/F-44: the server answered 401/403 to the configured credentials. Said plainly,
+        # with the variable and the status, instead of the SDK's opaque error response.
+        failure = ServerCheck(server.name, False, str(eg.exceptions[0]))
+    except* ConfigError as eg:
+        # The configured credential cannot even be built (variable unset, auth type not
+        # supported yet): nothing was sent to the server.
+        failure = ServerCheck(server.name, False, str(eg.exceptions[0]))
     except* TimeoutError:
         failure = ServerCheck(
             server.name,
@@ -159,7 +167,7 @@ async def _fetch_manifest(server: ServerConfig, timeout_seconds: float) -> list[
     """
     try:
         with anyio.fail_after(timeout_seconds):
-            async with connect_to_server(server_target(server)) as (read, write):
+            async with connect_upstream(server) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
                     result = await session.list_tools()

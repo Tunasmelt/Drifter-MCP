@@ -42,10 +42,10 @@ import anyio
 import yaml
 from mcp import ClientSession
 
-from mcp_drifter.cli.config import ConfigError, ServerConfig, load_config, server_target
+from mcp_drifter.cli.config import ConfigError, ServerConfig, load_config
 from mcp_drifter.cli.observe import select_server
 from mcp_drifter.policy.classify import classify_manifest
-from mcp_drifter.record.proxy import connect_to_server
+from mcp_drifter.cli.upstream import connect_upstream
 from mcp_drifter.record.reader import read_session
 from mcp_drifter.record.redact import is_redaction_marker
 from mcp_drifter.record.schema import ToolCall, ToolDescriptor
@@ -135,7 +135,7 @@ async def _live_results(
     outcomes: list[tuple[str, dict | str]] = []
     server_info: dict[str, str] = {}
     with anyio.fail_after(timeout_s):
-        async with connect_to_server(server_target(server)) as (read, write):
+        async with connect_upstream(server) as (read, write):
             async with ClientSession(read, write) as session:
                 init = await session.initialize()
                 info = getattr(init, "server_info", None) or getattr(init, "serverInfo", None)
