@@ -1668,14 +1668,27 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
 #### Tasks
 
 **P1 — red tests and fixture before any auth code**
-- [ ] Local OAuth fixture under `tests/fixtures/oauth/`: a Streamable HTTP MCP server
+- [x] Local OAuth fixture under `tests/fixtures/oauth/`: a Streamable HTTP MCP server
       protected by the SDK's own server-side auth (`mcp.server.auth`:
       `create_auth_routes`, `TokenVerifier`) with an in-memory authorization server.
       Switchable modes: pre-registered client, CIMD-only, DCR-only, static bearer,
       client credentials, no-S256 metadata, issuer mismatch, short-lived tokens,
       refresh disabled, scope-dependent `tools/list`. No network, no third party.
-- [ ] F-47 canary test written and failing against a deliberately leaky stub.
-- [ ] Import-inspection test: nothing under `replay/` imports `auth/`.
+      Every mode is driven end to end by the SDK's OWN reference client auth in
+      `tests/auth/test_oauth_fixture.py`, with no Drifter auth code involved, and its
+      teardown is timed (CLAUDE.md async-shutdown rule).
+- [x] F-47 canary test written and failing against a deliberately leaky stub.
+      `tests/fixtures/oauth/canary_scan.py` is the detector (files and file names, log
+      records and tracebacks, exceptions with causes and groups, plain text; raw, URL-
+      encoded and base64 at all three alignments). `tests/auth/test_canary_scan.py` shows
+      it catches a stub that leaks on every channel and stays quiet on clean output. The
+      end-to-end F-47 test (login, observe, forced refresh/401/403) needs F-41–F-46 and
+      is written when they land.
+- [x] Import-inspection test: nothing under `replay/` imports `auth/`.
+      `tests/auth/test_replay_isolation.py` checks both `replay/`'s own files and the
+      module-level import chains out of it (see F-44: `replay_proxy` imports
+      `record.proxy`). Mutation-checked: an eager auth import in `record/proxy.py` fails
+      the transitive check, a lazy one passes, a direct one in `replay/` fails both.
 
 **P2 — config, storage, static token**
 - [ ] F-41 `servers[].auth` + `bearer_env`.

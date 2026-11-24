@@ -1068,7 +1068,11 @@ asserts no storage path resolves inside the project root.
 `state`, timing out (default 300 s). It triggers the flow by opening a session and
 calling `initialize`. Client identity order (docs/SPEC.md §5.2): pre-registered →
 CIMD → DCR → actionable error. Before redirecting, it refuses authorization-server
-metadata that omits `S256` from `code_challenge_methods_supported`. `status` prints per
+metadata that omits `S256` from `code_challenge_methods_supported` (the SDK would not:
+it sends S256 regardless, confirmed against the fixture's no-S256 mode). A configured
+`scopes` list must be applied by Drifter itself: the SDK chooses the requested scope
+from the `WWW-Authenticate` header, then the server's advertised scopes, and ignores the
+scope in its own client metadata (confirmed in `tests/auth/test_oauth_fixture.py`). `status` prints per
 server: auth type, token present, expiry, refreshable, granted scopes — never token
 material. `logout` deletes that server's stored tokens and client info.
 
@@ -1092,6 +1096,16 @@ provider used by `observe` and `doctor` has NO redirect or callback handler: if 
 maps that to exit `4` with "run `drifter auth login <server>`". A refresh happens
 silently. A 401 after one refresh attempt → exit `4`; a 403 `insufficient_scope` →
 exit `4` naming the missing scope. Nothing interactive ever writes to stdout.
+
+Two constraints found in P1 against the real SDK (`tests/auth/`). (1) The SDK refreshes
+only when its own stored expiry says the token is stale; a token the SERVER rejects early
+(revoked, clock skew) sends it through the full authorization flow, never a refresh. With
+no handler that path raises, so it must exit `4` with the login instruction, and "expired-
+but-refreshable" in the done criterion means stale by the stored expiry. (2)
+`replay/replay_proxy.py` imports `record/proxy.py`, which is where this feature lives, so
+`auth/` must be imported lazily inside the authenticated branch of `connect_to_server`
+(or live in its own module `replay/` does not import). An eager import there makes
+replay depend on auth and fails `tests/auth/test_replay_isolation.py`.
 
 **Simple:** recording a login-protected server now just works once you've signed in,
 and when the login has expired Drifter tells you exactly what to run instead of

@@ -6,6 +6,31 @@ not just a diff.
 
 ---
 
+## 0.3.0 P1 done: fixture, canary detector, replay-isolation guard
+
+All three P1 tasks are checked in PHASES.md; no auth code exists yet and the package is
+still 0.2.0. Driving the fixture with the SDK's own client before writing any Drifter auth
+code turned up three things the F-41–F-44 text did not say, now written into FEATURES:
+
+1. **Refresh is not what a server-side 401 triggers.** The SDK refreshes only when its own
+   stored expiry says the token is stale. A token the server rejects early gets a full
+   re-authorization instead. F-44's provider has no browser handler, so that path must end
+   in exit `4` with the login instruction; it was previously implied a refresh would run.
+2. **`servers[].auth.scopes` cannot be passed through.** The SDK ignores the scope in its
+   own client metadata. Drifter must apply the configured scopes itself (F-43).
+3. **The back door to `auth/` is `record/proxy.py`.** `replay_proxy.py` imports it, and
+   F-44 changes it. Requiring only that no `replay/` file imports `auth/` would pass while
+   replay still depended on auth through that edge. The test also checks module-level
+   import chains, so F-44 must import auth lazily (or in a separate module).
+
+Also confirmed rather than assumed: the SDK sends S256 to a server that never advertised
+it (so the refusal is Drifter's job, as §5.2 already said), and a root issuer must be
+advertised identically in protected-resource and authorization-server metadata (the SDK
+client compares them as exact strings; the fixture uses the trailing-slash form).
+Not decided here: how F-43 applies configured scopes. Calibration constants: none added.
+
+---
+
 ## CIMD document targets draft -03 (newer upstream docs checked 2026-11-23)
 
 The 0.3.0 plan was re-checked against the newest upstream docs before any auth code.
