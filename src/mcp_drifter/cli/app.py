@@ -168,6 +168,21 @@ def _build_parser() -> argparse.ArgumentParser:
     fixture_sub.choices["capture"].add_argument("--force", action="store_true", help="Overwrite an existing --output")
     fixture_sub.choices["check"].add_argument("--responses", type=Path, required=True, help="Response fixture YAML to verify")
 
+    auth_parser = subparsers.add_parser(
+        "auth", help="Log in to an OAuth-protected `url` server, show login state, or forget a login (F-43)"
+    )
+    auth_sub = auth_parser.add_subparsers(dest="auth_command", required=True)
+    login_parser = auth_sub.add_parser("login", help="Interactive browser login for one server (run this before `observe`)")
+    login_parser.add_argument("server", help="Server name from drifter.yaml")
+    login_parser.add_argument("--no-browser", action="store_true", help="Only print the URL; do not try to open a browser")
+    login_parser.add_argument("--timeout", type=float, default=None, help="Seconds to wait for the browser to finish (default 300)")
+    status_parser = auth_sub.add_parser("status", help="Show login state per server: never a token")
+    status_parser.add_argument("server", nargs="?", default=None, help="Limit to one server")
+    logout_parser = auth_sub.add_parser("logout", help="Delete the stored login for one server (does not revoke it at the server)")
+    logout_parser.add_argument("server", help="Server name from drifter.yaml")
+    for sub in (login_parser, status_parser, logout_parser):
+        sub.add_argument("--config", type=Path, default=Path("drifter.yaml"), help="Path to drifter.yaml")
+
     tasks_parser = subparsers.add_parser(
         "tasks", help="Mine recurring workflows from your recordings into task candidates, and approve them (F-28-F-30)"
     )
@@ -229,6 +244,10 @@ def main() -> None:
         except ConfigError as e:
             print(f"drifter observe: {e}", file=sys.stderr)
             raise SystemExit(4) from None  # docs/SPEC.md §12: exit code 4 = config/connectivity error
+    elif args.command == "auth":
+        from mcp_drifter.cli.auth_cmd import main_auth
+
+        main_auth(args)
     elif args.command == "stats":
         from mcp_drifter.cli.stats import run_stats
 

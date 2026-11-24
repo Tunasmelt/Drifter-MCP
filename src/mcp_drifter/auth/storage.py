@@ -37,19 +37,16 @@ import re
 import stat
 import sys
 import tempfile
-import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Literal, TypeVar
 from urllib.parse import urlsplit
 
-import anyio
-import anyio.from_thread
-import anyio.lowlevel
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from mcp_drifter.auth import winacl
+from mcp_drifter.auth.threads import run_in_daemon_thread
 
 logger = logging.getLogger(__name__)
 
@@ -114,39 +111,6 @@ def default_base_dir() -> Path:
 def _is_inside(path: Path, root: Path) -> bool:
     real, real_root = Path(os.path.realpath(path)), Path(os.path.realpath(root))
     return real == real_root or real_root in real.parents
-
-
-async def _run_in_daemon_thread(function: Callable[[], _T]) -> _T:
-    """Run blocking storage work off the event loop, so that cancelling it is prompt AND the
-    abandoned thread cannot keep the process alive.
-
-    A keyring call can block indefinitely (an unlock prompt nobody answers). `anyio.to_thread.
-    run_sync(abandon_on_cancel=True)` frees the event loop but its worker threads are NOT
-    daemons (they inherit the main thread's flag), so the interpreter would wait on the stuck
-    call forever at exit: the same shutdown-hang shape CLAUDE.md records for stdin reads.
-    A daemon thread of our own is simply dropped at exit. Proven with a real subprocess in
-    tests/auth/test_token_storage.py, not assumed. No timeout constant on purpose: the callers
-    already bound their waits (doctor's `fail_after`, the agent giving up on `observe`).
-    """
-    sender, receiver = anyio.create_memory_object_stream[tuple[bool, Any]](1)
-    token = anyio.lowlevel.current_token()
-
-    def work() -> None:
-        try:
-            outcome: tuple[bool, Any] = (True, function())
-        except BaseException as exc:  # relayed to the awaiting task, not lost with the thread
-            outcome = (False, exc)
-        try:
-            anyio.from_thread.run_sync(sender.send_nowait, outcome, token=token)
-        except Exception:  # the event loop is gone or the awaiter was cancelled: nobody is waiting
-            pass
-
-    threading.Thread(target=work, name="drifter-keyring", daemon=True).start()
-    with receiver:
-        ok, value = await receiver.receive()
-    if ok:
-        return value
-    raise value
 
 
 # --- what a summary may show ------------------------------------------------------------------------
@@ -226,10 +190,15 @@ class TokenStore:
         record = await self._run(self._load)
         return OAuthToken.model_validate(record["tokens"]) if record and record.get("tokens") else None
 
-    async def set_tokens(self, tokens: OAuthToken) -> None:
+    async def set_tokens(self, tokens: OAuthToken, *, issued_at: float | None = None) -> None:
+        """`issued_at` is when the server issued the token, if that was earlier than now (a login
+        that finishes in memory and is saved afterwards): the stored expiry is `issued_at +
+        expires_in`, not "now + expires_in", which would make the token look fresher than it is."""
+        moment = issued_at if issued_at is not None else time.time()
+
         def update(record: dict[str, Any]) -> None:
             record["tokens"] = tokens.model_dump(mode="json", exclude_none=True)
-            record["expires_at"] = time.time() + tokens.expires_in if tokens.expires_in is not None else None
+            record["expires_at"] = moment + tokens.expires_in if tokens.expires_in is not None else None
 
         await self._run(lambda: self._update(update))
 
@@ -276,7 +245,7 @@ class TokenStore:
 
     @staticmethod
     async def _run(function: Callable[[], _T]) -> _T:
-        return await _run_in_daemon_thread(function)
+        return await run_in_daemon_thread(function)
 
     def _load(self) -> dict[str, Any] | None:
         if self._requested != "file" and _keyring_unusable_reason() is None:

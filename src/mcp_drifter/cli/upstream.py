@@ -41,9 +41,9 @@ async def upstream_http_client(
         return
     if auth.type != "bearer_env":
         raise ConfigError(
-            f"server {server.name!r} uses auth type {auth.type!r}, which this build cannot log in "
-            "with yet (interactive login is not built); use `type: bearer_env` with a token in an "
-            "environment variable, or remove the `auth` block"
+            f"server {server.name!r} uses auth type {auth.type!r}. `drifter auth login` can store a login, but "
+            "observe, doctor and fixture cannot use a stored login yet; use `type: bearer_env` with a token in an "
+            "environment variable, or remove the `auth` block, for now"
         )
     try:
         headers = bearer_headers(auth, server.name, os.environ)

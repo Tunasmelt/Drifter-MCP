@@ -6,6 +6,39 @@ not just a diff.
 
 ---
 
+## 0.3.0 P3: F-43 `drifter auth login | status | logout` (CIMD document still waits on DEC-030)
+
+Built test-first in `auth/login.py`, `auth/callback.py`, `cli/auth_cmd.py`. Nothing reads the stored
+login yet (F-44, P4), so `observe` still refuses an `oauth` server. What building it established:
+
+1. **The SDK checks `state` only after the callback is consumed**, so a forged request to the
+   loopback port could have failed the login. The listener validates `state` first and ignores
+   anything else (wrong path or method, foreign `Host`, oversized or idle requests).
+2. **Configured scopes need pinning.** The SDK recomputes `client_metadata.scope` after discovery and
+   before registration, so for dynamic registration the wrong scope would be registered. A metadata
+   subclass that ignores the SDK's assignment pins it. This relies on how the SDK assigns the
+   attribute; `test_configured_scopes_are_what_gets_requested...` fails if that changes.
+3. **Only the resource URL was checked for cleartext**; the authorization server's own endpoints come
+   from the server's metadata. A cleartext `http://` authorization or token endpoint on a remote host
+   is now refused before anything is sent to it.
+4. **A login must not damage a working one**: it runs in memory and is saved only on success, which
+   also means each login registers afresh (the registered redirect URI includes the loopback port).
+5. **`status` echoed URLs as configured**, so `https://user:password@host/mcp` would have reached the
+   terminal; it now prints the canonical form.
+6. **Ctrl+C**: the wait is 300 s, so it was timed with a real SIGINT on a real process, not assumed:
+   about 0.13 s to exit 130, port released. The browser is opened on a daemon thread, because
+   `webbrowser.open` blocks on terminal browsers.
+
+**DEC-030 is still open** (which website origin hosts the CIMD document). `website/index.html`
+already declares `https://drifter-mcp.vercel.app/` as the site's canonical URL (`og:url`), which
+points to Vercel, but this is evidence, not a decision. `auth/identity.py` leaves the URL unset, so
+the CIMD path is built and tested against the fixture but real servers use dynamic registration
+until the origin is named and the document published. Known limit: the redirect URI always uses an
+OS-assigned loopback port, so a pre-registered `client_id` only works with servers that accept any
+loopback port.
+
+---
+
 ## 0.3.0 P2 done: F-41 `bearer_env` and F-42 token storage
 
 Both built, test-first, in `src/mcp_drifter/auth/` (new package, listed in `pyproject.toml`).

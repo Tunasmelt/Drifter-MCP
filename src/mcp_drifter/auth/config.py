@@ -20,6 +20,7 @@ documentation tells users to export the secret and name the variable, never the 
 
 from __future__ import annotations
 
+import ipaddress
 import re
 from typing import Literal
 
@@ -47,6 +48,19 @@ _REQUIRED_BY_TYPE: dict[str, frozenset[str]] = {
     "client_credentials": frozenset({"client_id", "secret_env"}),
 }
 _OPTIONAL_FIELDS = ("scopes", "client_id", "token_env", "secret_env")
+
+
+def is_loopback_host(host: str | None) -> bool:
+    """True only for `localhost` and literal loopback addresses. Parsed, not pattern-matched:
+    `localhost.evil.com`, `127.0.0.1.evil.com` and `localhost@evil.com` are remote hosts."""
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip("[]")).is_loopback
+    except ValueError:
+        return False
 
 
 def looks_like_an_environment_variable_name(value: str) -> bool:

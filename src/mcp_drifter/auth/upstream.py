@@ -14,6 +14,7 @@ import httpx2
 
 from mcp_drifter.auth.config import AuthConfig
 from mcp_drifter.auth.errors import AuthSetupError, UpstreamAuthRejected
+from mcp_drifter.auth.text import clean_server_text
 
 _VISIBLE_ASCII_RE = re.compile(r"^[\x21-\x7e]+$")  # no spaces, controls, or non-ASCII
 
@@ -44,20 +45,6 @@ def bearer_headers(auth: AuthConfig, server_name: str, environ: Mapping[str, str
 
 
 _CHALLENGE_PARAM_RE = re.compile(r'(\w+)="([^"]*)"')
-# What a challenge's `error` or `scope` may contain once it reaches a terminal: the characters real
-# values use (scope names, URLs as scopes), nothing a terminal would interpret, and a hard length cap.
-# The text comes from the server, which this tool is pointed at precisely because it may misbehave.
-_UNSAFE_CHALLENGE_CHARS_RE = re.compile(r"[^A-Za-z0-9_.:/+\- ]")
-_MAX_CHALLENGE_VALUE_LENGTH = 80
-
-
-def _clean_challenge_value(value: str | None) -> str | None:
-    if value is None:
-        return None
-    cleaned = _UNSAFE_CHALLENGE_CHARS_RE.sub("", value).strip()[:_MAX_CHALLENGE_VALUE_LENGTH]
-    return cleaned or None
-
-
 def rejection_hook(
     server_name: str,
     source: str,
@@ -85,7 +72,7 @@ def rejection_hook(
         if response.status_code not in (401, 403):
             return
         params = dict(_CHALLENGE_PARAM_RE.findall(response.headers.get("www-authenticate", "")))
-        error, scope = _clean_challenge_value(params.get("error")), _clean_challenge_value(params.get("scope"))
+        error, scope = clean_server_text(params.get("error")), clean_server_text(params.get("scope"))
         if response.status_code == 403 and error != "insufficient_scope":
             return
         rejection = UpstreamAuthRejected(server_name, source, response.status_code, error=error, scope=scope)
