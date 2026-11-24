@@ -231,3 +231,26 @@ async def test_nothing_the_connection_printed_or_raised_contains_a_secret(tmp_pa
         handle.state.expire_access_tokens()
         error = await _expect_rejected(handle, tmp_path)
         assert_no_leaks(scan_text("the rejection", f"{error}\n{error!r}", handle.state.all_secrets()))
+
+
+# --- found probing the connection adversarially -----------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_a_server_cannot_write_control_sequences_to_the_terminal_through_its_challenge(tmp_path):
+    async with serve_oauth_fixture(FixtureConfig()) as handle:
+        await log_in(handle, tmp_path / "config")
+        handle.state.force_status(401, challenge='Bearer error="invalid_token", error_description="\x1b[2Jcleared \x07bell"')
+        text = str(await _expect_rejected(handle, tmp_path))
+        assert not any(ord(c) < 0x20 for c in text), repr(text)
+
+
+@pytest.mark.anyio
+async def test_an_unreadable_token_file_is_a_login_instruction_not_a_traceback(tmp_path):
+    async with serve_oauth_fixture(FixtureConfig()) as handle:
+        store = await log_in(handle, tmp_path / "config")
+        store.file_path.write_text("this is not json", encoding="utf-8")
+        handle.state.requests.clear()
+        error = await _expect_rejected(handle, tmp_path)
+        assert "remote-crm" in str(error) and "auth logout" in str(error), str(error)
+        assert handle.state.requests == []
