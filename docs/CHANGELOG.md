@@ -42,7 +42,26 @@ Windows: the ACL check reads the ACL back through `icacls /save` (locale-indepen
 fails closed. Its judge is a pure function tested everywhere; the real `icacls` calls were
 written without a Windows machine and are verified only by Windows CI. A new optional extra,
 `mcp-drifter[keyring]`, was added (lockfile updated, `pip-audit` clean). No calibration constants
-were added: the deliberate absence of a keyring timeout is documented in `storage.py`.
+were added: the deliberate absence of a keyring timeout is documented in `storage.py`. The code
+does contain a few structural limits (variable names at most 64 characters, hex runs of 32+
+refused, challenge text capped at 80 characters); they are format and safety limits with their
+reasons next to them, not tuned thresholds.
+
+**Audit fixes (same PR).** A review of P2 found and fixed: a bearer token could be configured for
+plain `http://` to a remote host and sent in cleartext (now refused at load; loopback allowed); any
+403 ended the whole `observe` session, where only a 401 or an `insufficient_scope` 403 is a
+credential failure; the server's `WWW-Authenticate` text was printed unbounded and unescaped; a
+malformed port in a server URL crashed storage with a raw ValueError; a rejected variable name
+gave no hint how to proceed; and `doctor`'s new branches had no tests. Confirmed rather than
+assumed: the SDK does not follow a redirect to another origin, so the bearer cannot leave with
+one (tested with a second server that must receive nothing).
+
+Windows CI then found one more, the only failure in 1,247 tests: SDDL prints the built-in
+Administrator account as `LA` (and Guest as `LG`) instead of by SID, and the runner's user IS the
+built-in Administrator, so the privacy check judged the user's own ACL entry a stranger's and
+refused to store anything. The check now recognizes those two aliases, but only when they name the
+current user; for anyone else they remain a problem. Everything else about the `icacls` approach
+(the `/save` output format, the parsing, the commands) worked first time on a real Windows machine.
 
 ---
 

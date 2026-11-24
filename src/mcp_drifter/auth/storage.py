@@ -83,7 +83,10 @@ def canonical_server_url(url: str) -> str:
     host = (parts.hostname or "").lower()
     if ":" in host:  # IPv6 literal
         host = f"[{host}]"
-    port = parts.port
+    try:
+        port = parts.port
+    except ValueError as exc:  # the URL is not echoed: it may carry a user:password@
+        raise StorageError(f"the server URL is not valid ({exc})") from None
     netloc = host if port is None or port == _DEFAULT_PORTS.get(scheme) else f"{host}:{port}"
     path = parts.path.rstrip("/")
     query = f"?{parts.query}" if parts.query else ""

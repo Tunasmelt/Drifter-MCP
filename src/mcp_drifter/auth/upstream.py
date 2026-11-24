@@ -44,6 +44,18 @@ def bearer_headers(auth: AuthConfig, server_name: str, environ: Mapping[str, str
 
 
 _CHALLENGE_PARAM_RE = re.compile(r'(\w+)="([^"]*)"')
+# What a challenge's `error` or `scope` may contain once it reaches a terminal: the characters real
+# values use (scope names, URLs as scopes), nothing a terminal would interpret, and a hard length cap.
+# The text comes from the server, which this tool is pointed at precisely because it may misbehave.
+_UNSAFE_CHALLENGE_CHARS_RE = re.compile(r"[^A-Za-z0-9_.:/+\- ]")
+_MAX_CHALLENGE_VALUE_LENGTH = 80
+
+
+def _clean_challenge_value(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = _UNSAFE_CHALLENGE_CHARS_RE.sub("", value).strip()[:_MAX_CHALLENGE_VALUE_LENGTH]
+    return cleaned or None
 
 
 def rejection_hook(
@@ -51,7 +63,12 @@ def rejection_hook(
     source: str,
     on_rejected: Callable[[UpstreamAuthRejected], None] | None = None,
 ) -> Callable[[httpx2.Response], Awaitable[None]]:
-    """An httpx response hook that turns a 401 or 403 into `UpstreamAuthRejected`.
+    """An httpx response hook that turns a credential failure into `UpstreamAuthRejected`.
+
+    A credential failure is a 401, or a 403 whose challenge says `insufficient_scope` (the
+    credential's grant is wrong). An ordinary 403 ("not allowed to do THIS") is an answer the
+    agent should see, like any tool error, not a reason to end the session: raising on it would
+    kill an `observe` recording over one forbidden call (found by the P2 audit).
 
     `on_rejected` is called with the exception just before it is raised, and may not return:
     `drifter observe` passes a function that flushes the recording and exits the process,
@@ -68,9 +85,10 @@ def rejection_hook(
         if response.status_code not in (401, 403):
             return
         params = dict(_CHALLENGE_PARAM_RE.findall(response.headers.get("www-authenticate", "")))
-        rejection = UpstreamAuthRejected(
-            server_name, source, response.status_code, error=params.get("error"), scope=params.get("scope")
-        )
+        error, scope = _clean_challenge_value(params.get("error")), _clean_challenge_value(params.get("scope"))
+        if response.status_code == 403 and error != "insufficient_scope":
+            return
+        rejection = UpstreamAuthRejected(server_name, source, response.status_code, error=error, scope=scope)
         if on_rejected is not None:
             on_rejected(rejection)
         raise rejection

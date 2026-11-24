@@ -75,7 +75,8 @@ class AuthConfig(BaseModel):
             raise ValueError(
                 f"{info.field_name} must be the NAME of an environment variable (letters, digits and "
                 "underscores, not starting with a digit, such as CRM_TOKEN), never the secret itself. "
-                "Export the secret in your environment and name that variable here"
+                "Export the secret in your environment and name that variable here. If this really is a "
+                "variable name, rename it (UPPER_SNAKE_CASE is safest): long mixed-case names look like tokens"
             )
         return value
 

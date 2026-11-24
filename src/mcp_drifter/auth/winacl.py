@@ -45,6 +45,14 @@ _SAFE_SIDS = frozenset({"S-1-5-18", "S-1-5-32-544", "S-1-3-4", "S-1-3-0"})
 _ALLOW_TYPES = frozenset({"A", "OA", "XA", "ZA"})
 _DENY_TYPES = frozenset({"D", "OD", "XD"})
 _SID_RE = re.compile(r"^S-\d-\d+(-\d+)+$")
+# SDDL prints a few account SIDs by alias. These two name USER accounts (by their well-known RID), so they
+# are "us" only when we are that account. Found by Windows CI: the runner's user is the built-in
+# Administrator, so `icacls` printed the user's own entry as `LA` and it was judged a stranger.
+_ALIAS_BY_USER_RID = {"500": "LA", "501": "LG"}
+
+
+def _own_alias(user_sid: str) -> str | None:
+    return _ALIAS_BY_USER_RID.get(user_sid.rsplit("-", 1)[-1])
 
 
 def _split_aces(body: str) -> list[str] | None:
@@ -82,6 +90,7 @@ def acl_problems(dacl: str, user_sid: str) -> list[str]:
     if aces is None:
         return ["the DACL is malformed (unbalanced parentheses or stray text)"]
 
+    own_alias = _own_alias(user_sid)
     problems: list[str] = []
     for ace in aces:
         fields = ace.split(";")
@@ -96,7 +105,7 @@ def acl_problems(dacl: str, user_sid: str) -> list[str]:
             continue
         if not trustee:
             problems.append(f"{ace_type} entry with no trustee")
-        elif trustee == user_sid or trustee in _SAFE_ALIASES or trustee in _SAFE_SIDS:
+        elif trustee == user_sid or trustee == own_alias or trustee in _SAFE_ALIASES or trustee in _SAFE_SIDS:
             continue
         else:
             problems.append(f"{ace_type} entry grants access to {trustee}")

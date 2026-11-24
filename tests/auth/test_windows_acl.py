@@ -79,6 +79,28 @@ def test_anything_that_cannot_be_understood_is_a_problem_not_a_pass(dacl):
     assert acl_problems(dacl, USER), dacl
 
 
+# SDDL prints some accounts by alias instead of by SID. `LA` is the built-in Administrator account
+# (RID 500) and `LG` the Guest account (RID 501). Found by Windows CI: the GitHub runner's user IS the
+# built-in Administrator, so `icacls` showed the user's own entry as `LA` and the check called it a stranger.
+ADMIN_ACCOUNT = "S-1-5-21-1111111111-2222222222-3333333333-500"
+GUEST_ACCOUNT = "S-1-5-21-1111111111-2222222222-3333333333-501"
+
+
+@pytest.mark.parametrize("dacl", ["D:P(A;;FA;;;LA)", "D:PAI(A;;FA;;;LA)(A;;FA;;;SY)", "D:AI(A;ID;FA;;;LA)(A;OICIID;FA;;;LA)"])
+def test_the_built_in_administrator_account_is_recognized_as_itself_when_that_is_who_we_are(dacl):
+    assert acl_problems(dacl, ADMIN_ACCOUNT) == []
+
+
+def test_the_guest_account_is_recognized_as_itself_when_that_is_who_we_are():
+    assert acl_problems("D:P(A;;FA;;;LG)", GUEST_ACCOUNT) == []
+
+
+@pytest.mark.parametrize("alias, user", [("LA", USER), ("LG", USER), ("LA", GUEST_ACCOUNT), ("LG", ADMIN_ACCOUNT)])
+def test_those_aliases_are_a_problem_when_they_name_someone_else(alias, user):
+    problems = acl_problems(f"D:P(A;;FA;;;{user})(A;;FR;;;{alias})", user)
+    assert problems and any(alias in problem for problem in problems), problems
+
+
 # --- reading the icacls /save output -------------------------------------------------------------------------
 
 

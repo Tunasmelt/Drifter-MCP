@@ -156,7 +156,8 @@ class FixtureState:
     token_grants: list[str] = field(default_factory=list)  # grant_type of each /token request
     authorize_requests: int = 0
     registrations: int = 0
-    forced_statuses: list[int] = field(default_factory=list)
+    forced_statuses: list[tuple[int, str | None]] = field(default_factory=list)  # (status, WWW-Authenticate or None)
+    redirect_mcp_to: str | None = None  # answer every /mcp request with a 307 to this URL
     _counter: int = 0
 
     @property
@@ -197,10 +198,12 @@ class FixtureState:
         waiting on a clock the SDK's bearer middleware does not let a test control."""
         self.expired.update(self.access_tokens)
 
-    def force_status(self, status: int, times: int = 1) -> None:
+    def force_status(self, status: int, times: int = 1, challenge: str | None = None) -> None:
         """The next `times` requests to /mcp get this 401 or 403, whatever their token."""
         assert status in (401, 403)
-        self.forced_statuses.extend([status] * times)
+        # `challenge` overrides the WWW-Authenticate value: `"Bearer"` is a plain 403 (permission
+        # denied for this request), `None` is the default insufficient_scope / invalid_token one.
+        self.forced_statuses.extend([(status, challenge)] * times)
 
     def publish_client_document(self, url: str, document: dict[str, Any]) -> None:
         self.published_documents[url] = document
@@ -435,7 +438,11 @@ class _FixtureMiddleware:
             await send(message)
 
         if scope["path"] == MCP_PATH:
-            forced = state.forced_statuses.pop(0) if state.forced_statuses else None
+            if state.redirect_mcp_to is not None:
+                response = _json(307, {}, {"Location": state.redirect_mcp_to})
+                await response(scope, receive, recording_send)
+                return
+            forced, forced_challenge = state.forced_statuses.pop(0) if state.forced_statuses else (None, None)
             if forced is None and state.config.protection == "static_bearer":
                 expected = f"Bearer {state.static_bearer}"
                 if not secrets.compare_digest((record.authorization or "").encode(), expected.encode()):
@@ -443,7 +450,9 @@ class _FixtureMiddleware:
             if forced is not None:
                 error = "invalid_token" if forced == 401 else "insufficient_scope"
                 hint = "admin" if forced == 403 else None
-                if forced == 401 and state.config.protection == "static_bearer":
+                if forced_challenge is not None:
+                    www = forced_challenge
+                elif forced == 401 and state.config.protection == "static_bearer":
                     www = "Bearer"
                 else:
                     www = self._challenge(error, hint)

@@ -1045,9 +1045,14 @@ name, not tripping F-04's patterns, not a long run of hex digits; a secret that 
 plausible variable name gets through, which is why the docs say to export the secret and name
 the variable. `hide_input_in_errors` is set on the root config model, because pydantic
 otherwise prints `input_value=...` for every invalid field and a rejected secret would have
-been echoed to stderr (an agent's MCP log). The upstream's 401/403 is reported as a specific
+been echoed to stderr (an agent's MCP log). The upstream's rejection is reported as a specific
 error naming the variable and status (the SDK drops the status); with the agent still
-connected `observe` must hard-exit rather than unwind, see F-44.
+connected `observe` must hard-exit rather than unwind, see F-44. What counts as a rejection: a
+401, or a 403 whose challenge says `insufficient_scope`. An ordinary 403 is the agent's to see,
+like any tool error; ending the recording over one forbidden call was a bug found by the P2
+audit. Credentials are refused over plain `http://` to a remote host (cleartext); loopback is
+allowed. Text from the server's challenge is stripped to safe characters and capped before it
+is printed.
 
 ### F-42 Token storage (`TokenStorage`)
 

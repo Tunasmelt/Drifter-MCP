@@ -37,8 +37,10 @@ into what `record/proxy.py` actually consumes.
 
 from __future__ import annotations
 
+import ipaddress
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
 import yaml
 from mcp.client.stdio import StdioServerParameters
@@ -47,6 +49,19 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 from mcp_drifter.auth.config import AuthConfig
 from mcp_drifter.evaluate.assertions import TaskAssertions
 from mcp_drifter.mine.candidates import CandidateFileError, approved_entries, read_candidates
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    """True only for `localhost` and literal loopback addresses. Parsed, not pattern-matched:
+    `localhost.evil.com`, `127.0.0.1.evil.com` and `localhost@evil.com` are remote hosts."""
+    if not host:
+        return False
+    if host.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(host.strip("[]")).is_loopback
+    except ValueError:
+        return False
 
 
 class ServerConfig(BaseModel):
@@ -106,6 +121,22 @@ class ServerConfig(BaseModel):
             raise ValueError(
                 f"server {self.name!r} must declare exactly one of `command` (local, stdio) or "
                 "`url` (a real, network-reachable Streamable HTTP endpoint), not both or neither"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _url_port_is_valid_and_credentials_are_not_sent_in_cleartext(self) -> "ServerConfig":
+        if self.url is None:
+            return self
+        parts = urlsplit(self.url)
+        try:
+            parts.port
+        except ValueError:
+            raise ValueError(f"server {self.name!r} has a url with an invalid port; it must be a number from 0 to 65535") from None
+        if self.auth is not None and self.auth.type != "none" and parts.scheme == "http" and not _is_loopback_host(parts.hostname):
+            raise ValueError(
+                f"server {self.name!r} would send credentials in cleartext: its url is plain http:// to a remote host. "
+                "Use https://, or remove the `auth` block (plain http is accepted only for loopback, e.g. 127.0.0.1)"
             )
         return self
 
