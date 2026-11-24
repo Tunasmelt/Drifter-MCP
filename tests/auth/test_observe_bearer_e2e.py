@@ -214,6 +214,7 @@ def test_an_oauth_server_with_no_stored_login_exits_4_telling_the_user_to_log_in
     config = _project(tmp_path, '    url: "https://mcp.example.com/mcp"\n    auth:\n      type: oauth\n')
     env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "LOCALAPPDATA")}
     env["XDG_CONFIG_HOME"] = env["LOCALAPPDATA"] = str(tmp_path / "empty-config")
+    env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"  # never touch a real keyring
     result = subprocess.run([*OBSERVE, "--config", str(config)], capture_output=True, text=True, cwd=tmp_path, timeout=60, input="", env=env)
     assert result.returncode == 4, (result.stdout, result.stderr)
     assert "drifter auth login remote-crm" in result.stderr, result.stderr

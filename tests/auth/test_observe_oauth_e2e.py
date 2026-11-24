@@ -47,6 +47,10 @@ def _env(tmp_path: Path) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if k not in ("CRM_TOKEN", "XDG_CONFIG_HOME", "LOCALAPPDATA")}
     env["XDG_CONFIG_HOME"] = str(_config_dir(tmp_path))
     env["LOCALAPPDATA"] = str(_config_dir(tmp_path))
+    # The login under test is stored in a file in the per-test config directory. Without this a machine with
+    # a usable keyring (a Windows runner) would move the refreshed login into the REAL keyring and these
+    # tests would both fail to see it and leave entries behind (found by Windows CI).
+    env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"
     return env
 
 
