@@ -1686,9 +1686,12 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
       DCR, S256 refusal, loopback callback with `state` check and timeout.
 - [ ] CIMD document published on the website at a fixed URL, loopback `redirect_uris`
       (DEC-030 confirmed). One canonical origin (Pages or Vercel, not both),
-      served as a static file from `website/public/`, which Vite copies verbatim. Verify at least one real authorization server
-      accepts a loopback redirect on an arbitrary port before relying on it — an
-      assumption until checked.
+      served as a static file from `website/public/`, which Vite copies verbatim.
+      Shaped to CIMD draft -03 (docs/SPEC.md §5.2): non-root path, normalized URL,
+      no token-endpoint auth properties. A test reads the committed file and asserts
+      `client_id` equals the canonical URL exactly. CIMD -03 now permits any port on
+      a loopback redirect, so this is allowed by the draft — but still verify one real
+      authorization server accepts it, since servers may still implement -00.
 
 **P4 — wiring, errors, fingerprint**
 - [ ] F-44 authed `http_client` in `connect_to_server`; refresh; exit-4 paths.
