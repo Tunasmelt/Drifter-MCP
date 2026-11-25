@@ -55,10 +55,10 @@ table and docs/PHASES.md for gate-level narrative.
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
 | F-40 | `parameter_rename` mutation operator | ✅ Built | `mutate/parameter_rename.py` — the third Level 0/1 operator, added specifically to give F-12 a real inverse to resolve against (neither F-16 nor F-17 can: schema-immune / no prior recording respectively). Closed-set, deterministic snake_case→camelCase, exactly one property per tool |
-| F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ✅ Built (P2) | Typed, strict `auth` block; `bearer_env` works end to end; `oauth` / `client_credentials` parse but are refused (exit 4) until F-43–F-45 exist, never run unauthenticated |
-| F-42 | Token storage (`TokenStorage`) | ✅ Built (P2), not yet used | Usable keyring extra, else private file (POSIX modes / verified Windows ACL) outside the project (DEC-029). Also stores the absolute token expiry, which F-44 needs |
-| F-43 | `drifter auth login` / `status` / `logout` | ✅ Built (P3), CIMD URL pending DEC-030 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR. Nothing uses the stored login until F-44 |
-| F-44 | Authenticated upstream connection | ❌ Not built — 0.3.0 | `observe`/`doctor` pass an authed `http_client` to `streamable_http_client`; silent refresh; fail fast (exit 4) with no interactive flow |
+| F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ✅ Built (P2) | Typed, strict `auth` block; `bearer_env` works end to end; `oauth` uses a stored login (F-44); `client_credentials` parses but is refused (exit 4) until F-45 exists, never run unauthenticated |
+| F-42 | Token storage (`TokenStorage`) | ✅ Built (P2), used by F-43 and F-44 | Usable keyring extra, else private file (POSIX modes / verified Windows ACL) outside the project (DEC-029). Also stores the absolute token expiry, which F-44 needs |
+| F-43 | `drifter auth login` / `status` / `logout` | ✅ Built (P3), CIMD URL pending DEC-030 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR. `observe`, `doctor` and `fixture` use the stored login (F-44) |
+| F-44 | Authenticated upstream connection | ✅ Built (P4) | `observe`, `doctor` and `fixture` use the stored login through a non-interactive provider (no redirect/callback handler); silent refresh; every other failure is exit 4 saying what to run |
 | F-45 | Non-interactive auth (client credentials / private-key JWT) | ❌ Not built — 0.3.0 | In 0.3.0 per DEC-031 (confirmed) |
 | F-46 | Auth-aware fingerprint + `doctor` auth checks | ❌ Not built — 0.3.0 | Fingerprint records auth type + GRANTED scopes, never a token; doctor walks PRM → AS metadata → S256 → token → scopes |
 | F-47 | Token non-disclosure guarantee | ❌ Not built — 0.3.0, red-test-first | Canary token must never reach JSONL, raw frames, logs, exception text or `.drifter/`. Same discipline as F-04 |
@@ -1166,6 +1166,18 @@ crashing or hanging.
 token; expired-but-refreshable succeeds; expired-unrefreshable, wrong-audience and
 insufficient-scope each fail with exit `4` and a specific message; a test proves the
 non-interactive provider is constructed with no redirect/callback handler.
+
+**Built (P4).** `auth/session.py`'s `StoredLoginProvider` restores the stored expiry (constraint 3),
+refreshes silently through the SDK, and turns every other failure into
+`UpstreamAuthRejected.login_needed` ("run `drifter auth login <server>`"): no stored login, an expired
+login that cannot refresh, a refresh the server refuses, a request to start a new authorization. It is
+checked eagerly (`check_usable`) so `observe` exits 4 before reading any stdin. A 401 on the MCP URL is
+turned into the same instruction by the response hook BEFORE the SDK can discover, register or authorize
+(constraint 1); the hook ignores the token endpoint's own 401s. A 403 `insufficient_scope` names the scope
+and `auth.scopes`; an ordinary 403 stays an answer for the agent. "Wrong audience" has no distinct signal
+in the protocol: it is a 401 `invalid_token`, and the server's own `error_description` is shown (sanitized).
+`ServerConfig.project_root` is stamped by `load_config` so the connector can enforce F-42's
+never-inside-the-project rule without threading the config path through `doctor`/`fixture`.
 
 ### F-45 Non-interactive auth (client credentials / private-key JWT)
 

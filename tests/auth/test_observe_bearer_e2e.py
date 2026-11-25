@@ -210,8 +210,11 @@ def test_a_literal_secret_in_token_env_exits_4_and_the_secret_is_not_printed(tmp
     assert secret[:12] not in result.stdout + result.stderr
 
 
-def test_an_oauth_server_exits_4_until_login_exists_rather_than_running_unauthenticated(tmp_path):
+def test_an_oauth_server_with_no_stored_login_exits_4_telling_the_user_to_log_in(tmp_path):
     config = _project(tmp_path, '    url: "https://mcp.example.com/mcp"\n    auth:\n      type: oauth\n')
-    result = subprocess.run([*OBSERVE, "--config", str(config)], capture_output=True, text=True, cwd=tmp_path, timeout=60, input="")
+    env = {k: v for k, v in os.environ.items() if k not in ("XDG_CONFIG_HOME", "LOCALAPPDATA")}
+    env["XDG_CONFIG_HOME"] = env["LOCALAPPDATA"] = str(tmp_path / "empty-config")
+    env["PYTHON_KEYRING_BACKEND"] = "keyring.backends.fail.Keyring"  # never touch a real keyring
+    result = subprocess.run([*OBSERVE, "--config", str(config)], capture_output=True, text=True, cwd=tmp_path, timeout=60, input="", env=env)
     assert result.returncode == 4, (result.stdout, result.stderr)
-    assert "oauth" in result.stderr and "remote-crm" in result.stderr, result.stderr
+    assert "drifter auth login remote-crm" in result.stderr, result.stderr

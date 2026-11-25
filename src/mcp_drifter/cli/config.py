@@ -43,7 +43,7 @@ from urllib.parse import urlsplit
 
 import yaml
 from mcp.client.stdio import StdioServerParameters
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, ValidationError, field_validator, model_validator
 
 from mcp_drifter.auth.config import AuthConfig, is_loopback_host
 from mcp_drifter.evaluate.assertions import TaskAssertions
@@ -68,6 +68,13 @@ class ServerConfig(BaseModel):
     # while this was only `extra="allow"`, an `auth:` block was silently accepted and ignored.
     # None means "no auth block"; `auth: {type: none}` is the explicit spelling of the same.
     auth: AuthConfig | None = None
+    # Where drifter.yaml lives, stamped by `load_config`: the token store must never be inside it (F-42),
+    # and the commands that connect upstream would otherwise each have to thread the config path through.
+    _project_root: Path | None = PrivateAttr(default=None)
+
+    @property
+    def project_root(self) -> Path | None:
+        return self._project_root
 
     @field_validator("command")
     @classmethod
@@ -520,6 +527,9 @@ def load_config(path: Path | None = None, *, merge_tasks: bool = True) -> Drifte
         config = DrifterConfig.model_validate(data)
     except ValidationError as e:
         raise ConfigError(f"{path} is invalid: {e}") from e
+    root = path.resolve().parent
+    for server in config.servers:
+        server._project_root = root
     if merge_tasks:
         _merge_approved_tasks(config, path)
     return config

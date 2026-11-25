@@ -115,9 +115,9 @@ async def test_a_missing_variable_is_a_config_error_raised_before_any_connection
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("auth_type, extra", [("oauth", {}), ("client_credentials", {"client_id": "c", "secret_env": "S"})])
-async def test_oauth_types_are_refused_loudly_until_login_exists_never_run_unauthenticated(auth_type, extra):
-    """F-43/F-44/F-45 are not built yet. A configured-but-unsupported auth type must STOP, not
+@pytest.mark.parametrize("auth_type, extra", [("client_credentials", {"client_id": "c", "secret_env": "S"})])
+async def test_auth_types_without_a_connection_yet_are_refused_loudly_never_run_unauthenticated(auth_type, extra):
+    """F-45 is not built yet (F-43 and F-44 are: `oauth` uses a stored login). A configured-but-unsupported auth type must STOP, not
     quietly connect with no credentials, which is what `extra="allow"` did for every `auth:` key."""
     server = ServerConfig.model_validate(
         {"name": "remote-crm", "url": "https://mcp.example.com/mcp", "auth": {"type": auth_type, **extra}}

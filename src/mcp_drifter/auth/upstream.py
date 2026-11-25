@@ -49,6 +49,9 @@ def rejection_hook(
     server_name: str,
     source: str,
     on_rejected: Callable[[UpstreamAuthRejected], None] | None = None,
+    *,
+    applies_to: Callable[[httpx2.Request], bool] | None = None,
+    advice: Callable[[int, str | None], str] | None = None,
 ) -> Callable[[httpx2.Response], Awaitable[None]]:
     """An httpx response hook that turns a credential failure into `UpstreamAuthRejected`.
 
@@ -63,6 +66,10 @@ def rejection_hook(
     blocked in a thread (see tests/auth/test_observe_rejection.py). Callers that only want the
     exception (`doctor`) pass nothing.
 
+    `applies_to` restricts the hook to some requests (an OAuth connection also talks to a token
+    endpoint, whose 401 means something else); `advice(status, scope)` replaces the default "what to
+    check" sentence, for credentials that have a command to fix them.
+
     Installed only when `auth` is configured, so an unauthenticated server fails exactly as it
     always did. Reads the status and the `error` and `scope` parameters of the `WWW-Authenticate`
     challenge (what the server asks for), never the request headers and never the body.
@@ -71,11 +78,22 @@ def rejection_hook(
     async def hook(response: httpx2.Response) -> None:
         if response.status_code not in (401, 403):
             return
+        if applies_to is not None and not applies_to(response.request):
+            return
         params = dict(_CHALLENGE_PARAM_RE.findall(response.headers.get("www-authenticate", "")))
         error, scope = clean_server_text(params.get("error")), clean_server_text(params.get("scope"))
+        description = clean_server_text(params.get("error_description"), 160)
         if response.status_code == 403 and error != "insufficient_scope":
             return
-        rejection = UpstreamAuthRejected(server_name, source, response.status_code, error=error, scope=scope)
+        rejection = UpstreamAuthRejected(
+            server_name,
+            source,
+            response.status_code,
+            error=error,
+            scope=scope,
+            description=description,
+            advice=advice(response.status_code, scope) if advice is not None else None,
+        )
         if on_rejected is not None:
             on_rejected(rejection)
         raise rejection

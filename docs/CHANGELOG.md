@@ -6,6 +6,34 @@ not just a diff.
 
 ---
 
+## 0.3.0 P4 (part 1): F-44 authenticated upstream connection
+
+`observe`, `doctor` and `fixture` now connect to an `oauth` server with the login `drifter auth login`
+stored. Built test-first in `auth/session.py` and the `oauth` branch of `cli/upstream.py`. F-46 and
+F-45 are the rest of P4 and are not in this change. What building it established:
+
+1. **`observe` hung on a provider-originated failure.** The first end-to-end run of "no stored login"
+   with an agent attached hung: the error came from the provider, not the response hook, so
+   `exit_on_upstream_rejection` never ran (the third occurrence of CLAUDE.md's stdin-thread shape).
+   The provider now calls `on_rejected` before raising, and the login is also checked before the proxy
+   reads any stdin, so a missing login exits 4 at once even when the agent never speaks.
+2. **The rejection hook must not judge the token endpoint.** An OAuth client talks to more than the MCP
+   URL; a 401 from the token endpoint means "client authentication failed", not "your token is bad". The
+   hook takes `applies_to` and only the MCP URL's responses count.
+3. **A 401 must be intercepted before the SDK sees it.** The SDK answers a 401 with discovery,
+   registration and authorization, which an unattended process must never start. The test records the
+   fixture's traffic and asserts the only request after a rejection is the one that was refused.
+4. **"Wrong audience" is not a distinct protocol signal.** It is a 401 `invalid_token`. The message now
+   carries the server's own `error_description` (sanitized, capped at 160), which is the only place the
+   server says why.
+5. **Three older tests pinned the P3 behavior** ("`oauth` is refused until login exists") and were
+   rewritten to the new contract; `client_credentials` stays refused until F-45.
+6. Mutation checks: not restoring the stored expiry, ignoring a refused refresh, scoping the hook to
+   nothing, skipping `on_rejected`, and giving the provider a callback handler each fail the test meant
+   to catch them.
+
+---
+
 ## 0.3.0 P3: F-43 `drifter auth login | status | logout` (CIMD document still waits on DEC-030)
 
 Built test-first in `auth/login.py`, `auth/callback.py`, `cli/auth_cmd.py`. Nothing reads the stored

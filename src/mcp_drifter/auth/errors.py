@@ -20,22 +20,53 @@ class UpstreamAuthRejected(Exception):
     the transport's task group wraps it in.
     """
 
-    def __init__(self, server: str, source: str, status: int, error: str | None = None, scope: str | None = None) -> None:
+    def __init__(
+        self,
+        server: str,
+        source: str,
+        status: int | None,
+        error: str | None = None,
+        scope: str | None = None,
+        description: str | None = None,
+        advice: str | None = None,
+        reason: str | None = None,
+    ) -> None:
         self.server = server
         self.source = source
-        self.status = status
+        self.status = status  # None: Drifter itself decided the credentials were unusable, no request was made
         self.error = error
         self.scope = scope
+        self.description = description
+        self.advice = advice
+        self.reason = reason
         super().__init__(self._describe())
 
+    @classmethod
+    def login_needed(cls, server: str, reason: str, advice: str | None = None) -> "UpstreamAuthRejected":
+        """No usable stored login, decided locally (nothing was sent): `reason` says why, and the message
+        says what to run."""
+        return cls(
+            server,
+            "the stored login",
+            None,
+            reason=reason,
+            advice=advice or f"run `drifter auth login {server}`",
+        )
+
     def _describe(self) -> str:
+        if self.status is None:
+            return f"{self.server!r}: {self.reason}; {self.advice}"
         verb = "rejected" if self.status == 401 else "refused"
         detail = [f"HTTP {self.status}"]
         if self.error:
             detail.append(f"error={self.error}")
+        if self.description:
+            detail.append(f"the server said {self.description!r}")
         if self.scope:
             detail.append(f"it asks for scope {self.scope!r}")
-        if self.status == 401:
+        if self.advice:
+            advice = self.advice
+        elif self.status == 401:
             advice = f"the token is missing, expired or not valid for this server; check {self.source}"
         else:
             advice = f"the credentials were understood but are not permitted to do this; check {self.source} and its scopes"
