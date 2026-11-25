@@ -46,6 +46,7 @@ from urllib.parse import parse_qs, urlparse
 
 import anyio
 import httpx2
+import jwt as pyjwt
 import mcp_types as types
 import uvicorn
 from mcp.server.auth.middleware.auth_context import get_access_token
@@ -63,6 +64,8 @@ from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions, Re
 from mcp.server.lowlevel import Server
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import AnyHttpUrl, AnyUrl
 from sse_starlette.sse import AppStatus
 from starlette.responses import JSONResponse
@@ -157,6 +160,8 @@ class FixtureState:
     issued_secrets: list[str] = field(default_factory=list)
     requests: list[RequestRecord] = field(default_factory=list)
     token_grants: list[str] = field(default_factory=list)  # grant_type of each /token request
+    assertion_claims: list[dict[str, Any]] = field(default_factory=list)  # verified private_key_jwt assertions
+    _machine_key: str | None = None
     authorize_requests: int = 0
     registrations: int = 0
     forced_statuses: list[tuple[int, str | None]] = field(default_factory=list)  # (status, WWW-Authenticate or None)
@@ -180,6 +185,23 @@ class FixtureState:
         return f"{self.canary}-client-secret"
 
     @property
+    def machine_private_key_pem(self) -> str:
+        """The machine client's RSA private key, for `private_key_jwt`; generated once per fixture."""
+        if self._machine_key is None:
+            key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            self._machine_key = key.private_bytes(
+                serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+            ).decode()
+        return self._machine_key
+
+    @property
+    def machine_public_key_pem(self) -> str:
+        key = serialization.load_pem_private_key(self.machine_private_key_pem.encode(), password=None)
+        return key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode()
+
+    @property
     def static_bearer(self) -> str:
         return f"{self.canary}-static-bearer"
 
@@ -194,7 +216,9 @@ class FixtureState:
         The bare canary comes first: every secret starts with it, so a token that was truncated
         or masked after the prefix still contains it and is caught."""
         fixed = [self.machine_client_secret, self.static_bearer]
-        return [self.canary, *fixed, *self.issued_secrets]
+        # The private key is scanned by its distinctive base64 body, not the PEM armor every key shares.
+        key_body = "".join(self.machine_private_key_pem.splitlines()[1:-1])[:64] if self._machine_key else None
+        return [self.canary, *fixed, *self.issued_secrets, *([key_body] if key_body else [])]
 
     def expire_access_tokens(self) -> None:
         """Server-side expiry: every access token issued so far now gets a 401, without
@@ -391,6 +415,8 @@ class _TokenEndpoint:
         state = self.provider.state
         if not state.config.client_credentials:
             return _json(400, {"error": "unsupported_grant_type"})
+        if "client_assertion" in form:
+            return self._assertion_client_credentials(form)
         client_id, client_secret = form.get("client_id"), form.get("client_secret")
         if authorization and authorization.lower().startswith("basic "):
             try:
@@ -402,6 +428,36 @@ class _TokenEndpoint:
             (client_secret or "").encode(), state.machine_client_secret.encode()
         ):
             return _json(401, {"error": "invalid_client"})
+        requested = form.get("scope", "").split() or ["read"]
+        if any(s not in ALL_SCOPES for s in requested):
+            return _json(400, {"error": "invalid_scope"})
+        token = self.provider._issue(MACHINE_CLIENT_ID, requested, form.get("resource"), with_refresh=False)
+        return _json(200, token.model_dump(mode="json", exclude_none=True))
+
+
+    def _assertion_client_credentials(self, form: dict[str, str]) -> JSONResponse:
+        """RFC 7523 §2.2 client authentication: a JWT signed with the machine client's key, whose audience is
+        the authorization server's ISSUER and which can be used once."""
+        state = self.provider.state
+        assertion = form["client_assertion"]
+        state.issued_secrets.append(assertion)  # a JWT is a credential: the leak scan hunts for it too
+        if form.get("client_assertion_type") != "urn:ietf:params:oauth:client-assertion-type:jwt-bearer":
+            return _json(401, {"error": "invalid_client"})
+        try:
+            claims = pyjwt.decode(
+                assertion,
+                state.machine_public_key_pem,
+                algorithms=["RS256"],
+                audience=state.issuer,
+                options={"require": ["iss", "sub", "aud", "exp", "jti"]},
+            )
+        except pyjwt.PyJWTError as exc:
+            return _json(401, {"error": "invalid_client", "error_description": type(exc).__name__})
+        if claims["iss"] != MACHINE_CLIENT_ID or claims["sub"] != MACHINE_CLIENT_ID:
+            return _json(401, {"error": "invalid_client"})
+        if any(seen["jti"] == claims["jti"] for seen in state.assertion_claims):
+            return _json(401, {"error": "invalid_client", "error_description": "assertion replayed"})
+        state.assertion_claims.append(claims)
         requested = form.get("scope", "").split() or ["read"]
         if any(s not in ALL_SCOPES for s in requested):
             return _json(400, {"error": "invalid_scope"})

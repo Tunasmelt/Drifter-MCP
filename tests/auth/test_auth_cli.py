@@ -198,7 +198,7 @@ async def test_status_can_be_limited_to_one_server_and_lists_every_url_server_by
         ('  - name: remote-crm\n    url: "https://mcp.example.com/mcp"\n    auth:\n      type: bearer_env\n      token_env: CRM_TOKEN\n', ["bearer_env", "CRM_TOKEN", "no login"]),
         ('  - name: remote-crm\n    url: "https://mcp.example.com/mcp"\n', ["no `auth` block", "type: oauth"]),
         ('  - name: remote-crm\n    url: "https://mcp.example.com/mcp"\n    auth:\n      type: none\n', ["type: none", "oauth"]),
-        ('  - name: remote-crm\n    url: "https://mcp.example.com/mcp"\n    auth:\n      type: client_credentials\n      client_id: c\n      secret_env: S\n', ["client_credentials", "interactive"]),
+        ('  - name: remote-crm\n    url: "https://mcp.example.com/mcp"\n    auth:\n      type: client_credentials\n      client_id: c\n      issuer: https://auth.example.com/\n      secret_env: S\n', ["client_credentials", "no login to perform", "S"]),
     ],
     ids=["stdio", "bearer_env", "no-auth-block", "type-none", "client_credentials"],
 )

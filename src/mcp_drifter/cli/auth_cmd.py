@@ -62,7 +62,10 @@ def _login_target(config: DrifterConfig, name: str) -> ServerConfig:
             f"environment variable {auth.token_env}"
         )
     if auth.type == "client_credentials":
-        raise ConfigError(f"server {name!r} uses client_credentials, which does not log in interactively and is not built yet")
+        raise ConfigError(
+            f"server {name!r} uses auth type 'client_credentials', so there is no login to perform: it exchanges "
+            f"{auth.secret_env or auth.private_key_env} for a token each time drifter connects"
+        )
     return server
 
 

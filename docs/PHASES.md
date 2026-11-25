@@ -1732,7 +1732,8 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
       share it. Tests: `tests/auth/test_stored_login.py`, `test_observe_oauth_e2e.py`.
 - [ ] F-46 schema/hash compatibility first, then fingerprint `auth_type` +
       `granted_scopes`, cohort/comparison updates and auth-type-specific doctor checks.
-- [ ] F-45 client credentials / private-key JWT (DEC-031: in 0.3.0).
+- [x] F-45 client credentials / private-key JWT (DEC-031: in 0.3.0). Built: `auth/service.py`, the
+      `client_credentials` branch of `cli/upstream.py`. Tests: `tests/auth/test_service_credentials.py`.
 
 **P5 — dogfood and release**
 - [ ] One real, public, OAuth-protected MCP server, chosen and its metadata checked

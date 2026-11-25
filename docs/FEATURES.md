@@ -55,11 +55,11 @@ table and docs/PHASES.md for gate-level narrative.
 | F-38 | HTTP agent adapter | ✅ Built, twice-audited | v1, four real bugs found and fixed; final-answer capture is scope beyond the literal ask (see CHANGELOG) |
 | F-39 | HTTP real-server connection | ✅ Built | `record/proxy.py`'s `connect_to_server` picks `streamable_http_client`/`stdio_client` by the target's own type; `cli/config.py`'s `ServerConfig.url` mutually exclusive with `command`; `drifter observe`/`drifter doctor` both give actionable errors (not a raw `ExceptionGroup`) on an unreachable url |
 | F-40 | `parameter_rename` mutation operator | ✅ Built | `mutate/parameter_rename.py` — the third Level 0/1 operator, added specifically to give F-12 a real inverse to resolve against (neither F-16 nor F-17 can: schema-immune / no prior recording respectively). Closed-set, deterministic snake_case→camelCase, exactly one property per tool |
-| F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ✅ Built (P2) | Typed, strict `auth` block; `bearer_env` works end to end; `oauth` uses a stored login (F-44); `client_credentials` parses but is refused (exit 4) until F-45 exists, never run unauthenticated |
+| F-41 | Upstream auth config (`servers[].auth`) + `bearer_env` | ✅ Built (P2) | Typed, strict `auth` block; `bearer_env` works end to end; `oauth` uses a stored login (F-44); `client_credentials` uses a service credential (F-45); every auth type either connects with its credential or stops, never unauthenticated |
 | F-42 | Token storage (`TokenStorage`) | ✅ Built (P2), used by F-43 and F-44 | Usable keyring extra, else private file (POSIX modes / verified Windows ACL) outside the project (DEC-029). Also stores the absolute token expiry, which F-44 needs |
 | F-43 | `drifter auth login` / `status` / `logout` | ✅ Built (P3), CIMD URL pending DEC-030 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR. `observe`, `doctor` and `fixture` use the stored login (F-44) |
 | F-44 | Authenticated upstream connection | ✅ Built (P4) | `observe`, `doctor` and `fixture` use the stored login through a non-interactive provider (no redirect/callback handler); silent refresh; every other failure is exit 4 saying what to run |
-| F-45 | Non-interactive auth (client credentials / private-key JWT) | ❌ Not built — 0.3.0 | In 0.3.0 per DEC-031 (confirmed) |
+| F-45 | Non-interactive auth (client credentials / private-key JWT) | ✅ Built (P4) | `client_secret` (`secret_env`) or signed assertion (`private_key_env`); `issuer` required; in-memory token, no TTY, nothing stored |
 | F-46 | Auth-aware fingerprint + `doctor` auth checks | ❌ Not built — 0.3.0 | Fingerprint records auth type + GRANTED scopes, never a token; doctor walks PRM → AS metadata → S256 → token → scopes |
 | F-47 | Token non-disclosure guarantee | ❌ Not built — 0.3.0, red-test-first | Canary token must never reach JSONL, raw frames, logs, exception text or `.drifter/`. Same discipline as F-04 |
 | F-48 | Record + config schema freeze | ❌ Not built — 1.0.0 | Record `schema_version` "0.1" → "1.0", reader keeps reading "0.1"; `drifter.yaml` `version: 1` enforced |
@@ -1183,7 +1183,18 @@ never-inside-the-project rule without threading the config path through `doctor`
 
 **Technical:** `type: client_credentials` builds the SDK's
 `ClientCredentialsOAuthProvider` (secret from `secret_env`) or
-`PrivateKeyJWTOAuthProvider`. No browser, no stored refresh token required — for CI.
+`PrivateKeyJWTOAuthProvider` (unencrypted PEM from `private_key_env`, signed with
+`signing_algorithm`, default RS256). No browser, no stored refresh token required — for CI.
+
+**Built (P4):** `auth/service.py` and the `client_credentials` branch of `cli/upstream.py`.
+`issuer` is REQUIRED: credentials go only to the authorization server the config names, never to
+whichever one the MCP server's metadata points at, and never over cleartext `http` (loopback
+excepted). The token is held in memory for the run; nothing is stored, so `auth login`/`status`
+have nothing to do for this type. A refused client, a mismatched issuer or an unusable
+secret/key each end in exit 4 naming the environment VARIABLE (never its value); the token
+endpoint's own error text is scrubbed of this client's secret and assertions. The hook that turns a
+401 into an error applies only to requests that carried the issued token, because the first,
+unauthenticated 401 is what starts the exchange.
 
 **Simple:** a way to log in from a CI pipeline, where nobody can click "Allow" in a
 browser.

@@ -6,6 +6,51 @@ not just a diff.
 
 ---
 
+## 0.3.0 P4 (part 2): F-45 client credentials / private-key JWT
+
+`type: client_credentials` now connects, for CI: no browser, no stored login, no TTY. Built test-first in
+`auth/service.py` and a branch of `cli/upstream.py`; `observe`, `doctor` and `fixture` share it. F-46 is the
+rest of P4. Decisions and what building it established:
+
+1. **`issuer` is required, and is a new config field.** Both SDK providers accept an optional `issuer` and
+   deprecate omitting it, because without it the MCP server's own metadata decides which authorization server
+   receives the client's credentials. A CI secret is exactly what that would hand to the wrong party, so the
+   config must name it. SPEC §11's example block gains `issuer`; omitting it is a config error, not a warning.
+2. **`private_key_env` and `signing_algorithm` are new fields; the secret flavour keeps `secret_env`.** SPEC §5.2
+   and F-45 named `PrivateKeyJWTOAuthProvider` but gave the config no key. Exactly one of `secret_env` /
+   `private_key_env` is required. `private_key_env` holds an unencrypted PEM; `signing_algorithm` defaults to
+   `RS256`, accepts the asymmetric JWS names only (never `none` or HMAC), and is checked against the key type
+   before any request (an RSA key with `ES256` fails at connect with the variable named). A PEM flattened onto
+   one line with literal `\n` (common in CI secret stores) is accepted.
+3. **Credentials only ever go over `https`.** The SDK posts to whatever `token_endpoint` the metadata
+   advertises; the provider refuses a cleartext one that is not loopback, before anything is sent (the probe
+   showed the secret heading for `http://auth.example.com` before this guard).
+4. **A server can reflect what it received.** The token endpoint's `error` and `error_description` are shown
+   to the user (sanitized, capped); the client secret, and every assertion minted, are scrubbed from them first.
+5. **The rejection hook applies only to requests that carried a token.** The first request is unauthenticated
+   and is answered 401 by design; that 401 is what starts the token exchange, so F-44's "intercept every 401"
+   rule would have stopped F-45 before it began. A 401 on a request that DID carry the issued token is reported
+   once (no retry loop) with the server's `error_description`; a 403 `insufficient_scope` names the scope and
+   `auth.scopes`. Not retried: a token revoked mid-run ends the run, which is right for a CI job.
+6. **A subclass cannot just override `_perform_authorization`.** The SDK's failures (`OAuthFlowError`,
+   `OAuthTokenError`) come from several places in its flow, so the provider wraps the whole flow generator and
+   translates them to `UpstreamAuthRejected` (and calls `on_rejected` first, as F-44's provider does). The
+   wrapper must `aclose()` the inner generator itself: left to the event loop's finalizer, the SDK's lock is
+   released from another task and raises. A mutation check that removes it fails the rejection test.
+7. **Nothing is stored.** Tokens live in a process-local `MemoryStorage`; the tests assert the user config
+   directory is never created and that nothing under the project contains the F-47 canary (secret, key
+   fragment, token or assertion) in files, stderr or what the agent sees. `drifter auth login` for this type now
+   says there is no login to perform instead of "not built yet".
+8. **Older tests pinned "refused until F-45"** and were rewritten: they now assert the unset-variable failure
+   names the variable and connects nothing.
+9. Mutation checks: dropping the scrub, the cleartext guard, `issuer` pass-through, the "carried a token"
+   predicate, the generator `aclose()` and the `RS256` default each fail the test meant to catch them.
+
+Not done here: a token endpoint that never answers still waits for the HTTP client's timeout, and with an
+agent attached `observe` waits with it (the same open question as an unreachable `url` upstream).
+
+---
+
 ## 0.3.0 P4 (part 1): F-44 authenticated upstream connection
 
 `observe`, `doctor` and `fixture` now connect to an `oauth` server with the login `drifter auth login`
@@ -27,7 +72,7 @@ F-45 are the rest of P4 and are not in this change. What building it established
    carries the server's own `error_description` (sanitized, capped at 160), which is the only place the
    server says why.
 5. **Three older tests pinned the P3 behavior** ("`oauth` is refused until login exists") and were
-   rewritten to the new contract; `client_credentials` stays refused until F-45.
+   rewritten to the new contract; `client_credentials` stayed refused until F-45 (now built, see above).
 6. Mutation checks: not restoring the stored expiry, ignoring a refused refresh, scoping the hook to
    nothing, skipping `on_rejected`, and giving the provider a callback handler each fail the test meant
    to catch them.

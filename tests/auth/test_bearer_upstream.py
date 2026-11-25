@@ -115,17 +115,22 @@ async def test_a_missing_variable_is_a_config_error_raised_before_any_connection
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("auth_type, extra", [("client_credentials", {"client_id": "c", "secret_env": "S"})])
-async def test_auth_types_without_a_connection_yet_are_refused_loudly_never_run_unauthenticated(auth_type, extra):
-    """F-45 is not built yet (F-43 and F-44 are: `oauth` uses a stored login). A configured-but-unsupported auth type must STOP, not
-    quietly connect with no credentials, which is what `extra="allow"` did for every `auth:` key."""
+async def test_a_client_credentials_server_with_its_variable_unset_stops_instead_of_running_unauthenticated(monkeypatch):
+    """The rule F-41 set stays: a configured credential that cannot be used must STOP the connection, never let it
+    proceed with no credentials (which is what `extra="allow"` did for every `auth:` key). F-45 made
+    `client_credentials` usable; with its variable unset it fails naming the variable."""
+    monkeypatch.delenv("DRIFTER_TEST_CI_SECRET", raising=False)
     server = ServerConfig.model_validate(
-        {"name": "remote-crm", "url": "https://mcp.example.com/mcp", "auth": {"type": auth_type, **extra}}
+        {
+            "name": "remote-crm",
+            "url": "https://mcp.example.com/mcp",
+            "auth": {"type": "client_credentials", "client_id": "c", "issuer": "https://auth.example.com/", "secret_env": "DRIFTER_TEST_CI_SECRET"},
+        }
     )
     with pytest.raises(ConfigError) as failure:
         async with upstream_http_client(server):
             pytest.fail("must not connect")
-    assert auth_type in str(failure.value) and "remote-crm" in str(failure.value)
+    assert "DRIFTER_TEST_CI_SECRET" in str(failure.value) and "remote-crm" in str(failure.value)
 
 
 # --- against the fixture's static-bearer mode ----------------------------------------------------
