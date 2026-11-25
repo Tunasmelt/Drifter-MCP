@@ -20,29 +20,45 @@ import json
 from mcp_drifter.record.schema import Environment, SessionStart
 
 
+def normalize_scopes(scopes: list[str] | None) -> list[str] | None:
+    """Sorted, de-duplicated scope names; `None` (an UNKNOWN grant) stays `None`, an empty grant stays `[]`."""
+    return None if scopes is None else sorted(set(scopes))
+
+
 def compute_fingerprint(
     agent_identity: str | None,
     model_name: str | None,
     server_versions: dict[str, str],
     tool_manifest_hash: str | None,
+    auth_type: str | None = None,
+    granted_scopes: list[str] | None = None,
 ) -> str:
-    """Hashes the four identity components into one fingerprint.
+    """Hashes the identity components into one fingerprint.
+
+    FORMULA EVOLUTION (F-46, docs/SPEC.md §6): with `auth_type=None` the hashed document is exactly the
+    four-key one 0.2.0 wrote, so every recorded fingerprint stays valid and a new unauthenticated session
+    hashes identically to an old one. Only when `auth_type` is set are `auth_type` and `granted_scopes`
+    added; a known grant is sorted and de-duplicated, an unknown grant hashes as JSON null and an empty
+    one as `[]`, so the three states never collide.
 
     Deterministic regardless of server_versions' insertion order — it's
     sorted before hashing. Prefixed like tool_manifest_hash's own
     `sha256:` convention (docs/SPEC.md §6) so a fingerprint reads as "one of
     these hashes," not an opaque blob.
     """
-    canonical = json.dumps(
-        {
-            "agent_identity": agent_identity,
-            "model_name": model_name,
-            "server_versions": dict(sorted(server_versions.items())),
-            "tool_manifest_hash": tool_manifest_hash,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-    )
+    document = {
+        "agent_identity": agent_identity,
+        "model_name": model_name,
+        "server_versions": dict(sorted(server_versions.items())),
+        "tool_manifest_hash": tool_manifest_hash,
+    }
+    if auth_type is None:
+        if granted_scopes is not None:
+            raise ValueError("granted_scopes was given without an auth_type; a grant belongs to an auth type")
+    else:
+        document["auth_type"] = auth_type
+        document["granted_scopes"] = normalize_scopes(granted_scopes)
+    canonical = json.dumps(document, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -66,14 +82,23 @@ def build_environment(
     model_name: str | None,
     server_versions: dict[str, str],
     tool_manifest_hash: str | None,
+    *,
+    auth_type: str | None = None,
+    granted_scopes: list[str] | None = None,
 ) -> Environment:
-    """Builds a fully-populated Environment, fingerprint included."""
+    """Builds a fully-populated Environment, fingerprint included. `auth_type=None` is an unauthenticated
+    session and writes no auth fields; see `compute_fingerprint` for the three grant states."""
+    fingerprint = compute_fingerprint(
+        agent_identity, model_name, server_versions, tool_manifest_hash, auth_type, granted_scopes
+    )
     return Environment(
         agent_identity=agent_identity,
         model_name=model_name,
         server_versions=server_versions,
         tool_manifest_hash=tool_manifest_hash,
-        fingerprint=compute_fingerprint(agent_identity, model_name, server_versions, tool_manifest_hash),
+        fingerprint=fingerprint,
+        auth_type=auth_type,
+        granted_scopes=normalize_scopes(granted_scopes) if auth_type is not None else None,
     )
 
 
@@ -104,6 +129,17 @@ def diff_environments(a: Environment, b: Environment, compare_manifest: bool = T
         va, vb = a.server_versions.get(server), b.server_versions.get(server)
         if va != vb:
             diffs.append(f"server {server!r} version: {va!r} != {vb!r}")
+
+    # F-46. The grant is compared even when the manifest is exempt: a mutation changes the manifest, never the
+    # grant. Absent auth_type means `none` (every pre-0.3.0 session), so legacy and new unauthenticated agree.
+    if a.auth_type != b.auth_type:
+        diffs.append(f"auth_type: {a.auth_type or 'none'!r} != {b.auth_type or 'none'!r}")
+    elif a.auth_type is not None:
+        scopes_a, scopes_b = normalize_scopes(a.granted_scopes), normalize_scopes(b.granted_scopes)
+        if scopes_a != scopes_b:
+            shown_a = "unknown" if scopes_a is None else repr(scopes_a)
+            shown_b = "unknown" if scopes_b is None else repr(scopes_b)
+            diffs.append(f"granted_scopes: {shown_a} != {shown_b}")
 
     if compare_manifest and not diffs and a.fingerprint != b.fingerprint:
         # No tracked sub-field differs, yet the fingerprints do — schema

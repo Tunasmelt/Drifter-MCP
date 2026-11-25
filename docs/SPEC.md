@@ -254,7 +254,7 @@ Never inside the project or `.drifter/` (DEC-029, confirmed; F-42).
 **Recording consequence:** a server may list different tools depending on granted
 scopes. The session fingerprint (F-05) therefore records the auth type and the GRANTED
 scope set — never a token, client secret or authorization code — so corpora recorded
-under different scopes are distinguishable (F-46). F-46 must specify schema/hash
+under different scopes are distinguishable (F-46, built; §6 "Fingerprint evolution"). F-46 must specify schema/hash
 evolution before writing new fields: sessions with no `auth` block write no auth
 fields (pre-0.3.0 sessions are provably unauthenticated, so absent means `none`, not
 unknown), old hashes and legacy comparisons remain stable, and comparison/cohort logic must handle auth
@@ -278,6 +278,21 @@ recorded from commit one): `references` (data-flow between calls), `result_prove
 
 Rule for every other field: record it only if it cannot be derived later from what *is*
 recorded (e.g. `signature` is computed at read time, not stored).
+
+**Fingerprint evolution (F-46, 0.3.0).** `schema_version` stays `"0.1"`: `environment` gains two OPTIONAL
+fields, `auth_type` and `granted_scopes` (never a token, secret or code: the type and scope NAMES only), and an
+older reader ignores them (`environment` allows extra keys). They have three states, never collapsed:
+no fields at all (every pre-0.3.0 session and every session against an unauthenticated server: provably
+unauthenticated, so absent means `none`, not unknown); `auth_type` with a list of scopes (a KNOWN grant,
+stored sorted and de-duplicated, possibly empty); `auth_type` with `granted_scopes: null` (an UNKNOWN grant, an
+opaque static bearer token, written as an explicit null). The fingerprint formula is versioned by shape: with no
+`auth_type` the hashed document is exactly the four-key one 0.2.0 wrote, so every recorded fingerprint stays
+valid and an old and a new unauthenticated session hash identically; with an `auth_type`, `auth_type` and
+`granted_scopes` are added to it (null and `[]` hash differently). Comparison (`diff_environments`, the baseline
+cohort key, the effect-size environment check) treats the grant as part of the environment, including when the
+tool manifest is exempt (a mutation changes the manifest, never the grant): different auth types, different
+scope sets, and known-vs-unknown all differ; two unknown grants of the same type compare as before, because
+they share the same blindness (§15 limitation 24).
 
 Redaction default: `result_shape` (type, keys, length) only — never payloads. Secrets
 pattern-matched and redacted in arguments and headers by default.
@@ -1558,3 +1573,12 @@ when*.
     and an unknown code is correctly not treated as `-31003`. The raw mirror shows the code
     was `-31003`. The fix therefore applies to new recordings only; S2's historical result
     stays 3/4 valid.
+
+24. **A grant comparison is a drift check, not proof of authorization (F-46).** MCP tools expose no
+    per-tool required scope, so `doctor` and the fingerprint can say that the scopes granted now differ from
+    the ones a recording was made under, never that a given tool was or was not authorized. Two sessions that
+    both used an opaque static bearer token have an UNKNOWN grant each and still compare as equal (blocking every
+    `bearer_env` comparison forever would make the type unusable), so a token swapped for one with different
+    rights between two runs is not detected. A token response with no `scope` and no requested scope is also
+    unknown. Replay sessions carry no auth fields (replay is offline and unauthenticated), so the two arms of a
+    `drifter run` always agree; grant drift is caught where the corpus is aggregated, not between arms.

@@ -67,6 +67,36 @@ def _service_advice(auth):
     return advice
 
 
+class UpstreamGrant:
+    """What `observe` records about the credential it connected with (F-46): the auth type, and the scopes
+    the server GRANTED, read from the token the connection actually holds.
+
+    The type comes from the config, so it is known before anything is sent; the scopes only exist once the
+    provider has a token, so they are read when asked (the recorder asks when it writes SessionStart, after the
+    first requests have been answered), never captured early. `None` from `granted_scopes()` is an UNKNOWN
+    grant (an opaque static token, or a token response with no `scope`), which is not an empty one.
+    Never exposes a token: only scope names leave this object.
+    """
+
+    def __init__(self, server: ServerConfig) -> None:
+        auth = server.auth
+        self.auth_type: str | None = None if server.url is None or auth is None or auth.type == "none" else auth.type
+        self._provider = None
+        self.snapshot_scopes: list[str] | None = None
+
+    def bind(self, provider) -> None:
+        self._provider = provider
+
+    def snapshot(self) -> None:
+        """Remembers the scopes granted right now, for a caller that reads them after the connection is gone."""
+        self.snapshot_scopes = self.granted_scopes()
+
+    def granted_scopes(self) -> list[str] | None:
+        tokens = getattr(getattr(self._provider, "context", None), "current_tokens", None)
+        scope = getattr(tokens, "scope", None)
+        return None if scope is None else sorted(set(scope.split()))
+
+
 @asynccontextmanager
 async def upstream_http_client(
     server: ServerConfig,
@@ -74,6 +104,7 @@ async def upstream_http_client(
     *,
     store: TokenStore | None = None,
     project_root: Path | None = None,
+    grant: UpstreamGrant | None = None,
 ) -> AsyncIterator[httpx2.AsyncClient | None]:
     """Yields the `httpx2` client to connect with, or `None` for "use the SDK's default".
 
@@ -101,6 +132,8 @@ async def upstream_http_client(
                 raise ConfigError(str(exc)) from None
         provider = StoredLoginProvider(server.url, store, server_name=server.name, on_rejected=on_rejected)
         await provider.check_usable()
+        if grant is not None:
+            grant.bind(provider)
         client = create_mcp_http_client(auth=provider)
         client.event_hooks = {
             "request": [],
@@ -122,6 +155,8 @@ async def upstream_http_client(
             provider = service_provider(auth, server.url, server.name, os.environ, on_rejected)
         except AuthSetupError as exc:
             raise ConfigError(str(exc)) from None
+        if grant is not None:
+            grant.bind(provider)
         credential = auth.secret_env or auth.private_key_env
         client = create_mcp_http_client(auth=provider)
         client.event_hooks = {
@@ -160,12 +195,13 @@ async def connect_upstream(
     *,
     store: TokenStore | None = None,
     project_root: Path | None = None,
+    grant: UpstreamGrant | None = None,
 ) -> AsyncIterator:
     """`connect_to_server` for a configured server: transport chosen by the config, credentials
     attached when the config asks for them. Yields the `(read, write)` stream pair."""
-    async with upstream_http_client(server, on_rejected, store=store, project_root=project_root) as http_client:
+    async with upstream_http_client(server, on_rejected, store=store, project_root=project_root, grant=grant) as http_client:
         async with connect_to_server(server_target(server), http_client) as streams:
             yield streams
 
 
-__all__ = ["connect_upstream", "upstream_http_client"]
+__all__ = ["UpstreamGrant", "connect_upstream", "upstream_http_client"]

@@ -118,3 +118,84 @@ def test_the_manifest_difference_the_mutation_introduces_is_permitted(tmp_path):
     effect = compute_behavior_effect_size(baseline, mutated)
 
     assert effect.verdict == "NO_REGRESSION"
+
+
+# --- F-46: the grant is part of the environment --------------------------------------------------------------
+# A server may list different tools under different scopes, so sessions recorded under different grants are
+# different experiments. Written before the cohort key and the comparison learned about auth.
+
+
+def _authed(dir_path: Path, sid: str, **auth) -> Path:
+    dir_path.mkdir(parents=True, exist_ok=True)
+    env = build_environment("claude-code/1.0", None, {"drifter-replay-srv": ""}, "sha256:m", **auth)
+    lines = [
+        SessionStart(session_id=sid, seq=0, started_at="2026-09-15T00:00:00Z", environment=env, raw_frame_offset=0).model_dump_json(),
+        ToolCall(session_id=sid, seq=1, timestamp="2026-09-15T00:00:01Z", server="srv", tool_name="a", arguments={},
+                 result_shape={"type": "object"}, is_error=False, duration_ms=1.0, fault=False, raw_frame_offset=1).model_dump_json(),
+    ]
+    path = dir_path / f"{sid}.jsonl"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_sessions_recorded_under_a_different_grant_are_excluded_from_the_arm_naming_the_scopes(tmp_path):
+    same = [_authed(tmp_path, f"s{i}", auth_type="oauth", granted_scopes=["read"]) for i in range(3)]
+    wide = _authed(tmp_path, "wide", auth_type="oauth", granted_scopes=["read", "admin"])
+
+    result = aggregate_baseline_runs("t", [*same, wide])
+
+    assert result.valid_runs == 3
+    (excluded,) = result.excluded_runs
+    assert excluded.session_id == "wide" and "environment differs" in excluded.reason
+    assert "granted_scopes: ['admin', 'read'] != ['read']" in excluded.reason, excluded.reason
+
+
+def test_scope_order_does_not_split_a_cohort(tmp_path):
+    paths = [
+        _authed(tmp_path, "a", auth_type="oauth", granted_scopes=["read", "write"]),
+        _authed(tmp_path, "b", auth_type="oauth", granted_scopes=["write", "read"]),
+        _authed(tmp_path, "c", auth_type="oauth", granted_scopes=["read", "write", "read"]),
+    ]
+    result = aggregate_baseline_runs("t", paths)
+    assert result.valid_runs == 3 and result.excluded_runs == []
+
+
+def test_legacy_and_new_unauthenticated_sessions_share_one_cohort(tmp_path):
+    legacy = [_session(tmp_path, f"old{i}") for i in range(2)]  # built without auth: byte-for-byte what 0.2.0 wrote
+    new = [_authed(tmp_path, f"new{i}") for i in range(2)]  # `_authed` with no auth kwargs: a 0.3.0 unauthenticated run
+    result = aggregate_baseline_runs("t", [*legacy, *new])
+    assert result.valid_runs == 4 and result.excluded_runs == []
+
+
+def test_an_unauthenticated_session_does_not_join_an_authenticated_cohort(tmp_path):
+    authed = [_authed(tmp_path, f"a{i}", auth_type="oauth", granted_scopes=["read"]) for i in range(3)]
+    bare = _authed(tmp_path, "bare")
+    result = aggregate_baseline_runs("t", [*authed, bare])
+    assert result.valid_runs == 3
+    assert "auth_type: 'none' != 'oauth'" in result.excluded_runs[0].reason, result.excluded_runs[0].reason
+
+
+def test_an_unknown_grant_does_not_join_a_known_cohort_and_says_unknown(tmp_path):
+    known = [_authed(tmp_path, f"k{i}", auth_type="bearer_env", granted_scopes=["read"]) for i in range(3)]
+    unknown = _authed(tmp_path, "u", auth_type="bearer_env", granted_scopes=None)
+    result = aggregate_baseline_runs("t", [*known, unknown])
+    assert result.valid_runs == 3
+    assert "granted_scopes: unknown != ['read']" in result.excluded_runs[0].reason, result.excluded_runs[0].reason
+
+
+def _auth_arm(tmp_path: Path, name: str, n: int = 20, **auth):
+    return aggregate_baseline_runs(name, [_authed(tmp_path / name, f"{name}{i}", **auth) for i in range(n)])
+
+
+def test_arms_recorded_under_different_grants_cannot_be_compared(tmp_path):
+    baseline = _auth_arm(tmp_path, "base", auth_type="oauth", granted_scopes=["read"])
+    mutated = _auth_arm(tmp_path, "mut", auth_type="oauth", granted_scopes=["read", "admin"])
+    effect = compute_behavior_effect_size(baseline, mutated)
+    assert effect.verdict == "UNKNOWN"
+    assert "different environments" in effect.reason and "granted_scopes" in effect.reason, effect.reason
+
+
+def test_arms_under_the_same_grant_still_compare(tmp_path):
+    baseline = _auth_arm(tmp_path, "base", auth_type="oauth", granted_scopes=["read"])
+    mutated = _auth_arm(tmp_path, "mut", auth_type="oauth", granted_scopes=["read"])
+    assert compute_behavior_effect_size(baseline, mutated).verdict == "NO_REGRESSION"

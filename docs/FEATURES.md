@@ -60,7 +60,7 @@ table and docs/PHASES.md for gate-level narrative.
 | F-43 | `drifter auth login` / `status` / `logout` | ✅ Built (P3), CIMD URL pending DEC-030 | Interactive auth code + PKCE via the SDK's `OAuthClientProvider`; loopback callback; identity order pre-registered → CIMD → DCR. `observe`, `doctor` and `fixture` use the stored login (F-44) |
 | F-44 | Authenticated upstream connection | ✅ Built (P4) | `observe`, `doctor` and `fixture` use the stored login through a non-interactive provider (no redirect/callback handler); silent refresh; every other failure is exit 4 saying what to run |
 | F-45 | Non-interactive auth (client credentials / private-key JWT) | ✅ Built (P4) | `client_secret` (`secret_env`) or signed assertion (`private_key_env`); `issuer` required; in-memory token, no TTY, nothing stored |
-| F-46 | Auth-aware fingerprint + `doctor` auth checks | ❌ Not built — 0.3.0 | Fingerprint records auth type + GRANTED scopes, never a token; doctor walks PRM → AS metadata → S256 → token → scopes |
+| F-46 | Auth-aware fingerprint + `doctor` auth checks | ✅ Built (P4) | Fingerprint records auth type + GRANTED scopes, never a token; legacy hashes unchanged; cohort/comparison compare the grant; doctor reports login, discovery, S256, issuer and grant drift per credential type |
 | F-47 | Token non-disclosure guarantee | ❌ Not built — 0.3.0, red-test-first | Canary token must never reach JSONL, raw frames, logs, exception text or `.drifter/`. Same discipline as F-04 |
 | F-48 | Record + config schema freeze | ❌ Not built — 1.0.0 | Record `schema_version` "0.1" → "1.0", reader keeps reading "0.1"; `drifter.yaml` `version: 1` enforced |
 | F-49 | CLI public-API contract | ❌ Not built — 1.0.0 | `drifter --version`; commands, flags, exit codes documented as semver API; deprecation policy |
@@ -1231,6 +1231,15 @@ is a specific `[FAIL]`/`[WARN]` with the next command to run.
 **Simple:** recordings remember which permissions they were made with (a server can
 show different tools to different permission levels), and `doctor` tells you which
 step of the login chain is broken.
+
+**Built (P4):** `record/fingerprint.py` (formula evolution; `normalize_scopes`), `record/schema.py`
+(`Environment.auth_type` / `granted_scopes`, absent when unauthenticated), `record/writer.py` (the grant is
+read when SessionStart is written, via plain values so `record/` stays free of `auth/`),
+`cli/upstream.py` (`UpstreamGrant`), `evaluate/baseline.py` (cohort key), and `auth/diagnose.py` with
+`cli/doctor.py`. `doctor` prints one `auth '<server>' <check>` line per check: `login` (oauth), `credential`
+(client_credentials, bearer_env), `discovery`, `pkce` (oauth only), `issuer` (client_credentials only) and
+`grant`; a FAIL exits 4, a WARN does not. Building it also showed that the SDK replaces a configured scope
+with the server's choice; the F-45 provider now pins `auth.scopes`.
 
 **Depends on:** F-05, F-37, F-44.
 **Done when:** two sessions recorded under different scope sets carry different

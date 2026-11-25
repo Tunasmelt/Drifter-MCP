@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_serializer
 
 SCHEMA_VERSION = "0.1"
 
@@ -99,6 +99,23 @@ class Environment(BaseModel):
     # it later would require re-deriving identity from data we chose not to
     # keep once shape-only redaction has already applied.
     fingerprint: str | None = None
+    # F-46 (docs/SPEC.md §6, "Fingerprint evolution"). THREE states, never collapsed:
+    #   auth_type None                  no auth fields written at all: every pre-0.3.0 session and every session
+    #                                   against an unauthenticated server (provably unauthenticated, not unknown);
+    #   auth_type set, scopes a list    a KNOWN grant, possibly the empty list;
+    #   auth_type set, scopes None      an UNKNOWN grant (an opaque static bearer token), written as an explicit null.
+    # Never a token, secret or code: the type and the scope NAMES only.
+    auth_type: str | None = None
+    granted_scopes: list[str] | None = None
+
+    @model_serializer(mode="wrap")
+    def _omit_auth_when_unauthenticated(self, handler):
+        data = handler(self)
+        if self.auth_type is None:
+            # Absent, not null, so a 0.3.0 recording of an unauthenticated server is byte-identical to a 0.2.0 one.
+            data.pop("auth_type", None)
+            data.pop("granted_scopes", None)
+        return data
 
 
 class ToolDescriptor(BaseModel):

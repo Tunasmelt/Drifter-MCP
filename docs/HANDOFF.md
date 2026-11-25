@@ -44,7 +44,7 @@ reasoning along the way (e.g. the O4 operator correction, v1.0.3).
 - **HTTP exists (F-38/F-39); authentication is partly built.** `url` servers can use a static
   token (`auth: {type: bearer_env, token_env: NAME}`, F-41) and token storage exists (F-42), but
   `drifter auth login | status | logout` exist (F-43), and `observe`, `doctor` and `fixture` use a stored
-  login (F-44). `client_credentials` (F-45) connects for CI with `secret_env` or `private_key_env` and a required `issuer`. Planned for 0.3.0 (SPEC.md §5.2, F-43–F-47). Don't let
+  login (F-44). recordings carry the auth type and GRANTED scopes and `doctor` prints auth checks (F-46); `client_credentials` (F-45) connects for CI with `secret_env` or `private_key_env` and a required `issuer`. Planned for 0.3.0 (SPEC.md §5.2, F-43–F-47). Don't let
   marketing copy get ahead of what's actually built.
 - **Drifter is its own OAuth client; it never forwards the agent's token.** Tokens are
   audience-bound, so passthrough can't work, and under stdio there's no agent token

@@ -127,8 +127,12 @@ class _Refusals:
     _on_rejected: Callable[[UpstreamAuthRejected], None] | None
     _last_refusal: tuple[int, str | None, str | None] | None
     _credentials: list[str]
+    _configured_scope: str | None
 
-    def _configure(self, server_name: str, source: str, advice: str, on_rejected, credentials: list[str]) -> None:
+    def _configure(
+        self, server_name: str, source: str, advice: str, on_rejected, credentials: list[str], scope: str | None = None
+    ) -> None:
+        self._configured_scope = scope
         self._server_name, self._source, self._advice_text, self._on_rejected = server_name, source, advice, on_rejected
         self._last_refusal = None
         self._credentials = credentials  # the secret, or every assertion minted so far: never to be printed
@@ -140,6 +144,14 @@ class _Refusals:
         for credential in self._credentials:
             text = text.replace(credential, "[redacted]")
         return text
+
+    async def _perform_authorization(self) -> httpx2.Request:
+        """The SDK replaces the client's scope with the server's choice (the 401 challenge, then `scopes_supported`,
+        else none) before it gets here, which would silently drop `auth.scopes`. What the config asks for is what is
+        requested; with none configured the server's choice stands."""
+        if self._configured_scope is not None:
+            self.context.client_metadata.scope = self._configured_scope
+        return await super()._perform_authorization()  # type: ignore[misc]
 
     def _get_token_endpoint(self) -> str:
         """The SDK posts the credentials here, so a cleartext endpoint on another host is refused first."""
@@ -251,5 +263,5 @@ def service_provider(
             server_url, MemoryStorage(), client_id=auth.client_id, assertion_provider=remembered, scope=scope, issuer=auth.issuer,
         )
         source = f"environment variable {auth.private_key_env}"
-    provider._configure(server_name, source, _advice(auth), on_rejected, credentials)
+    provider._configure(server_name, source, _advice(auth), on_rejected, credentials, scope)
     return provider
