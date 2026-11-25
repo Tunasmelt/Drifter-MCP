@@ -117,7 +117,7 @@ LITERAL_SECRETS = [
 @pytest.mark.parametrize("field", ["token_env", "secret_env"])
 def test_a_literal_secret_in_an_env_field_is_rejected_and_never_echoed(tmp_path, secret, field):
     type_ = "bearer_env" if field == "token_env" else "client_credentials"
-    extra = "" if field == "token_env" else "\nclient_id: my-client"
+    extra = "" if field == "token_env" else "\nclient_id: my-client\nissuer: https://auth.example.com/"
     body = f"type: {type_}\n{field}: '{secret}'{extra}"
     with pytest.raises(ConfigError) as failure:
         load_config(_write(tmp_path, URL_SERVER, _auth(body)))
@@ -159,7 +159,7 @@ def test_other_config_errors_keep_their_actionable_message_without_the_input(tmp
         ("type: bearer_env\ntoken_env: CRM_TOKEN\nscopes: [read]", "scopes"),
         ("type: oauth\ntoken_env: CRM_TOKEN", "token_env"),
         ("type: oauth\nsecret_env: CRM_SECRET", "secret_env"),
-        ("type: client_credentials\nclient_id: abc\nsecret_env: S\ntoken_env: T", "token_env"),
+        ("type: client_credentials\nclient_id: abc\nissuer: https://auth.example.com/\nsecret_env: S\ntoken_env: T", "token_env"),
         ("type: none\ntoken_env: CRM_TOKEN", "token_env"),
         ("type: none\nscopes: [read]", "scopes"),
     ],
@@ -192,14 +192,14 @@ def test_oauth_parses_with_scopes_and_a_preregistered_client_id(tmp_path):
     assert (auth.type, auth.scopes, auth.client_id) == ("oauth", ["crm.read"], "my-client")
 
 
-def test_client_credentials_parses_and_requires_a_client_id_and_a_secret_env(tmp_path):
-    ok = load_config(
-        _write(tmp_path, URL_SERVER, _auth("type: client_credentials\nclient_id: my-client\nsecret_env: CRM_SECRET"))
-    )
+def test_client_credentials_parses_and_requires_a_client_id_an_issuer_and_a_credential(tmp_path):
+    base = "type: client_credentials\nissuer: https://auth.example.com/\n"
+    ok = load_config(_write(tmp_path, URL_SERVER, _auth(base + "client_id: my-client\nsecret_env: CRM_SECRET")))
     assert ok.servers[0].auth.secret_env == "CRM_SECRET"
     for missing, body in (
-        ("client_id", "type: client_credentials\nsecret_env: CRM_SECRET"),
-        ("secret_env", "type: client_credentials\nclient_id: my-client"),
+        ("client_id", base + "secret_env: CRM_SECRET"),
+        ("secret_env", base + "client_id: my-client"),
+        ("issuer", "type: client_credentials\nclient_id: my-client\nsecret_env: CRM_SECRET"),
     ):
         with pytest.raises(ConfigError, match=missing):
             load_config(_write(tmp_path, URL_SERVER, _auth(body)))

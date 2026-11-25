@@ -69,7 +69,7 @@ def test_loopback_http_is_fine_because_nothing_leaves_the_machine(tmp_path, url)
     assert load_config(_yaml(tmp_path, url)).servers[0].auth is not None
 
 
-@pytest.mark.parametrize("auth", ["type: oauth", "type: client_credentials\n      client_id: c\n      secret_env: S"])
+@pytest.mark.parametrize("auth", ["type: oauth", "type: client_credentials\n      client_id: c\n      issuer: https://auth.example.com/\n      secret_env: S"])
 def test_the_rule_covers_every_auth_type_not_only_bearer(tmp_path, auth):
     with pytest.raises(ConfigError, match="cleartext"):
         load_config(_yaml(tmp_path, "http://mcp.example.com/mcp", auth))
@@ -198,12 +198,18 @@ async def test_doctor_reports_an_oauth_server_with_no_stored_login_and_says_what
 
 
 @pytest.mark.anyio
-async def test_doctor_reports_a_client_credentials_server_as_not_usable_yet():
+async def test_doctor_reports_a_client_credentials_server_whose_secret_variable_is_unset(monkeypatch):
+    """F-45: doctor connects like observe does; with the secret variable unset it says which variable, and why."""
+    monkeypatch.delenv("DRIFTER_TEST_CI_SECRET", raising=False)
     server = ServerConfig.model_validate(
-        {"name": "ci", "url": "https://mcp.example.com/mcp", "auth": {"type": "client_credentials", "client_id": "c", "secret_env": "S"}}
+        {
+            "name": "ci",
+            "url": "https://mcp.example.com/mcp",
+            "auth": {"type": "client_credentials", "client_id": "c", "issuer": "https://auth.example.com/", "secret_env": "DRIFTER_TEST_CI_SECRET"},
+        }
     )
     check = await _check_server(server, timeout_seconds=5)
-    assert not check.ok and "client_credentials" in check.detail, check
+    assert not check.ok and "DRIFTER_TEST_CI_SECRET" in check.detail and "ci" in check.detail, check
 
 
 # --- 4 (end to end). a plain 403 does not end the session ---------------------------------------------------------

@@ -560,12 +560,15 @@ servers:
   - name: remote-crm            # v1 (F-39) — a real server reached over HTTP instead
     url: "https://mcp.example.com/mcp"   # of a spawned local subprocess; mutually
                                           # exclusive with `command` on the same entry
-    auth:                       # 0.3.0 (F-41/F-43/F-44: bearer_env and oauth built; client_credentials parses but is refused until F-45) — url entries only; default none
+    auth:                       # 0.3.0 (F-41/F-43/F-44: bearer_env and oauth built; client_credentials built, F-45) — url entries only; default none
       type: oauth               # oauth | bearer_env | client_credentials | none
       scopes: ["crm.read"]      # optional; default: what the server's metadata advertises
       # client_id: "..."        # optional pre-registered client (identity order, §5.2)
       # token_env: CRM_TOKEN    # type: bearer_env — env var NAME, never the value
       # secret_env: CRM_SECRET  # type: client_credentials — env var NAME, never the value
+      # private_key_env: CRM_KEY  # type: client_credentials, instead of secret_env — env var NAME holding an unencrypted PEM key
+      # signing_algorithm: RS256  # with private_key_env; RS/PS/ES 256-512, default RS256
+      # issuer: "https://auth.example.com/"  # type: client_credentials, REQUIRED — the only authorization server credentials are sent to
 
 # everything below optional, sane defaults
 record: {dir: .drifter/runs, redact: shape}

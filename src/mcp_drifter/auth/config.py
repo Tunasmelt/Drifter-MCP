@@ -23,6 +23,7 @@ from __future__ import annotations
 import ipaddress
 import re
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 
@@ -41,13 +42,19 @@ _FIELDS_BY_TYPE: dict[str, frozenset[str]] = {
     "none": frozenset(),
     "oauth": frozenset({"scopes", "client_id"}),
     "bearer_env": frozenset({"token_env"}),
-    "client_credentials": frozenset({"scopes", "client_id", "secret_env"}),
+    "client_credentials": frozenset(
+        {"scopes", "client_id", "secret_env", "private_key_env", "issuer", "signing_algorithm"}
+    ),
 }
 _REQUIRED_BY_TYPE: dict[str, frozenset[str]] = {
     "bearer_env": frozenset({"token_env"}),
-    "client_credentials": frozenset({"client_id", "secret_env"}),
+    # `issuer`: the credentials are only ever sent to the authorization server the CONFIG names. Without it
+    # the MCP server's own metadata would decide who receives the client secret.
+    "client_credentials": frozenset({"client_id", "issuer"}),
 }
-_OPTIONAL_FIELDS = ("scopes", "client_id", "token_env", "secret_env")
+_OPTIONAL_FIELDS = ("scopes", "client_id", "token_env", "secret_env", "private_key_env", "issuer", "signing_algorithm")
+# Asymmetric only: `none` and the HMAC family are not a proof of holding a private key.
+SigningAlgorithm = Literal["RS256", "RS384", "RS512", "PS256", "ES256", "ES384", "ES512"]
 
 
 def is_loopback_host(host: str | None) -> bool:
@@ -80,8 +87,11 @@ class AuthConfig(BaseModel):
     client_id: str | None = None
     token_env: str | None = None
     secret_env: str | None = None
+    private_key_env: str | None = None
+    issuer: str | None = None
+    signing_algorithm: SigningAlgorithm | None = None
 
-    @field_validator("token_env", "secret_env")
+    @field_validator("token_env", "secret_env", "private_key_env")
     @classmethod
     def _is_a_variable_name_not_a_secret(cls, value: str | None, info) -> str | None:
         if value is not None and not looks_like_an_environment_variable_name(value):
@@ -99,6 +109,27 @@ class AuthConfig(BaseModel):
     def _scopes_are_non_empty_strings(cls, value: list[str] | None) -> list[str] | None:
         if value is not None and (not value or any(not scope.strip() for scope in value)):
             raise ValueError("scopes must be a non-empty list of non-empty scope strings")
+        return value
+
+    @field_validator("issuer")
+    @classmethod
+    def _issuer_is_a_safe_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        parts = urlparse(value)
+        try:
+            host = parts.hostname
+        except ValueError:
+            host = None
+        problem = None
+        if parts.scheme not in ("http", "https") or not host:
+            problem = "an http(s) URL such as https://auth.example.com/"
+        elif parts.username is not None or parts.password is not None:
+            problem = "a URL with no user:password@ in it"
+        elif parts.scheme == "http" and not is_loopback_host(host):
+            problem = "https (a cleartext issuer is only allowed on localhost)"
+        if problem:
+            raise ValueError(f"issuer must be {problem}")  # never echoes the value
         return value
 
     @field_validator("client_id")
@@ -121,4 +152,14 @@ class AuthConfig(BaseModel):
         missing = [f for f in sorted(_REQUIRED_BY_TYPE.get(self.type, frozenset())) if getattr(self, f) is None]
         if missing:
             raise ValueError(f"auth type {self.type!r} requires {', '.join(missing)}")
+        if self.type == "client_credentials":
+            if (self.secret_env is None) == (self.private_key_env is None):
+                raise ValueError(
+                    "auth type 'client_credentials' needs exactly one of secret_env (a client secret) or "
+                    "private_key_env (a private key that signs a client assertion)"
+                )
+            if self.signing_algorithm is not None and self.private_key_env is None:
+                raise ValueError("signing_algorithm only applies with private_key_env")
+            if self.private_key_env is not None and self.signing_algorithm is None:
+                self.signing_algorithm = "RS256"
         return self
