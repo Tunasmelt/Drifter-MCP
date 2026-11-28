@@ -53,27 +53,32 @@ filesystem and network access. The relevant boundaries are:
   `instead of`) and rejected if it matches, so a mutation can't accidentally produce
   something that reads as a prompt injection. Every mutation is logged with an exact
   before/after and an inverse mapping.
-- **Upstream credentials (partly built, docs/SPEC.md §5.2).** A `url` server can be sent a
-  static token read from a named environment variable (`auth.type: bearer_env`); the token is
-  never written to `.drifter/`, a log or an error message, a literal secret in `drifter.yaml`
-  is rejected at load without being echoed. `drifter auth login` can store an OAuth login (callback
-  listener on 127.0.0.1 only, which ignores any request without the login's `state`; a server that
-  does not advertise PKCE S256, or advertises cleartext endpoints on a remote host, is refused), but
-  nothing uses a stored login yet, so the items below that are about using one are NOT built.
-  When OAuth lands: Drifter
-  authenticates as its own OAuth client and never forwards or stores an agent's token;
-  tokens live in a usable OS keyring (optional extra) or a private file in the platform
-  user config directory (`~/.config/drifter/` on POSIX, `%LOCALAPPDATA%/drifter/` on
-  Windows), never inside the project or `.drifter/`. Files require POSIX `0600`/`0700`
-  permissions or verified user-private Windows ACLs; unsafe storage is refused.
-  `drifter.yaml` holds only environment-variable NAMES, and a literal secret there is
-  rejected at load; recordings of authenticated servers hold the auth type and granted
-  scopes, never a token, code or secret; the login
-  callback binds `127.0.0.1` only and checks `state`; an authorization server without
-  PKCE S256 is refused. A canary-token test (F-47) fails the build if a token appears in
-  any record, log or error message. If the CIMD option is used, Drifter's client identity
-  is a document on the project website — whoever controls that domain controls the
-  identity authorization servers see.
+- **Upstream credentials (built for 0.3.0, not yet released; docs/SPEC.md §5.2).** A `url` server can be sent
+  a credential Drifter holds on its own behalf: a static token read from a named environment variable
+  (`bearer_env`), a stored OAuth login made with `drifter auth login` (`oauth`), or service credentials
+  exchanged for a token on each run (`client_credentials`: a client secret or a signed-assertion key, sent
+  only to the `issuer` named in the config). Drifter is its own client: it never reads, forwards or stores an
+  agent's token. `drifter.yaml` holds only environment-variable NAMES; a literal secret there is rejected at load
+  without being echoed.
+  - **Storage.** Stored logins live in a usable OS keyring (optional extra) or a private file in the platform user
+    config directory (`~/.config/drifter/` on POSIX, `%LOCALAPPDATA%/drifter/` on Windows), never inside the
+    project or `.drifter/`. Files require POSIX `0600`/`0700` permissions or verified user-private Windows ACLs;
+    a symbolic link, another owner or a wider mode is refused. Service credentials are kept in memory only.
+  - **Login.** The callback listener binds `127.0.0.1` on an OS-assigned port, accepts only a request that
+    carries the login's `state` and a loopback `Host`, and ignores anything else without ending the login. A
+    server that does not advertise PKCE `S256`, or that advertises cleartext endpoints on a remote host, is
+    refused. A credential is never sent over cleartext to a remote host, and a redirect to another origin is not
+    followed with it.
+  - **What is written.** Recordings of authenticated servers hold the auth type and the granted scope names,
+    never a token, code or secret. A canary-token test (F-47) fails the build if a planted credential appears in
+    any record, log or error message, including when a server echoes it back in an error (found and fixed in the
+    0.3.0 audit, `tests/auth/test_reflection_audit.py`).
+  - **Limits, stated plainly.** Recording redaction is pattern-based (F-04): a credential a server returns inside
+    a tool RESULT is covered only if it looks like a secret. Discovery follows URLs the server's own metadata
+    names (the usual OAuth trust model); credentials only go to the configured `issuer`. A revoked token ends an
+    `observe` run rather than retrying. If the client-ID-document (CIMD) option is used, Drifter's client identity
+    is a document on the project website, so whoever controls that domain controls the identity authorization
+    servers see; no such document is published yet.
 - **Dependencies.** `pip-audit` runs in CI on every push and pull request, failing the
   build on known high/critical-severity vulnerabilities in the dependency tree.
 

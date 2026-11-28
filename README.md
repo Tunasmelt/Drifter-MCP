@@ -474,6 +474,39 @@ the agent's own nondeterminism. Then re-run `drifter coverage --curve` and watch
 gain-per-session column. Recordings of a *different* server or task are ignored by the
 curve and don't help; it tells you how many it dropped.
 
+### Recording a server that needs credentials (0.3.0, not yet on PyPI)
+
+A `url` server can require authorization. Drifter is its own client to that server: it uses a credential
+**you** give it, and never reads, forwards or stores your agent's token. Add an `auth` block to the server in
+`drifter.yaml` (a `*_env` field holds the NAME of an environment variable, never the secret, and a pasted secret
+is rejected at load):
+
+```yaml
+servers:
+  - name: remote-crm
+    url: https://mcp.example.com/mcp
+    auth: {type: bearer_env, token_env: CRM_TOKEN}      # a token you already have
+    # auth: {type: oauth, scopes: [crm.read]}           # a login you run once: drifter auth login remote-crm
+    # auth: {type: client_credentials, client_id: ci, secret_env: CI_SECRET,
+    #        issuer: https://auth.example.com/}          # unattended (CI); or private_key_env for a signed key
+```
+
+- **`oauth`:** run `drifter auth login remote-crm` once (opens your browser; `--no-browser` prints the URL
+  instead). The login is kept in your OS keyring if the optional `mcp-drifter[keyring]` extra is installed, else in
+  a private file under your user config directory, never inside the project. `drifter auth status` shows whether
+  you are logged in and until when; `drifter auth logout` removes it. `observe` and `doctor` then use it and refresh
+  it; they never start a login themselves. A login Drifter cannot use exits with code 4 and says what to run.
+- **`client_credentials`:** nothing is stored. Drifter exchanges the secret (or a signed assertion) for a token on
+  each run, and only ever sends it to the `issuer` you name.
+- **Recordings** hold the auth type and the scopes the server granted, never a token, code or secret, and a
+  recording made under different scopes than another is not silently mixed with it. `drifter run` replays offline
+  and needs no credentials.
+- **Limits:** a server that does not advertise PKCE `S256`, or whose endpoints are cleartext on a remote host, is
+  refused. Drifter has no published client-ID document yet, so an OAuth server must offer dynamic client
+  registration, or you set `auth.client_id` to a client you registered (redirect URI `http://127.0.0.1/callback`).
+  `drifter doctor` checks each step (login, discovery, PKCE, granted scopes) and says which one failed. See
+  [`SECURITY.md`](SECURITY.md) and [`docs/SPEC.md` §5.2](https://github.com/Tunasmelt/Drifter-MCP/blob/master/docs/SPEC.md).
+
 ## Feedback from your own agent
 
 Several of Drifter's defaults are still guesses (every value in `calibration.yaml`), and
