@@ -134,7 +134,7 @@ from mcp_drifter.record.calibration import Calibration, load_calibration
 from mcp_drifter.record.reader import read_session
 from collections import Counter
 
-from mcp_drifter.record.fingerprint import diff_environments
+from mcp_drifter.record.fingerprint import diff_environments, normalize_scopes
 from mcp_drifter.record.schema import Environment, SessionEnd, SessionStart, ToolCall
 
 _NULL_HASH_REASON = "tool_manifest_hash is null"
@@ -448,11 +448,17 @@ def _merge_provenance_counts(counts_list: list[dict[str, int]]) -> dict[str, int
 
 
 def _environment_signature(environment: Environment) -> tuple:
+    """The cohort key. F-46: the auth type and the granted scopes are part of it, because a server may list
+    different tools under different grants. `None` (no auth: legacy and new unauthenticated agree), `None`
+    scopes (an UNKNOWN grant) and `()` (a known empty grant) are three distinct keys."""
+    scopes = normalize_scopes(environment.granted_scopes)
     return (
         environment.agent_identity,
         environment.model_name,
         tuple(sorted(environment.server_versions.items())),
         environment.tool_manifest_hash,
+        environment.auth_type,
+        None if scopes is None else tuple(scopes),
     )
 
 

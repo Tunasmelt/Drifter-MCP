@@ -38,7 +38,7 @@ from mcp_drifter.auth.callback import CallbackListener
 from mcp_drifter.auth.config import is_loopback_host
 from mcp_drifter.auth.errors import LoginRefused
 from mcp_drifter.auth.storage import TokenStore, canonical_server_url
-from mcp_drifter.auth.text import clean_server_text
+from mcp_drifter.auth.text import MALFORMED_TOKEN_RESPONSE, clean_server_text, is_malformed_token_response, scrub
 from mcp_drifter.auth.threads import run_in_daemon_thread
 
 if TYPE_CHECKING:  # auth/ must not depend on cli/ at runtime
@@ -112,6 +112,14 @@ class _DrifterProvider(OAuthClientProvider):
     def __init__(self, *args, server_name: str, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._server_name = server_name
+        self._sensitive: list[str] = []  # the code and verifier sent to the token endpoint, which an error may echo
+
+    async def _exchange_token_authorization_code(self, auth_code: str, code_verifier: str):
+        self._sensitive.extend([auth_code, code_verifier])
+        return await super()._exchange_token_authorization_code(auth_code, code_verifier)
+
+    def scrub(self, text: str) -> str:
+        return scrub(text, self._sensitive) or ""
 
     async def _perform_authorization_code_grant(self):
         """Refuse before anything is sent to the authorization endpoint unless PKCE S256 is advertised."""
@@ -278,9 +286,11 @@ async def _drive(provider: _DrifterProvider, server: ServerConfig) -> int:
             raise LoginRefused(_no_way_to_register(server, saw_metadata_documents=saw_documents)) from None
         raise LoginRefused(f"server {server_name!r} refused to register Drifter as a client") from None
     except OAuthTokenError as exc:
-        raise LoginRefused(f"server {server_name!r} did not issue a token: {clean_server_text(str(exc), 160) or 'refused'}") from None
-    except OAuthFlowError as exc:
         text = str(exc)
+        detail = MALFORMED_TOKEN_RESPONSE if is_malformed_token_response(text) else clean_server_text(provider.scrub(text), 160)
+        raise LoginRefused(f"server {server_name!r} did not issue a token: {detail or 'refused'}") from None
+    except OAuthFlowError as exc:
+        text = provider.scrub(str(exc))
         if "State parameter mismatch" in text:  # the message carries both state values; neither is printed
             raise LoginRefused(f"the login callback for {server_name!r} did not match this login (state); refusing") from None
         raise LoginRefused(f"login to {server_name!r} failed: {clean_server_text(text, 160) or 'refused'}") from None

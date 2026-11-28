@@ -57,9 +57,10 @@ from mcp_drifter.cli.config import (
     load_config,
     tasks_file_problem,
 )
+from mcp_drifter.auth.diagnose import AuthFinding, diagnose_auth
 from mcp_drifter.auth.errors import UpstreamAuthRejected
 from mcp_drifter.cli.stats import resolve_runs_dir
-from mcp_drifter.cli.upstream import connect_upstream
+from mcp_drifter.cli.upstream import UpstreamGrant, connect_upstream
 from mcp_drifter.policy.classify import Classification, classify_manifest
 from mcp_drifter.record.calibration import Calibration, load_calibration
 from mcp_drifter.record.schema import ToolDescriptor
@@ -81,7 +82,7 @@ def _describe_server(server: ServerConfig) -> str:
     return server.url if server.url is not None else " ".join(server.command)
 
 
-async def _check_server(server: ServerConfig, timeout_seconds: float) -> ServerCheck:
+async def _check_server(server: ServerConfig, timeout_seconds: float, grant: UpstreamGrant | None = None) -> ServerCheck:
     """Connects to `server` (stdio or, F-39, a `url`-configured Streamable
     HTTP endpoint) and attempts a real MCP `initialize` handshake.
 
@@ -109,9 +110,13 @@ async def _check_server(server: ServerConfig, timeout_seconds: float) -> ServerC
     failure: ServerCheck | None = None
     try:
         with anyio.fail_after(timeout_seconds):
-            async with connect_upstream(server) as (read, write):
+            async with connect_upstream(server, grant=grant) as (read, write):
                 async with ClientSession(read, write) as session:
                     await session.initialize()
+                    if grant is not None:
+                        # F-46: the scopes the server granted exist now, once the credential has been exchanged;
+                        # the connection closes right after, so read them inside it.
+                        grant.snapshot()
     except* UpstreamAuthRejected as eg:
         # F-41/F-44: the server answered 401/403 to the configured credentials. Said plainly,
         # with the variable and the status, instead of the SDK's opaque error response.
@@ -191,8 +196,8 @@ def _classify_server(server: ServerConfig, tools: list[ToolDescriptor], policy: 
 
 
 async def _check_and_classify_all(
-    servers: list[ServerConfig], timeout_seconds: float, policy: PolicyConfig
-) -> list[tuple[ServerCheck, dict[str, Classification] | None]]:
+    servers: list[ServerConfig], timeout_seconds: float, policy: PolicyConfig, runs_dir: Path | None = None
+) -> list[tuple[ServerCheck, dict[str, Classification] | None, list[AuthFinding]]]:
     """One `anyio.run` for the whole doctor pass (connectivity + F-26
     classification together), rather than a separate `anyio.run` call per
     concern — classification is only even attempted for a server whose
@@ -205,15 +210,26 @@ async def _check_and_classify_all(
     and interleaved subprocess spawns/output would only make a failure's
     cause harder to read for no real speed benefit here.
     """
-    results: list[tuple[ServerCheck, dict[str, Classification] | None]] = []
+    results: list[tuple[ServerCheck, dict[str, Classification] | None, list[AuthFinding]]] = []
     for server in servers:
-        check = await _check_server(server, timeout_seconds)
+        grant = UpstreamGrant(server)
+        check = await _check_server(server, timeout_seconds, grant)
+        # F-46: what the connection check cannot say (which step of the login chain is broken, whether the grant
+        # drifted from the recorded sessions). Independent of connectivity, so it is reported either way.
+        findings = await diagnose_auth(
+            server,
+            runs_dir=runs_dir or Path(".drifter/runs"),
+            environ=os.environ,
+            timeout_seconds=timeout_seconds,
+            granted_scopes=grant.snapshot_scopes,
+            connected=check.ok,
+        )
         if not check.ok:
-            results.append((check, None))
+            results.append((check, None, findings))
             continue
         tools = await _fetch_manifest(server, timeout_seconds)
         classifications = _classify_server(server, tools, policy) if tools is not None else None
-        results.append((check, classifications))
+        results.append((check, classifications, findings))
     return results
 
 
@@ -274,12 +290,18 @@ def run_doctor(config_path: Path | None = None, output_stream: TextIO = sys.stdo
     calibration = load_calibration()
     timeout_seconds = calibration.doctor.connectivity_timeout_seconds
 
-    results = anyio.run(_check_and_classify_all, config.servers, timeout_seconds, config.policy)
+    runs_dir = resolve_runs_dir(config, config_path)
+    results = anyio.run(_check_and_classify_all, config.servers, timeout_seconds, config.policy, runs_dir)
     all_ok = True
-    for check, classifications in results:
+    for check, classifications, auth_findings in results:
         marker = "[ OK ]" if check.ok else "[FAIL]"
         output_stream.write(f"{marker} server {check.name!r}: {check.detail}\n")
         all_ok = all_ok and check.ok
+        # F-46: a failed auth step stops the run (exit 4) like a failed connection; a warning never does.
+        for finding in auth_findings:
+            level = {"ok": "[ OK ]", "warn": "[WARN]", "fail": "[FAIL]"}[finding.level]
+            output_stream.write(f"{level} auth {check.name!r} {finding.check}: {finding.detail}\n")
+            all_ok = all_ok and finding.level != "fail"
 
         # F-26: only attempted when connectivity already succeeded (see
         # _check_and_classify_all) — reported as its own line(s), never

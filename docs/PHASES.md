@@ -1730,8 +1730,10 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
 - [x] F-44 authed `http_client` in `connect_to_server`; refresh; exit-4 paths. Built: `auth/session.py`
       (`StoredLoginProvider`), the `oauth` branch of `cli/upstream.py`; `observe`, `doctor` and `fixture`
       share it. Tests: `tests/auth/test_stored_login.py`, `test_observe_oauth_e2e.py`.
-- [ ] F-46 schema/hash compatibility first, then fingerprint `auth_type` +
-      `granted_scopes`, cohort/comparison updates and auth-type-specific doctor checks.
+- [x] F-46 schema/hash compatibility first, then fingerprint `auth_type` +
+      `granted_scopes`, cohort/comparison updates and auth-type-specific doctor checks. Built; tests:
+      `tests/record/test_fingerprint_auth.py`, `test_writer_auth.py`, `tests/evaluate/test_environment_enforcement.py`,
+      `tests/auth/test_observe_grant_e2e.py`, `test_doctor_auth.py`, `test_doctor_auth_cli.py`.
 - [x] F-45 client credentials / private-key JWT (DEC-031: in 0.3.0). Built: `auth/service.py`, the
       `client_credentials` branch of `cli/upstream.py`. Tests: `tests/auth/test_service_credentials.py`.
 

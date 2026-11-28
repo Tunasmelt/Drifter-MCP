@@ -220,4 +220,7 @@ async def test_doctor_without_a_login_fails_that_check_and_says_what_to_run(tmp_
         result = await anyio.to_thread.run_sync(lambda: _doctor(config, _env(tmp_path)))
         out = result.stdout + result.stderr
         assert "[FAIL]" in out and "drifter auth login remote-crm" in out, out
-        assert handle.state.requests == []
+        # F-46: doctor's discovery check does probe the server, so the old "contacts nothing" no longer holds; what must
+        # still hold is that with no login nothing credentialed is sent and no login or registration is started.
+        assert all(r.authorization is None for r in handle.state.requests), handle.state.requests
+        assert not [r for r in handle.state.requests if r.path in ("/authorize", "/register", "/token")], handle.state.requests

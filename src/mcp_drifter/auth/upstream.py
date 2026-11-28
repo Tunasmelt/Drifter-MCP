@@ -14,7 +14,7 @@ import httpx2
 
 from mcp_drifter.auth.config import AuthConfig
 from mcp_drifter.auth.errors import AuthSetupError, UpstreamAuthRejected
-from mcp_drifter.auth.text import clean_server_text
+from mcp_drifter.auth.text import clean_server_text, scrub
 
 _VISIBLE_ASCII_RE = re.compile(r"^[\x21-\x7e]+$")  # no spaces, controls, or non-ASCII
 
@@ -45,6 +45,19 @@ def bearer_headers(auth: AuthConfig, server_name: str, environ: Mapping[str, str
 
 
 _CHALLENGE_PARAM_RE = re.compile(r'(\w+)="([^"]*)"')
+
+
+def _credentials_on(response: httpx2.Response) -> list[str]:
+    """What the refused request sent in `Authorization`: the whole value and the token alone."""
+    try:
+        header = response.request.headers.get("authorization")
+    except (RuntimeError, AttributeError):  # a response with no request attached
+        return []
+    if not header:
+        return []
+    return [header, header.partition(" ")[2]]
+
+
 def rejection_hook(
     server_name: str,
     source: str,
@@ -80,7 +93,10 @@ def rejection_hook(
             return
         if applies_to is not None and not applies_to(response.request):
             return
-        params = dict(_CHALLENGE_PARAM_RE.findall(response.headers.get("www-authenticate", "")))
+        # A server may echo the credential it was sent ("token <token> is expired"). The request that was refused
+        # carries it, so it is removed from the RAW challenge, before cleaning could mangle or cut it.
+        challenge = scrub(response.headers.get("www-authenticate", ""), _credentials_on(response)) or ""
+        params = dict(_CHALLENGE_PARAM_RE.findall(challenge))
         error, scope = clean_server_text(params.get("error")), clean_server_text(params.get("scope"))
         description = clean_server_text(params.get("error_description"), 160)
         if response.status_code == 403 and error != "insufficient_scope":

@@ -37,7 +37,7 @@ import httpx2
 
 from mcp_drifter.auth.errors import UpstreamAuthRejected
 from mcp_drifter.cli.config import ConfigError, DrifterConfig, ServerConfig, load_config, server_target
-from mcp_drifter.cli.upstream import upstream_http_client
+from mcp_drifter.cli.upstream import UpstreamGrant, upstream_http_client
 from mcp_drifter.cli.stats import anchor_relative_to_config, resolve_runs_dir
 from mcp_drifter.record.proxy import Direction, run_passthrough_proxy
 from mcp_drifter.record.writer import SessionRecorder
@@ -184,11 +184,11 @@ def handle_sigint(
     exit_fn(0)
 
 
-async def _proxy_through_upstream(server: ServerConfig, target, on_message, on_rejected) -> None:
+async def _proxy_through_upstream(server: ServerConfig, target, on_message, on_rejected, grant=None) -> None:
     """`run_passthrough_proxy` with the credentials `server.auth` calls for (F-41). A config
     problem (variable unset, auth type not yet supported) raises here, before the proxy reads
     a byte of the agent's stdin, so it exits 4 immediately instead of hanging."""
-    async with upstream_http_client(server, on_rejected) as http_client:
+    async with upstream_http_client(server, on_rejected, grant=grant) as http_client:
         await run_passthrough_proxy(target, on_message, http_client)
 
 
@@ -243,7 +243,15 @@ def run_observe(
         Path(os.environ.get("DRIFTER_RAW_DIR", str(runs_dir.parent / "raw"))), config_path
     )
 
-    recorder = SessionRecorder(session_dir=runs_dir, raw_dir=raw_dir, server_name=server.name)
+    # F-46: the recording says which auth type it was made with and which scopes the server granted.
+    grant = UpstreamGrant(server)
+    recorder = SessionRecorder(
+        session_dir=runs_dir,
+        raw_dir=raw_dir,
+        server_name=server.name,
+        auth_type=grant.auth_type,
+        granted_scopes=grant.granted_scopes,
+    )
     status = LiveStatus(status_stream)
 
     def on_message(direction: Direction, message) -> None:
@@ -263,7 +271,7 @@ def run_observe(
         status_stream.write(f"drifter observe — proxying {server.name!r} ({description})\n")
         status_stream.flush()
         try:
-            anyio.run(_proxy_through_upstream, server, target, on_message, on_rejected)
+            anyio.run(_proxy_through_upstream, server, target, on_message, on_rejected, grant)
         except* UpstreamAuthRejected as eg:
             # F-41/F-44: the SDK reports a 401/403 as an opaque "Server returned an error
             # response"; the response hook in cli/upstream.py kept the status and the

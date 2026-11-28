@@ -41,6 +41,7 @@ import json
 import time
 import uuid
 from pathlib import Path
+from collections.abc import Callable
 from typing import Any
 
 from mcp_types import JSONRPCError, JSONRPCRequest, JSONRPCResponse
@@ -95,6 +96,8 @@ class SessionRecorder:
         session_id: str | None = None,
         model_name: str | None = None,
         calibration: Calibration | None = None,
+        auth_type: str | None = None,
+        granted_scopes: Callable[[], list[str] | None] | None = None,
     ) -> None:
         self.session_id = session_id or uuid.uuid4().hex
         self.server_name = server_name
@@ -102,6 +105,12 @@ class SessionRecorder:
         # ever exposes agent/server identity (docs/SPEC.md §15's limitation 2).
         # Sourced out-of-band by the caller (env var, later drifter.yaml).
         self.model_name = model_name
+        # F-46: plain values, not an auth object, because `replay/` depends on `record/` and may not depend on
+        # `auth/`. `auth_type` None = unauthenticated (no auth fields are written). `granted_scopes` is READ when
+        # SessionStart is written, which is after the credential has been exchanged; it returns the scope names,
+        # or None for a grant that is not known (an opaque static token).
+        self._auth_type = auth_type
+        self._granted_scopes = granted_scopes
 
         session_dir.mkdir(parents=True, exist_ok=True)
         raw_dir.mkdir(parents=True, exist_ok=True)
@@ -186,6 +195,17 @@ class SessionRecorder:
         self._jsonl_file.write(record.model_dump_json() + "\n")
         self._jsonl_file.flush()
 
+    def _current_grant(self) -> list[str] | None:
+        """The scope names granted right now, or None if unknown. A callback that fails must never break a
+        recording, and a grant that could not be read is unknown, not empty."""
+        if self._auth_type is None or self._granted_scopes is None:
+            return None
+        try:
+            scopes = self._granted_scopes()
+        except Exception:  # noqa: BLE001 - recording outlives a credential problem
+            return None
+        return None if scopes is None else list(scopes)
+
     def _ensure_session_start_written(self) -> None:
         """Flushes SessionStart using whatever identity info is known so
         far. Idempotent, and always the first record written (seq=0),
@@ -204,6 +224,8 @@ class SessionRecorder:
                     model_name=self.model_name,
                     server_versions=self._server_versions,
                     tool_manifest_hash=self._tool_manifest_hash,
+                    auth_type=self._auth_type,
+                    granted_scopes=self._current_grant(),
                 ),
                 raw_frame_offset=self._first_raw_offset or 0,
             )

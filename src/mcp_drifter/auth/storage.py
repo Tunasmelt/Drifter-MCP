@@ -44,6 +44,7 @@ from typing import Any, Callable, Literal, TypeVar
 from urllib.parse import urlsplit
 
 from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
+from pydantic import ValidationError
 
 from mcp_drifter.auth import winacl
 from mcp_drifter.auth.threads import run_in_daemon_thread
@@ -193,7 +194,7 @@ class TokenStore:
 
     async def get_tokens(self) -> OAuthToken | None:
         record = await self._run(self._load)
-        return OAuthToken.model_validate(record["tokens"]) if record and record.get("tokens") else None
+        return self._model(OAuthToken, record, "tokens")
 
     async def set_tokens(self, tokens: OAuthToken, *, issued_at: float | None = None) -> None:
         """`issued_at` is when the server issued the token, if that was earlier than now (a login
@@ -224,7 +225,7 @@ class TokenStore:
 
     async def get_client_info(self) -> OAuthClientInformationFull | None:
         record = await self._run(self._load)
-        return OAuthClientInformationFull.model_validate(record["client_info"]) if record and record.get("client_info") else None
+        return self._model(OAuthClientInformationFull, record, "client_info")
 
     async def set_client_info(self, client_info: OAuthClientInformationFull) -> None:
         def update(record: dict[str, Any]) -> None:
@@ -283,6 +284,19 @@ class TokenStore:
             raise StorageError(f"could not read {self.file_path}: {exc.strerror or type(exc).__name__}") from None
         self._last_source = "file"
         return self._parse(text, str(self.file_path))
+
+    def _model(self, model: type, record: dict[str, Any] | None, field: str):
+        """One field of the record as an SDK model. A hand-damaged record must not surface pydantic's own error, which
+        quotes the field values (token material); it is the same "log in again" situation as an unparsable file."""
+        if not record or not record.get(field):
+            return None
+        try:
+            return model.model_validate(record[field])
+        except ValidationError:
+            raise StorageError(
+                f"the stored {field.replace('_', ' ')} for {self.server_name!r} is damaged; run "
+                f"`drifter auth logout {self.server_name}` to remove it, then log in again"
+            ) from None
 
     def _parse(self, text: str, where: str) -> dict[str, Any]:
         try:

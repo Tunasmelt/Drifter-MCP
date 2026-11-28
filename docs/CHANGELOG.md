@@ -6,6 +6,89 @@ not just a diff.
 
 ---
 
+## 0.3.0 audit of F-41..F-46: credentials a server echoes back
+
+An audit of everything merged so far, with probes run against the code, not only a read. F-47's promise is that no
+credential reaches a terminal, a log or a recording; the P1 canary test covers a credential Drifter itself leaks, and
+none of it covered a SERVER that echoes what it was sent ("token <token> is expired"). Five defects, one cause (server
+text and SDK error text trusted to be free of the credential); each has a test in `tests/auth/test_reflection_audit.py`
+that failed before its fix, and each fix was mutation-checked (7 mutants, all killed).
+
+1. **`bearer_env` / stored-login / service-token rejections printed a reflected token.** `rejection_hook` cleaned and
+   printed `error_description`, `error` and `scope` from `WWW-Authenticate`. The refused request carries the token, so
+   the hook now removes the `Authorization` value (whole and token alone) from the RAW challenge first.
+2. **The F-45 secret scrub ran in the wrong order.** Text was cleaned (punctuation dropped, capped at 160) before the
+   client secret was looked for, so a secret containing `~ = @` printed as `passw0rd+...` and one straddling the cap
+   printed cut in half. Scrubbing now always precedes cleaning (`auth/text.py: scrub`), for the secret and for signed
+   assertions.
+3. **A malformed token response printed the start of a token.** The SDK's `Invalid token response: <pydantic error>`
+   quotes the rejected body (`input_value={'refresh_token': 'drifte...`). Login and service credentials now say
+   "the token endpoint's answer was not a valid token response" instead.
+4. **A hand-damaged token record crashed `observe` with a raw `ValidationError`** (same quoting, and a traceback instead
+   of an instruction). `TokenStore` now raises `StorageError` naming `drifter auth logout`, which `StoredLoginProvider`
+   already turned into "log in again".
+5. **A login's token-exchange error could carry the authorization code or PKCE verifier** the server had just been sent.
+   The login provider remembers both and scrubs them from its messages.
+
+Found and NOT fixed here (recorded so they are decisions, not oversights):
+- `TokenStore.summary()` and `.delete()` call the OS keyring synchronously, so `drifter auth status`, `auth logout` and
+  `doctor`'s login check can block on an unanswered keyring unlock prompt with no deadline (the async paths already use
+  `run_in_daemon_thread`). The CLAUDE.md shutdown-hang pattern; needs its own timed test.
+- SECURITY.md "Upstream credentials" still says "nothing uses a stored login yet", which F-44 made false. Rewritten in
+  P5 with the rest of the release documentation.
+
+---
+
+## 0.3.0 P4 (part 3): F-46 auth-aware fingerprint + doctor auth checks
+
+Completes P4. The recording says which auth type it was made with and which scopes the server GRANTED, the
+comparison and cohort code respect that, and `doctor` names the broken step of the login chain. Built
+test-first, starting (per CLAUDE.md's schema-evolution rule) with a hand-built pre-change corpus. What it
+established:
+
+1. **Schema/hash evolution, specified before the field (SPEC §6).** `schema_version` stays `"0.1"`; the two
+   fields are optional, absent when unauthenticated (a custom serializer drops them), and the fingerprint
+   formula only gains keys when an `auth_type` exists. The pinned tests: the golden fixture keeps its recorded
+   hash, a hand-computed 0.2.0 fingerprint is a literal in the test, an unauthenticated session writes no auth
+   keys at all, and a legacy record compares equal to a new unauthenticated one.
+2. **Three states, kept apart.** No fields = unauthenticated (not unknown: 0.2.0 could not authenticate);
+   a list = a known grant, possibly `[]`; explicit `null` = unknown. The unknown-vs-empty distinction is the
+   second recurring bug pattern; tests cover it in the hash, the JSON, the round trip, comparison and `doctor`.
+3. **Unknown vs unknown still compares.** Two sessions with an opaque bearer token share the same blindness;
+   making that a difference would block every `bearer_env` comparison. Recorded as SPEC §15 limitation 24 so
+   it is a documented decision, not a silent one. Unknown vs known, and known vs empty, are differences.
+4. **`record/` stays free of `auth/`.** `SessionRecorder` takes `auth_type` and a callable returning scope
+   names; the callable is read when SessionStart is written (after the credential is exchanged), never at
+   construction, and a callable that raises records an unknown grant instead of breaking the recording. An
+   exact-value test moves the callable's answer between construction, the first `tools/list` and a later
+   `tools/call` and asserts the middle one is what is recorded.
+5. **Comparison.** `diff_environments` compares auth type and normalized scopes even with the manifest exempt
+   (a mutation changes the manifest, never the grant); `baseline._environment_signature` includes them, so an
+   aggregate over mixed grants excludes the odd sessions naming both scope sets.
+6. **A bug in the F-45 code, found by the exact-value test.** The SDK replaces the client's configured scope
+   with the server's choice (401 challenge, then `scopes_supported`, else none) before the token request, so
+   `auth.scopes` was silently ignored whenever it differed from the server's default. F-45's own test used
+   `["read"]`, the fixture's default, and could not see it. The provider now pins the configured scope; a
+   `["read", "admin"]` test fails without the pin.
+7. **`doctor` auth checks (`auth/diagnose.py`).** Per credential type: oauth runs `login` -> `discovery` ->
+   `pkce` -> `grant`; client_credentials runs `credential` -> `discovery` -> `issuer` -> `grant` and never PKCE;
+   bearer_env runs `credential` -> `grant` and skips discovery and refresh. Each fails in isolation with its own
+   message and next command (the tests assert the OTHER checks stay quiet). Discovery sends nothing but an
+   unauthenticated probe. The grant check scans only the first lines of each recording and only sessions of
+   this server, tolerates unreadable files, and is a drift check, not authorization proof.
+   Connectivity stays the existing server check, so a wrong secret still reads as the server refusing it.
+8. Mutation checks, each failing the test meant to catch it: formula gating, cohort key, serializer, early grant
+   capture, scope sorting, diff ignoring auth, unknown-treated-as-match in `doctor`, PKCE reported for a service
+   credential, legacy sessions treated as unknown, the F-45 scope pin. The unknown-grant mutation first
+   SURVIVED (the assertion only looked for the word "unknown", which the other branch also prints); the test
+   now asserts the exact phrase and a second test covers the recorded-unknown direction.
+9. **One F-44 test pinned a behavior that changed on purpose.** "Doctor with no stored login contacts nothing"
+   no longer holds: the discovery check probes the server (an unauthenticated POST and metadata GETs) so a
+   missing login does not hide a broken authorization server. The test now asserts what matters: no request
+   carried a credential and none started a login, registration or token exchange.
+
+---
+
 ## 0.3.0 P4 (part 2): F-45 client credentials / private-key JWT
 
 `type: client_credentials` now connects, for CI: no browser, no stored login, no TTY. Built test-first in

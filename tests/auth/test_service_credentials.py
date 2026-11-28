@@ -194,6 +194,24 @@ async def test_a_private_key_exported_with_literal_backslash_n_still_works(tmp_p
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("flavour", ["secret", "key"])
+async def test_configured_scopes_that_differ_from_what_the_server_would_choose_are_still_the_ones_requested(monkeypatch, flavour):
+    """Found by F-46's exact-value test: the SDK REPLACES the configured scope with whatever the 401 challenge or the
+    metadata advertises (or drops it), so `auth.scopes` was silently ignored whenever it differed from the server's
+    default. `["read"]` hid it because it is the fixture's default."""
+    async with serve_oauth_fixture(FixtureConfig(client_credentials=True)) as handle:
+        if flavour == "secret":
+            monkeypatch.setenv(SECRET_VAR, handle.state.machine_client_secret)
+            server = _server(handle, scopes=["read", "admin"])
+        else:
+            monkeypatch.setenv(KEY_VAR, handle.state.machine_private_key_pem)
+            server = _jwt_server(handle, scopes=["read", "admin"])
+        await _list_tools(server)
+        (token,) = handle.state.access_tokens.values()
+        assert sorted(token.scopes) == ["admin", "read"]
+
+
+@pytest.mark.anyio
 async def test_the_requested_scopes_are_the_configured_ones(tmp_path, monkeypatch):
     async with serve_oauth_fixture(FixtureConfig(client_credentials=True)) as handle:
         monkeypatch.setenv(SECRET_VAR, handle.state.machine_client_secret)
