@@ -1744,7 +1744,10 @@ docs/CHANGELOG.md's "Planned: 0.3.0 and 1.0.0" entry for each one's reasoning.
       `drifter run` with `parameter_rename`, evidence bundled under
       `tests/fixtures/experiments/` like limitations 22/23.
 - [ ] SECURITY.md "Upstream credentials" moves from planned to current state; README
-      auth section; website changelog.
+      auth section; website changelog. SECURITY.md and the README section are done (marked
+      "0.3.0, not yet released"); the website changelog entry waits for the release itself,
+      because the site deploys from master and an entry earlier would announce a release
+      that does not exist.
 - [ ] Release 0.3.0: same fresh-wheel smoke test and `pip-audit` as 0.2.0; published by
       the user through `publish.yml`.
 

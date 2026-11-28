@@ -6,6 +6,17 @@ not just a diff.
 
 ---
 
+## 0.3.0 P5 (part 1): SECURITY.md and README describe the built auth
+
+SECURITY.md "Upstream credentials" said "nothing uses a stored login yet", false since F-44; it now states what
+is built (all three auth types, storage, login, what a recording holds, the F-47 canary) and its limits (redaction
+is pattern-based, so a credential a server returns inside a tool RESULT is covered only if it looks like a secret;
+discovery follows URLs the server's metadata names; a revoked token ends an `observe` run; no CIMD document is
+published). The README gains "Recording a server that needs credentials", labelled 0.3.0 and not yet on PyPI. The
+website changelog is deliberately NOT touched: it deploys from master, so an entry before the release would claim
+a release that does not exist. The dogfood task is untouched and needs a person to complete a browser login
+against a real server.
+
 ## 0.3.0 audit of F-41..F-46: credentials a server echoes back
 
 An audit of everything merged so far, with probes run against the code, not only a read. F-47's promise is that no
