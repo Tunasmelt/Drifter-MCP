@@ -33,7 +33,7 @@ from mcp.shared.auth import OAuthClientInformationFull, OAuthToken
 
 from mcp_drifter.auth.config import AuthConfig, is_loopback_host
 from mcp_drifter.auth.errors import AuthSetupError, UpstreamAuthRejected
-from mcp_drifter.auth.text import clean_server_text
+from mcp_drifter.auth.text import MALFORMED_TOKEN_RESPONSE, clean_server_text, is_malformed_token_response, scrub
 
 _VISIBLE_ASCII_RE = re.compile(r"^[\x21-\x7e]+$")
 # A client assertion only has to survive the one request that carries it.
@@ -138,12 +138,9 @@ class _Refusals:
         self._credentials = credentials  # the secret, or every assertion minted so far: never to be printed
 
     def _scrub(self, text: str | None) -> str | None:
-        """Server text with this client's own credentials removed: some servers reflect what they received."""
-        if text is None:
-            return None
-        for credential in self._credentials:
-            text = text.replace(credential, "[redacted]")
-        return text
+        """Server text with this client's own credentials removed: some servers reflect what they received.
+        Applied to RAW text, before it is cleaned or capped (see `text.scrub`)."""
+        return scrub(text, self._credentials)
 
     async def _perform_authorization(self) -> httpx2.Request:
         """The SDK replaces the client's scope with the server's choice (the 401 challenge, then `scopes_supported`,
@@ -171,7 +168,14 @@ class _Refusals:
                 self._server_name, self._source, status, error=error, description=description, advice=self._advice_text
             )
         else:
-            detail = clean_server_text(self._scrub(str(exc)), 300) or "the flow could not continue"
+            text = str(exc)
+            # The SDK quotes the rejected response ("Invalid token response: <pydantic error>"): the first characters
+            # of a token. Say what was wrong instead.
+            detail = (
+                MALFORMED_TOKEN_RESPONSE
+                if is_malformed_token_response(text)
+                else clean_server_text(self._scrub(text), 300) or "the flow could not continue"
+            )
             error = UpstreamAuthRejected(
                 self._server_name,
                 self._source,
@@ -190,13 +194,12 @@ class _Refusals:
             try:
                 body = response.json()
                 if isinstance(body, dict):
-                    error = clean_server_text(body.get("error") if isinstance(body.get("error"), str) else None)
-                    description = clean_server_text(
-                        body.get("error_description") if isinstance(body.get("error_description"), str) else None, 160
-                    )
+                    raw_error, raw_description = body.get("error"), body.get("error_description")
+                    error = clean_server_text(self._scrub(raw_error) if isinstance(raw_error, str) else None)
+                    description = clean_server_text(self._scrub(raw_description) if isinstance(raw_description, str) else None, 160)
             except ValueError:
                 pass
-            self._last_refusal = (response.status_code, self._scrub(error), self._scrub(description))
+            self._last_refusal = (response.status_code, error, description)
         await super()._handle_token_response(response)  # type: ignore[misc]
 
     async def _auth_flow(self, request: httpx2.Request) -> AsyncGenerator[httpx2.Request, httpx2.Response]:
