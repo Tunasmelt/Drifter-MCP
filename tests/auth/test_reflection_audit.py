@@ -196,3 +196,20 @@ def test_scrub_replaces_every_secret_longest_first_and_never_an_empty_one():
     assert scrub("a TOKEN-LONG b TOKEN", ["TOKEN", "TOKEN-LONG"]) == "a [redacted] b [redacted]"
     assert scrub("nothing here", ["", "  "]) == "nothing here"
     assert scrub(None, ["x"]) is None
+
+
+@pytest.mark.anyio
+async def test_observe_style_connect_with_a_damaged_record_says_to_log_in_again_not_a_traceback(tmp_path):
+    from mcp_drifter.auth.session import StoredLoginProvider
+
+    store = TokenStore("crm", "https://crm.example/mcp", base_dir=tmp_path / "cfg", backend="file")
+    (tmp_path / "cfg" / "tokens").mkdir(parents=True, mode=0o700)
+    os.chmod(tmp_path / "cfg", 0o700)
+    record = {"format": 1, "server": "crm", "url": store.server_url, "client_info": None, "expires_at": None,
+              "tokens": {"refresh_token": "drifter-canary-REFRESH-0123456789", "token_type": "Bearer"}}
+    store.file_path.write_text(json.dumps(record), encoding="utf-8")
+    os.chmod(store.file_path, 0o600)
+    provider = StoredLoginProvider("https://crm.example/mcp", store, server_name="crm")
+    with pytest.raises(UpstreamAuthRejected) as caught:
+        await provider.check_usable()
+    assert "log in again" in str(caught.value) and "REFRESH" not in str(caught.value) and "canary" not in str(caught.value)

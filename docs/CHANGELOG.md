@@ -6,6 +6,39 @@ not just a diff.
 
 ---
 
+## 0.3.0 audit of F-41..F-46: credentials a server echoes back
+
+An audit of everything merged so far, with probes run against the code, not only a read. F-47's promise is that no
+credential reaches a terminal, a log or a recording; the P1 canary test covers a credential Drifter itself leaks, and
+none of it covered a SERVER that echoes what it was sent ("token <token> is expired"). Five defects, one cause (server
+text and SDK error text trusted to be free of the credential); each has a test in `tests/auth/test_reflection_audit.py`
+that failed before its fix, and each fix was mutation-checked (7 mutants, all killed).
+
+1. **`bearer_env` / stored-login / service-token rejections printed a reflected token.** `rejection_hook` cleaned and
+   printed `error_description`, `error` and `scope` from `WWW-Authenticate`. The refused request carries the token, so
+   the hook now removes the `Authorization` value (whole and token alone) from the RAW challenge first.
+2. **The F-45 secret scrub ran in the wrong order.** Text was cleaned (punctuation dropped, capped at 160) before the
+   client secret was looked for, so a secret containing `~ = @` printed as `passw0rd+...` and one straddling the cap
+   printed cut in half. Scrubbing now always precedes cleaning (`auth/text.py: scrub`), for the secret and for signed
+   assertions.
+3. **A malformed token response printed the start of a token.** The SDK's `Invalid token response: <pydantic error>`
+   quotes the rejected body (`input_value={'refresh_token': 'drifte...`). Login and service credentials now say
+   "the token endpoint's answer was not a valid token response" instead.
+4. **A hand-damaged token record crashed `observe` with a raw `ValidationError`** (same quoting, and a traceback instead
+   of an instruction). `TokenStore` now raises `StorageError` naming `drifter auth logout`, which `StoredLoginProvider`
+   already turned into "log in again".
+5. **A login's token-exchange error could carry the authorization code or PKCE verifier** the server had just been sent.
+   The login provider remembers both and scrubs them from its messages.
+
+Found and NOT fixed here (recorded so they are decisions, not oversights):
+- `TokenStore.summary()` and `.delete()` call the OS keyring synchronously, so `drifter auth status`, `auth logout` and
+  `doctor`'s login check can block on an unanswered keyring unlock prompt with no deadline (the async paths already use
+  `run_in_daemon_thread`). The CLAUDE.md shutdown-hang pattern; needs its own timed test.
+- SECURITY.md "Upstream credentials" still says "nothing uses a stored login yet", which F-44 made false. Rewritten in
+  P5 with the rest of the release documentation.
+
+---
+
 ## 0.3.0 P4 (part 3): F-46 auth-aware fingerprint + doctor auth checks
 
 Completes P4. The recording says which auth type it was made with and which scopes the server GRANTED, the
